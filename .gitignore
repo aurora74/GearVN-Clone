@@ -1,0 +1,14 @@
+.env
+shorten
+script.js
+node_modules
+bbolt-shorten.db
+bloomfilter.bin
+__pycache__
+venv
+results.txt
+results.bin
+plot.html
+attack_targets.txt
+data.json
+read_scenario.json
