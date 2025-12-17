@@ -14,7 +14,7 @@ require (
 	github.com/riverqueue/river v0.14.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.14.2
 	github.com/sethvargo/go-limiter v1.0.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/tomasen/realip v0.0.0-20180522021738-f0c99a92ddce
 	golang.org/x/sync v0.9.0
 )
