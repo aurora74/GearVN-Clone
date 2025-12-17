@@ -1,0 +1,10 @@
+DB_HOST=db
+DB_USER=dev
+DB_PASSWORD=123456789
+DB_PORT=5432
+DB_NAME=url
+KV_STORAGE_PATH=shorten
+REDIS_URL=redis://cache:6379
+BACKGROUND_DB_HOST=background_db
+BACKGROUND_DB_NAME=river
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
