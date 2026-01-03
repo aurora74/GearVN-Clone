@@ -1,0 +1,23 @@
+export const ORDER_STATUS = {
+  PROCESSING: 'PROCESSING',
+  SHIPPING: 'SHIPPING',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export const PAYMENT_STATUS = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export const ACCOUNT_STATUS = {
+  VERIFIED: 'VERIFIED',
+  UNVERIFIED: 'UNVERIFIED',
+  BANNED: 'BANNED',
+} as const;
+
+export const PAYMENT_METHOD = {
+  COD: 'COD',
+  VNPAY: 'VNPAY',
+} as const;
