@@ -21,10 +21,12 @@ import { AuthController } from './auth.controller';
 import { User, UserSchema } from 'src/user/user.schema';
 
 import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
+import { AuditModule } from 'src/audit/audit.module';
 
 @Module({
   imports: [
     CloudinaryModule,
+    AuditModule,
     ConfigModule.forFeature(jwtConfig),
     ConfigModule.forFeature(emailJwtConfig),
     ConfigModule.forFeature(refreshJwtConfig),

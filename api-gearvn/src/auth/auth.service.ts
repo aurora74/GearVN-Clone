@@ -210,6 +210,10 @@ export class AuthService {
   async validateGoogleUser(googleUser: any) {
     const user = await this.userService.findByEmail(googleUser.email);
     if (user) {
+      if (user.status !== AccountStatus.VERIFIED) {
+        await this.userService.updateStatus(user.id, AccountStatus.VERIFIED);
+        user.status = AccountStatus.VERIFIED;
+      }
       return user;
     }
 

@@ -1,36 +1,32 @@
 export const USER_ROLE = {
-  ADMIN: "ADMIN",
-  CUSTOMER: "CUSTOMER",
-};
-
-export const MODAL = {
-  LOGIN: "login",
-  REGISTER: "register",
-  "FORGOT-PASSWORD": "forgot-password",
-  "RESET-PASSWORD": "reset-password",
-  "VERIFY-ACCOUNT": "verify-account",
-};
+  ADMIN: 'ADMIN',
+  MANAGER: 'MANAGER',
+  PRODUCT_MARKETING_STAFF: 'PRODUCT_MARKETING_STAFF',
+  SALES_OPERATIONS_STAFF: 'SALES_OPERATIONS_STAFF',
+  CSR: 'CSR',
+  CUSTOMER: 'CUSTOMER',
+} as const;
 
 export const ORDER_STATUS = {
-  PROCESSING: "PROCESSING",
-  SHIPPING: "SHIPPING",
-  COMPLETED: "COMPLETED",
-  CANCELLED: "CANCELLED",
-};
+  PROCESSING: 'PROCESSING',
+  SHIPPING: 'SHIPPING',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
 
 export const PAYMENT_STATUS = {
-  PENDING: "PENDING",
-  PAID: "PAID",
-  CANCELLED: "CANCELLED",
-};
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  CANCELLED: 'CANCELLED',
+} as const;
 
 export const ACCOUNT_STATUS = {
-  VERIFIED: "VERIFIED",
-  UNVERIFIED: "UNVERIFIED",
-  BANNED: "BANNED",
-};
+  VERIFIED: 'VERIFIED',
+  UNVERIFIED: 'UNVERIFIED',
+  BANNED: 'BANNED',
+} as const;
 
 export const PAYMENT_METHOD = {
-  COD: "COD",
-  VNPAY: "VNPAY",
-};
+  COD: 'COD',
+  VNPAY: 'VNPAY',
+} as const;
