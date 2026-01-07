@@ -17,15 +17,18 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
+import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Permissions } from 'src/auth/decorators/permissions.decorator';
+import { UserRole } from 'src/auth/enums/user-role.enum';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { Permission } from 'src/auth/policy/permissions';
 
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
 import { OrderService } from './order.service';
-import { UserRole } from 'src/auth/enums/user-role.enum';
-import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @ApiTags('Orders')
 @Controller('orders')
@@ -83,8 +86,8 @@ export class OrderController {
 
   @Get()
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.ORDER_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
@@ -145,8 +148,8 @@ export class OrderController {
 
   @Put('status/:id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.ORDER_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', type: String })
   @ApiBody({ type: UpdateOrderStatusDto })
   updateOrderStatus(

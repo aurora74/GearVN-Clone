@@ -24,11 +24,10 @@ import { memoryStorage } from 'multer';
 import { FilesInterceptor } from '@nestjs/platform-express';
 
 import { ProductService } from './product.service';
-import { UserRole } from 'src/auth/enums/user-role.enum';
-import { Roles } from 'src/auth/decorators/roles.decorator';
-
+import { Permissions } from 'src/auth/decorators/permissions.decorator';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
+import { Permission } from 'src/auth/policy/permissions';
 
 import { CreateCommentDto } from './dto/create-comment.dto';
 
@@ -39,8 +38,8 @@ export class ProductController {
 
   @Post()
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CATALOG_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('images', 10, { storage: memoryStorage() }))
   @ApiBody({
@@ -80,8 +79,8 @@ export class ProductController {
 
   @Put(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CATALOG_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiConsumes('multipart/form-data')
   @ApiParam({ name: 'id', required: true })
   @UseInterceptors(FilesInterceptor('images', 10, { storage: memoryStorage() }))
@@ -193,8 +192,8 @@ export class ProductController {
 
   @Delete(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CATALOG_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', required: true })
   delete(@Param('id') id: string) {
     return this.productService.delete(id);

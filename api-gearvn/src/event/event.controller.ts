@@ -23,11 +23,10 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 
 import { EventService } from './event.service';
 import { CreateEventDto } from './dto/create-event.dto';
-import { UserRole } from 'src/auth/enums/user-role.enum';
-import { Roles } from 'src/auth/decorators/roles.decorator';
-
+import { Permissions } from 'src/auth/decorators/permissions.decorator';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
+import { Permission } from 'src/auth/policy/permissions';
 
 @ApiTags('Events')
 @Controller('events')
@@ -36,8 +35,8 @@ export class EventController {
 
   @Post()
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiBody({ type: CreateEventDto })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
@@ -62,8 +61,8 @@ export class EventController {
 
   @Put(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiBody({ type: CreateEventDto })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
@@ -121,8 +120,8 @@ export class EventController {
 
   @Delete(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   remove(@Param('id') id: string) {
     return this.eventService.remove(id);
   }

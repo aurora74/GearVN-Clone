@@ -24,12 +24,12 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { CreateBlogDto } from './dto/create-blog.dto';
 import { UpdateBlogDto } from './dto/update-blog.dto';
 
+import { Permissions } from 'src/auth/decorators/permissions.decorator';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
+import { Permission } from 'src/auth/policy/permissions';
 
 import { BlogService } from './blog.service';
-import { UserRole } from 'src/auth/enums/user-role.enum';
-import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @ApiTags('Blogs')
 @Controller('blogs')
@@ -38,8 +38,8 @@ export class BlogController {
 
   @Post()
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('thumbnail'))
   @ApiBody({
@@ -142,8 +142,8 @@ export class BlogController {
 
   @Put(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('thumbnail'))
   @ApiBody({
@@ -169,8 +169,8 @@ export class BlogController {
 
   @Delete(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', required: true })
   async remove(@Param('id') id: string) {
     return this.blogService.remove(id);

@@ -19,12 +19,12 @@ import {
 } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
 
+import { Permissions } from 'src/auth/decorators/permissions.decorator';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
+import { Permission } from 'src/auth/policy/permissions';
 
 import { ChatService } from './chat.service';
-import { UserRole } from 'src/auth/enums/user-role.enum';
-import { Roles } from 'src/auth/decorators/roles.decorator';
 import { DeleteMessagesDto } from './dto/delete-messages.dto';
 
 @ApiTags('Chat')
@@ -33,6 +33,8 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Post('upload')
+  @ApiBearerAuth()
+  @UseGuards(JwtGuard)
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('files'))
   @ApiBody({
@@ -56,8 +58,8 @@ export class ChatController {
 
   @Get()
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CSR_SUPPORT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
@@ -89,8 +91,8 @@ export class ChatController {
 
   @Get('latest')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CSR_SUPPORT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
@@ -152,16 +154,16 @@ export class ChatController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(Permission.CSR_SUPPORT_MANAGE)
   @ApiBearerAuth()
   deleteMessage(@Param('id') id: string) {
     return this.chatService.deleteMessage(id);
   }
 
   @Delete()
-  @UseGuards(JwtGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(Permission.CSR_SUPPORT_MANAGE)
   @ApiBearerAuth()
   deleteMessages(@Body() { userIds }: DeleteMessagesDto) {
     return this.chatService.deleteMessages(userIds);

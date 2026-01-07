@@ -22,12 +22,12 @@ import {
 import { memoryStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 
+import { Permissions } from 'src/auth/decorators/permissions.decorator';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
+import { Permission } from 'src/auth/policy/permissions';
 
 import { CategoryService } from './category.service';
-import { UserRole } from 'src/auth/enums/user-role.enum';
-import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @ApiTags('Categories')
 @Controller('categories')
@@ -36,8 +36,8 @@ export class CategoryController {
 
   @Post()
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CATALOG_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -102,8 +102,8 @@ export class CategoryController {
 
   @Put(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CATALOG_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiConsumes('multipart/form-data')
   @ApiParam({ name: 'id', type: String })
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
@@ -128,8 +128,8 @@ export class CategoryController {
 
   @Delete(':id')
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
-  @UseGuards(JwtGuard, RolesGuard)
+  @Permissions(Permission.CATALOG_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', type: String })
   remove(@Param('id') id: string) {
     return this.categoryService.remove(id);
