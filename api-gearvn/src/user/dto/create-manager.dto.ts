@@ -1,18 +1,14 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsEnum,
   IsEmail,
-  IsString,
-  MinLength,
-  IsOptional,
   IsNotEmpty,
+  IsOptional,
+  IsString,
   IsStrongPassword,
+  MinLength,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
 
-import { UserRole } from '../../auth/enums/user-role.enum';
-import { AccountStatus } from '../../auth/enums/account-status.enum';
-
-export class CreateUserDto {
+export class CreateManagerDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -42,24 +38,13 @@ export class CreateUserDto {
   )
   password: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   phone?: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   address?: string;
-
-  @ApiProperty({ required: false, enum: AccountStatus })
-  @IsOptional()
-  @IsEnum(AccountStatus, {
-    message: 'Status must be unverified, verified, or banned',
-  })
-  status?: AccountStatus;
-
-  @ApiProperty({ enum: UserRole, default: UserRole.CUSTOMER })
-  @IsOptional()
-  role?: UserRole;
 }

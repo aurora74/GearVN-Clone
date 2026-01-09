@@ -9,7 +9,7 @@ import {
   ForgotPasswordPayload,
 } from "@/types/auth";
 import { queryKeys } from "../query-keys";
-import { USER_ROLE } from "@/config.global";
+import { ROLE_LANDING_ROUTE } from "@/config.global";
 import { useRoleStore } from "@/stores/use-role-store";
 import { useCartStore } from "@/stores/use-cart-store";
 
@@ -49,11 +49,9 @@ export const useLogin = (
       handleCloseDialog();
       toastSuccess(message, description);
 
-      if (result.role === USER_ROLE.ADMIN) {
-        router.push("/admin/dashboard");
-      } else {
-        router.push("/");
-      }
+      const landingRoute =
+        ROLE_LANDING_ROUTE[result.role as keyof typeof ROLE_LANDING_ROUTE] ?? "/";
+      router.push(landingRoute);
 
       queryClient.invalidateQueries({ queryKey: queryKeys.user.me });
     },

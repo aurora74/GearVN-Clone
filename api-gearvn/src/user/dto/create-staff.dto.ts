@@ -1,18 +1,23 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsEnum,
   IsEmail,
-  IsString,
-  MinLength,
-  IsOptional,
+  IsIn,
   IsNotEmpty,
+  IsOptional,
+  IsString,
   IsStrongPassword,
+  MinLength,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
 
 import { UserRole } from '../../auth/enums/user-role.enum';
-import { AccountStatus } from '../../auth/enums/account-status.enum';
 
-export class CreateUserDto {
+export const STAFF_ASSIGNABLE_ROLES = [
+  UserRole.PRODUCT_MARKETING_STAFF,
+  UserRole.SALES_OPERATIONS_STAFF,
+  UserRole.CSR,
+] as const;
+
+export class CreateStaffDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -42,24 +47,17 @@ export class CreateUserDto {
   )
   password: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   phone?: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   address?: string;
 
-  @ApiProperty({ required: false, enum: AccountStatus })
-  @IsOptional()
-  @IsEnum(AccountStatus, {
-    message: 'Status must be unverified, verified, or banned',
-  })
-  status?: AccountStatus;
-
-  @ApiProperty({ enum: UserRole, default: UserRole.CUSTOMER })
-  @IsOptional()
-  role?: UserRole;
+  @ApiProperty({ enum: STAFF_ASSIGNABLE_ROLES })
+  @IsIn(STAFF_ASSIGNABLE_ROLES)
+  role: (typeof STAFF_ASSIGNABLE_ROLES)[number];
 }

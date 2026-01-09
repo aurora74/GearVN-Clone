@@ -1,14 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { queryKeys } from "../query-keys";
-import { USER_ROLE } from "@/config.global";
+import { USER_ROLES } from "@/config.global";
 import { useRoleStore } from "@/stores/use-role-store";
 
-import { User, UseUsersParams } from "@/types/user";
+import { User, UserRole, UseUsersParams } from "@/types/user";
 import { PaginatedResponse } from "@/types/global";
 
 export const useMe = () => {
-  const { setRole } = useRoleStore();
+  const { setRole, clearRole } = useRoleStore();
 
   return useQuery<User | null>({
     queryKey: queryKeys.user.me,
@@ -22,18 +22,15 @@ export const useMe = () => {
         const data = await response.json();
         const user = data.result || null;
 
-        if (
-          user?.role === USER_ROLE.ADMIN ||
-          user?.role === USER_ROLE.CUSTOMER
-        ) {
+        if (USER_ROLES.includes(user?.role as UserRole)) {
           setRole(user.role);
         } else {
-          setRole(null);
+          clearRole();
         }
 
         return user;
       } catch {
-        setRole(null);
+        clearRole();
         return null;
       }
     },
