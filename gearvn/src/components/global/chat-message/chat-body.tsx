@@ -220,7 +220,7 @@ export const ChatBody = ({
                 <div className="text-sm text-gray-900 p-2 border bg-white shadow-sm rounded-lg">
                   {DEFAULT_MESSAGE_CHAT.text}
                 </div>
-                <span className="text-[10px] text-gray-400 mt-1">
+                <span className="text-[10px] text-gray-400 mt-1" suppressHydrationWarning>
                   {formatDateVi(new Date())}
                 </span>
               </div>

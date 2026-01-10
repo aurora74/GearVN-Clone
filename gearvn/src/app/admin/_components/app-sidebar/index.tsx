@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 import { SIDEBAR_GROUPED_ITEMS } from "@/constants/admin/sidebar-grouped-items";
+import { useMe } from "@/react-query/query/user";
 
 import {
   Sidebar,
@@ -18,16 +19,32 @@ import {
 
 import { SidebarItem } from "./sidebar-item";
 
+import type { UserRole } from "@/types/user";
+
+const isAllowedForRole = (allowedRoles: readonly UserRole[], role: UserRole) =>
+  allowedRoles.includes(role);
+
 export const AppSidebar = (props: React.ComponentProps<typeof Sidebar>) => {
   const pathname = usePathname();
+  const { data: user } = useMe();
+  const currentRole = user?.role;
 
-  const menu = SIDEBAR_GROUPED_ITEMS.map((group) => ({
-    ...group,
-    items: group.items.map((item) => ({
-      ...item,
-      isActive: pathname === item.url || pathname.startsWith(item.url + "/"),
-    })),
-  }));
+  const menu = currentRole
+    ? SIDEBAR_GROUPED_ITEMS.map((group) => ({
+        ...group,
+        items: group.items
+          .filter((item) => isAllowedForRole(item.allowedRoles, currentRole))
+          .map((item) => ({
+            ...item,
+            isActive: pathname === item.url || pathname.startsWith(item.url + "/"),
+          })),
+      }))
+        .filter((group) => {
+          if (group.items.length === 0) return false;
+
+          return isAllowedForRole(group.allowedRoles, currentRole);
+        })
+    : [];
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>

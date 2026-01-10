@@ -10,6 +10,7 @@ import {
 } from "@/types/auth";
 import { queryKeys } from "../query-keys";
 import { ROLE_LANDING_ROUTE } from "@/config.global";
+import { getCsrfHeaders } from "@/utils/api/csrf";
 import { useRoleStore } from "@/stores/use-role-store";
 import { useCartStore } from "@/stores/use-cart-store";
 
@@ -162,7 +163,10 @@ export const useLogout = () => {
 
   return useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const res = await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: getCsrfHeaders(),
+      });
       const data = await res.json();
       if (!res.ok) throw data;
       return data;

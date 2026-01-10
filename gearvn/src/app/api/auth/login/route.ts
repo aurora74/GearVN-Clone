@@ -4,7 +4,8 @@ import { decode } from "jsonwebtoken";
 
 import { TokenPayload } from "@/types/auth";
 
-import { setCookie } from "@/utils/api/cookies";
+import { setCookie, setCsrfCookie } from "@/utils/api/cookies";
+import { createCsrfToken } from "@/utils/api/csrf";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
 
@@ -17,8 +18,17 @@ export const POST = async (req: NextRequest) => {
       body,
     });
 
-    const decoded = decode(data.accessToken) as TokenPayload;
+    const decoded = decode(data.accessToken) as TokenPayload & { sub?: string };
     const role = decoded.role;
+    const sessionId = decoded.sub;
+
+    if (!sessionId) {
+      return errorResponse({
+        status: 401,
+        message: "Dang nhap that bai",
+        description: "Vui long thu lai sau.",
+      });
+    }
 
     const res = successResponse({
       message: "Đăng nhập thành công",
@@ -26,8 +36,11 @@ export const POST = async (req: NextRequest) => {
       result: { role },
     });
 
+    const { signedToken } = createCsrfToken(sessionId);
+
     setCookie(res, "accessToken", data.accessToken, 60 * 60 * 24);
     setCookie(res, "refreshToken", data.refreshToken, 60 * 60 * 24 * 3);
+    setCsrfCookie(res, signedToken, 60 * 60 * 24);
 
     return res;
   } catch (err: any) {

@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 
-import { clearCookie } from "@/utils/api/cookies";
+import { clearCookie, clearCsrfCookie } from "@/utils/api/cookies";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
 
@@ -26,6 +26,7 @@ export const POST = async () => {
 
     clearCookie(res, "accessToken");
     clearCookie(res, "refreshToken");
+    clearCsrfCookie(res);
 
     return res;
   } catch (err: any) {

@@ -169,7 +169,7 @@ export class BlogController {
 
   @Delete(':id')
   @ApiBearerAuth()
-  @Permissions(Permission.CONTENT_MANAGE)
+@Permissions(Permission.CONTENT_MANAGE)
   @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', required: true })
   async remove(@Param('id') id: string) {

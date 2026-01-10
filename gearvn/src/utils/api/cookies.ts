@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 
+const DEFAULT_COOKIE_OPTIONS = {
+  path: "/",
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+};
+
 export const setCookie = (
   res: NextResponse,
   name: string,
@@ -9,20 +15,36 @@ export const setCookie = (
   if (!value) return;
 
   res.cookies.set(name, value, {
+    ...DEFAULT_COOKIE_OPTIONS,
     maxAge,
-    path: "/",
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+  });
+};
+
+export const setCsrfCookie = (
+  res: NextResponse,
+  value: string,
+  maxAge: number = 60 * 60 * 24
+) => {
+  res.cookies.set("csrfToken", value, {
+    ...DEFAULT_COOKIE_OPTIONS,
+    maxAge,
+    httpOnly: false,
   });
 };
 
 export const clearCookie = (res: NextResponse, name: string) => {
   res.cookies.set(name, "", {
-    path: "/",
+    ...DEFAULT_COOKIE_OPTIONS,
     maxAge: 0,
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+  });
+};
+
+export const clearCsrfCookie = (res: NextResponse) => {
+  res.cookies.set("csrfToken", "", {
+    ...DEFAULT_COOKIE_OPTIONS,
+    maxAge: 0,
+    httpOnly: false,
   });
 };
