@@ -1,24 +1,128 @@
 import { Model, Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { Chat, ChatDocument } from './chat.schema';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { Permission, roleHasPermission } from '../auth/policy/permissions';
+import {
+  assertOwnerOrPermission,
+  OwnershipActor,
+} from '../auth/policy/ownership';
+import { UserRole } from '../auth/enums/user-role.enum';
+import { validateImageUploads } from '../common/validators/upload-validator';
+import { SupportTicketService } from '../support-ticket/support-ticket.service';
 
 @Injectable()
 export class ChatService {
   constructor(
     @InjectModel(Chat.name) private chatModel: Model<ChatDocument>,
     private cloudinaryService: CloudinaryService,
+    private supportTicketService: SupportTicketService,
   ) {}
 
-  async create(message: Partial<Chat>) {
-    const chat = new this.chatModel(message);
-    return chat.save();
+  private getActorId(actor?: OwnershipActor | null) {
+    return actor?.id ?? actor?._id?.toString();
+  }
+
+  private getRoomOwnerId(roomId?: string): string | null {
+    const prefix = 'room-client-';
+
+    if (!roomId?.startsWith(prefix)) {
+      return null;
+    }
+
+    return roomId.slice(prefix.length) || null;
+  }
+
+  isSupportActor(actor?: OwnershipActor | null): boolean {
+    return !!actor?.role && roleHasPermission(actor.role, Permission.CSR_SUPPORT_MANAGE);
+  }
+
+  assertCanAccessChatRoom(actor: OwnershipActor | null | undefined, roomId?: string) {
+    this.assertCanAccessChatResource({ actor, roomId });
+    const ownerId = this.getRoomOwnerId(roomId);
+    if (!ownerId) {
+      throw new BadRequestException('Invalid chat room');
+    }
+    return ownerId;
+  }
+
+  private assertCanAccessChatResource({
+    actor,
+    roomId,
+    userId,
+    targetType = 'chat',
+  }: {
+    actor?: OwnershipActor | null;
+    roomId?: string;
+    userId?: string;
+    targetType?: string;
+  }): void {
+    const roomOwnerId = this.getRoomOwnerId(roomId);
+
+    if (roomOwnerId && userId && String(roomOwnerId) !== String(userId)) {
+      throw new BadRequestException('Chat room and user do not match');
+    }
+
+    assertOwnerOrPermission({
+      actor,
+      ownerId: userId ?? roomOwnerId,
+      permission: Permission.CSR_SUPPORT_MANAGE,
+      targetType,
+    });
+  }
+
+  async create(message: Partial<Chat>, actor?: OwnershipActor | null) {
+    const roomOwnerId = this.assertCanAccessChatRoom(actor, message.roomId);
+    const supportActor = this.isSupportActor(actor);
+    const sender = supportActor ? UserRole.ADMIN : UserRole.CUSTOMER;
+    const userId = supportActor ? roomOwnerId : this.getActorId(actor) ?? roomOwnerId;
+    const text = typeof message.text === 'string' ? message.text.trim() : '';
+    const attachments = Array.isArray(message.attachments)
+      ? message.attachments
+          .filter((attachment): attachment is string => typeof attachment === 'string')
+          .map((attachment) => attachment.trim())
+          .filter(Boolean)
+      : [];
+
+    if (String(userId) !== String(roomOwnerId)) {
+      throw new BadRequestException('Chat room and user do not match');
+    }
+
+    if (!text && attachments.length === 0) {
+      throw new BadRequestException('Message text or attachment is required');
+    }
+
+    const chat = new this.chatModel({
+      ...message,
+      text,
+      attachments,
+      sender,
+      userId: roomOwnerId,
+      roomId: message.roomId,
+    });
+    const saved = (await chat.save()) ?? chat;
+
+    if (sender === UserRole.CUSTOMER && !saved.isRead) {
+      await this.supportTicketService.createOrRefreshForChat({
+        roomId: message.roomId!,
+        customerId: roomOwnerId,
+        latestMessageId: saved._id.toString(),
+        contextLabel: 'Chat khách hàng',
+      });
+    }
+
+    return saved;
   }
 
   async uploadFiles(files: Express.Multer.File[]): Promise<string[]> {
     if (!files || files.length === 0) return [];
+
+    validateImageUploads(files, {
+      maxFiles: 10,
+      maxFileSizeBytes: 5 * 1024 * 1024,
+    });
 
     const uploadResults = await Promise.all(
       files.map((file) => this.cloudinaryService.uploadImage(file)),
@@ -34,6 +138,7 @@ export class ChatService {
     sortBy,
     roomId,
     userId,
+    actor,
   }: {
     page?: number;
     limit?: number;
@@ -41,7 +146,10 @@ export class ChatService {
     sortBy?: string;
     roomId?: string;
     userId?: string;
+    actor?: OwnershipActor | null;
   }) {
+    this.assertCanAccessChatResource({ actor, roomId, userId });
+
     const query: any = {};
     if (search) query.text = { $regex: search, $options: 'i' };
     if (roomId) query.roomId = roomId;
@@ -86,6 +194,7 @@ export class ChatService {
     sortBy,
     roomId,
     userId,
+    actor,
   }: {
     page?: number | string;
     limit?: number | string;
@@ -93,7 +202,10 @@ export class ChatService {
     sortBy?: string;
     roomId?: string;
     userId?: string;
+    actor?: OwnershipActor | null;
   }) {
+    this.assertCanAccessChatResource({ actor, roomId, userId });
+
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
 
@@ -124,8 +236,8 @@ export class ChatService {
       {
         $addFields: {
           userId: {
-            _id: '$user._id',
-            fullName: '$user.fullName',
+            _id: { $ifNull: ['$user._id', '$userIdObj'] },
+            fullName: { $ifNull: ['$user.fullName', 'Deleted user'] },
             avatarUrl: '$user.avatarUrl',
           },
         },
@@ -188,6 +300,7 @@ export class ChatService {
     search,
     sortBy,
     userId,
+    actor,
   }: {
     roomId: string;
     page?: number;
@@ -195,13 +308,20 @@ export class ChatService {
     search?: string;
     sortBy?: string;
     userId?: string;
+    actor?: OwnershipActor | null;
   }) {
+    this.assertCanAccessChatResource({ actor, roomId, userId });
+
+    if (this.isSupportActor(actor)) {
+      await this.markChatProcessing(roomId, actor);
+    }
+
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
 
     const query: any = { roomId };
 
-    if (userId) query.sender = userId;
+    if (userId) query.userId = userId;
     if (search) query.text = { $regex: search, $options: 'i' };
 
     const sort: any = {};
@@ -266,6 +386,17 @@ export class ChatService {
     );
   }
 
+  async markChatProcessing(roomId: string, actor?: OwnershipActor | null) {
+    this.assertCanAccessChatRoom(actor, roomId);
+    if (!this.isSupportActor(actor)) return null;
+    return this.supportTicketService.markChatProcessing(roomId, actor);
+  }
+
+  async resolveChatTicket(roomId: string, actor?: OwnershipActor | null) {
+    this.assertCanAccessChatRoom(actor, roomId);
+    return this.supportTicketService.resolveChatTicket(roomId, actor);
+  }
+
   async deleteMessageById(messageId: string) {
     const message = await this.chatModel.findById(messageId);
     if (!message) {
@@ -278,7 +409,9 @@ export class ChatService {
     return { message: 'Message has been revoked', _id: message._id };
   }
 
-  async deleteMessage(userId: string) {
+  async deleteMessage(userId: string, actor?: OwnershipActor | null) {
+    this.assertCanAccessChatResource({ actor, userId, targetType: 'chat messages' });
+
     const message = await this.chatModel.findOne({ userId });
     if (!message) {
       throw new NotFoundException(`No messages found for user ${userId}`);
@@ -287,7 +420,11 @@ export class ChatService {
     return { message: 'Message deleted successfully' };
   }
 
-  async deleteMessages(userIds: string[]) {
+  async deleteMessages(userIds: string[], actor?: OwnershipActor | null) {
+    for (const userId of userIds) {
+      this.assertCanAccessChatResource({ actor, userId, targetType: 'chat messages' });
+    }
+
     const messages = await this.chatModel.find({ userId: { $in: userIds } });
 
     if (!messages || messages.length === 0) {

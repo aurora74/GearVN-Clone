@@ -26,6 +26,17 @@ type SidebarProps = {
   setSelectedUser: (selectedUser: string | null) => void;
 };
 
+const getUserDisplayName = (user: User) => user.fullName?.trim() || "Ẩn danh";
+
+const getUserInitials = (displayName: string) =>
+  displayName
+    .split(" ")
+    .filter(Boolean)
+    .map((namePart) => namePart[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
+
 export const Sidebar = ({
   users,
   setUsers,
@@ -76,7 +87,7 @@ export const Sidebar = ({
   return (
     <div className="h-full flex flex-col sm:border-r px-2 sm:pr-4 gap-2">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Tin nhắn</h2>
+        <h2 className="text-lg font-semibold">Hàng chờ hỗ trợ</h2>
 
         {users.length > 0 && (
           <label className="flex items-center mt-2 cursor-pointer select-none">
@@ -126,57 +137,57 @@ export const Sidebar = ({
             Chưa có cuộc trò chuyện nào
           </div>
         ) : (
-          users.map((user) => (
-            <div
-              key={user._id}
-              onClick={() => onSelectUser(user._id)}
-              className={cn(
-                "flex items-center py-3 space-x-3 hover:bg-white transition-colors duration-150 cursor-pointer select-none",
-                selectedUser === user._id &&
-                  "border-l-4 border-l-primary bg-white",
-                selectedUser && "sm:pl-3"
-              )}
-            >
-              <Checkbox
-                checked={selectedUsers.includes(user._id)}
-                onCheckedChange={() => toggleSelectUser(user._id)}
-              />
+          users.map((user) => {
+            const displayName = getUserDisplayName(user);
 
-              <div className="relative">
-                <Avatar className="size-12">
-                  <AvatarImage src={user.avatarUrl} alt={user.fullName} />
-                  <AvatarFallback className="text-white bg-primary">
-                    {user.fullName
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .slice(0, 2)}
-                  </AvatarFallback>
-                </Avatar>
-                <span
-                  className={cn(
-                    "absolute bottom-0 right-0 block size-3 ring-2 ring-white rounded-full",
-                    user.online ? "bg-green-500" : "bg-gray-400"
-                  )}
+            return (
+              <div
+                key={user._id}
+                onClick={() => onSelectUser(user._id)}
+                className={cn(
+                  "flex items-center py-3 space-x-3 hover:bg-white transition-colors duration-150 cursor-pointer select-none",
+                  selectedUser === user._id &&
+                    "border-l-4 border-l-primary bg-white",
+                  selectedUser && "sm:pl-3"
+                )}
+              >
+                <Checkbox
+                  checked={selectedUsers.includes(user._id)}
+                  onCheckedChange={() => toggleSelectUser(user._id)}
                 />
-              </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium truncate">
-                    {user.fullName}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500">{user.time}</span>
-                    {renderUnreadBadge(user.unreadCount)}
-                  </div>
+                <div className="relative">
+                  <Avatar className="size-12">
+                    <AvatarImage src={user.avatarUrl} alt={displayName} />
+                    <AvatarFallback className="text-white bg-primary">
+                      {getUserInitials(displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span
+                    className={cn(
+                      "absolute bottom-0 right-0 block size-3 ring-2 ring-white rounded-full",
+                      user.online ? "bg-green-500" : "bg-gray-400"
+                    )}
+                  />
                 </div>
-                <p className="text-sm text-gray-600 italic mt-1 truncate">
-                  {user.typing ? "Đang soạn tin..." : user.newMessage}
-                </p>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium truncate">
+                      {displayName}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{user.time}</span>
+                      {renderUnreadBadge(user.unreadCount)}
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600 italic mt-1 truncate">
+                    {user.typing ? "Đang soạn tin..." : user.newMessage}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

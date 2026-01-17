@@ -3,8 +3,10 @@ import {
   Body,
   Post,
   Param,
+  Patch,
   Query,
   Delete,
+  Request,
   UseGuards,
   Controller,
   UploadedFiles,
@@ -19,10 +21,10 @@ import {
 } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
 
-import { Permissions } from 'src/auth/decorators/permissions.decorator';
-import { JwtGuard } from 'src/auth/guards/jwt.guard';
-import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
-import { Permission } from 'src/auth/policy/permissions';
+import { Permissions } from '../auth/decorators/permissions.decorator';
+import { Permission } from '../auth/policy/permissions';
+import { PermissionsGuard } from '../auth/guards/permissions.guard';
+import { JwtGuard } from '../auth/guards/jwt.guard';
 
 import { ChatService } from './chat.service';
 import { DeleteMessagesDto } from './dto/delete-messages.dto';
@@ -58,8 +60,7 @@ export class ChatController {
 
   @Get()
   @ApiBearerAuth()
-  @Permissions(Permission.CSR_SUPPORT_MANAGE)
-  @UseGuards(JwtGuard, PermissionsGuard)
+  @UseGuards(JwtGuard)
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
@@ -72,6 +73,7 @@ export class ChatController {
   @ApiQuery({ name: 'roomId', required: false, type: String })
   @ApiQuery({ name: 'userId', required: false, type: String })
   findAll(
+    @Request() req,
     @Query('page') page = 1,
     @Query('limit') limit = 10,
     @Query('search') search?: string,
@@ -86,13 +88,13 @@ export class ChatController {
       sortBy,
       roomId,
       userId,
+      actor: req.user,
     });
   }
 
   @Get('latest')
   @ApiBearerAuth()
-  @Permissions(Permission.CSR_SUPPORT_MANAGE)
-  @UseGuards(JwtGuard, PermissionsGuard)
+  @UseGuards(JwtGuard)
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
@@ -105,6 +107,7 @@ export class ChatController {
   @ApiQuery({ name: 'roomId', required: false, type: String })
   @ApiQuery({ name: 'userId', required: false, type: String })
   findLatest(
+    @Request() req,
     @Query('page') page = 1,
     @Query('limit') limit = 10,
     @Query('search') search?: string,
@@ -119,6 +122,7 @@ export class ChatController {
       sortBy,
       roomId,
       userId,
+      actor: req.user,
     });
   }
 
@@ -137,6 +141,7 @@ export class ChatController {
   @ApiQuery({ name: 'userId', required: false, type: String })
   getMessagesByRoom(
     @Param('roomId') roomId: string,
+    @Request() req,
     @Query('page') page = 1,
     @Query('limit') limit = 10,
     @Query('search') search?: string,
@@ -150,22 +155,29 @@ export class ChatController {
       search,
       sortBy,
       userId,
+      actor: req.user,
     });
   }
 
-  @Delete(':id')
+  @Patch('room/:roomId/resolve')
   @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(Permission.CSR_SUPPORT_MANAGE)
   @ApiBearerAuth()
-  deleteMessage(@Param('id') id: string) {
-    return this.chatService.deleteMessage(id);
+  resolveChatTicket(@Param('roomId') roomId: string, @Request() req) {
+    return this.chatService.resolveChatTicket(roomId, req.user);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtGuard)
+  @ApiBearerAuth()
+  deleteMessage(@Param('id') id: string, @Request() req) {
+    return this.chatService.deleteMessage(id, req.user);
   }
 
   @Delete()
-  @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(Permission.CSR_SUPPORT_MANAGE)
+  @UseGuards(JwtGuard)
   @ApiBearerAuth()
-  deleteMessages(@Body() { userIds }: DeleteMessagesDto) {
-    return this.chatService.deleteMessages(userIds);
+  deleteMessages(@Body() { userIds }: DeleteMessagesDto, @Request() req) {
+    return this.chatService.deleteMessages(userIds, req.user);
   }
 }

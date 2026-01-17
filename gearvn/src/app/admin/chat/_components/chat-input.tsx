@@ -29,7 +29,7 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
   const { mutateAsync: uploadFiles } = useUpload();
 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const isUploading = attachments.some((attachment) => attachment.uploading);
 
   const uploadedCount = attachments.filter(
@@ -52,6 +52,8 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
 
       setAttachments((prev) => [...prev, ...newAttachments]);
 
+      setUploadError(null);
+
       try {
         const uploadedUrls = await uploadFiles(filesArray);
 
@@ -71,6 +73,9 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
           })
         );
       } catch {
+        setUploadError(
+          "Không thể gửi nội dung. Kiểm tra lại nội dung hoặc ảnh đính kèm rồi thử lại."
+        );
         setAttachments((prev) => {
           prev.forEach((att) => {
             if (filesArray.includes(att.file)) revokePreview(att.preview);
@@ -105,7 +110,7 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
   }, []);
 
   return (
-    <div className="flex-1 relative pt-4 pl-4 border-t bg-white">
+    <div className="flex-shrink-0 relative p-4 border-t bg-white">
       {attachments.length > 0 && (
         <div className="flex absolute bottom-full space-x-2 mb-2 overflow-x-auto custom-scroll">
           {attachments.map((att) => (
@@ -136,6 +141,9 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
         </div>
       )}
 
+      {uploadError && (
+        <p className="mb-2 text-sm text-red-600">{uploadError}</p>
+      )}
       <div className="flex items-center gap-2">
         <label htmlFor="file-upload" className="cursor-pointer">
           <Paperclip className="size-5 text-gray-500 hover:text-gray-700" />

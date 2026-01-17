@@ -239,7 +239,7 @@ export const ChatMessages = ({
     <div
       ref={containerRef}
       className={cn(
-        "flex-1 h-[calc(100vh-270px)] sm:h-[calc(100vh-230px)] p-4 space-y-4 custom-scroll",
+        "flex-1 min-h-0 p-4 space-y-4 custom-scroll",
         isPending ? "overflow-hidden" : "overflow-y-auto"
       )}
     >
@@ -279,6 +279,11 @@ export const ChatMessages = ({
                   isAdmin && "ml-auto"
                 )}
               >
+                {isAdmin && !msg.isDeleted && !isEditing && (
+                  <span className="ml-auto text-[11px] font-medium text-muted-foreground">
+                    Moderator
+                  </span>
+                )}
                 {isConfirmDelete ? (
                   <div className="flex gap-2 p-2 border border-red-300 bg-red-50 rounded-lg">
                     <Input

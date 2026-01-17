@@ -8,6 +8,7 @@ import {
   Request,
   UseGuards,
   Controller,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -109,11 +110,21 @@ export class OrderController {
     @Query('orderStatus') orderStatus?: string,
     @Query('paymentStatus') paymentStatus?: string,
     @Query('paymentMethod') paymentMethod?: string,
-    @Query('totalFrom') totalFrom?: number,
-    @Query('totalTo') totalTo?: number,
+    @Query('totalFrom') totalFrom?: string,
+    @Query('totalTo') totalTo?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
+    const parsedTotalFrom = totalFrom === undefined ? undefined : Number(totalFrom);
+    const parsedTotalTo = totalTo === undefined ? undefined : Number(totalTo);
+
+    if (parsedTotalFrom !== undefined && !Number.isFinite(parsedTotalFrom)) {
+      throw new BadRequestException('Invalid totalFrom');
+    }
+
+    if (parsedTotalTo !== undefined && !Number.isFinite(parsedTotalTo)) {
+      throw new BadRequestException('Invalid totalTo');
+    }
     return this.orderService.findOrders({
       page: Number(page) || 1,
       limit: Number(limit) || 10,
@@ -123,8 +134,8 @@ export class OrderController {
       orderStatus,
       paymentStatus,
       paymentMethod,
-      totalFrom,
-      totalTo,
+      totalFrom: parsedTotalFrom,
+      totalTo: parsedTotalTo,
       dateFrom,
       dateTo,
     });
@@ -134,16 +145,16 @@ export class OrderController {
   @ApiBearerAuth()
   @UseGuards(JwtGuard)
   @ApiParam({ name: 'id', type: String })
-  findOne(@Param('id') id: string) {
-    return this.orderService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.orderService.findOne(id, req.user);
   }
 
   @Get('code/:code')
   @ApiBearerAuth()
   @UseGuards(JwtGuard)
   @ApiParam({ name: 'code', type: String })
-  findByCode(@Param('code') code: string) {
-    return this.orderService.findByCode(code);
+  findByCode(@Param('code') code: string, @Request() req) {
+    return this.orderService.findByCode(code, req.user);
   }
 
   @Put('status/:id')
@@ -155,15 +166,22 @@ export class OrderController {
   updateOrderStatus(
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,
+    @Request() req,
   ) {
-    return this.orderService.updateStatus(id, dto.orderStatus);
+    return this.orderService.updateStatus(id, dto, req.user);
   }
 
   @Put('cancel/:id')
   @ApiBearerAuth()
   @UseGuards(JwtGuard)
   @ApiParam({ name: 'id', type: String })
-  cancelOrder(@Param('id') id: string) {
-    return this.orderService.cancelOrder(id);
+  cancelOrder(@Param('id') id: string, @Request() req) {
+    return this.orderService.cancelOrder(id, req.user, {
+      ip: req.ip,
+      userAgent:
+        typeof req.get === 'function'
+          ? req.get('user-agent')
+          : req.headers?.['user-agent'],
+    });
   }
 }

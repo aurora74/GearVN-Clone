@@ -2,21 +2,52 @@
 
 import { useState, useEffect, useRef } from "react";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useQueryState } from "nuqs";
 import { ArrowLeft } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
 import { cn } from "@/utils/cn";
-import { USER_ROLE } from "@/config.global";
+import { SUPPORT_TICKET_SOURCE, USER_ROLE } from "@/config.global";
 import { User, Message } from "@/types/chat";
 import { useLatestMessages } from "@/react-query/query/chat";
+import { useSupportTickets } from "@/react-query/query/engagement";
+import { useResolveChatTicket } from "@/react-query/mutation/chat";
+import { queryKeys } from "@/react-query/query-keys";
 
 import { Sidebar } from "./sidebar";
 import { ChatInput } from "./chat-input";
 import { ChatHeader } from "./chat-header";
 import { ChatMessages } from "./chat-messages";
+import { SupportTicketPanel } from "./support-ticket-panel";
+
+const getMessageUser = (message: Message): Message["userId"] | null => {
+  const user = message.userId as unknown;
+  if (!user) return null;
+
+  if (typeof user === "string") {
+    return { _id: user, fullName: "Ẩn danh" };
+  }
+
+  return user as Message["userId"];
+};
+
+const getSidebarText = (message: Message) =>
+  message.isDeleted ? "Tin nhắn đã thu hồi" : message.text || "[Ảnh]";
+
+const haveSameAttachments = (left: string[] = [], right: string[] = []) => {
+  if (left.length !== right.length) return false;
+  return left.every((url, index) => url === right[index]);
+};
+
+const isMatchingOptimisticMessage = (message: Message, savedMessage: Message) =>
+  message._id?.startsWith("optimistic-") &&
+  message.sender === savedMessage.sender &&
+  message.text === savedMessage.text &&
+  haveSameAttachments(message.attachments, savedMessage.attachments);
 
 export const ChatPage = () => {
+  const queryClient = useQueryClient();
   const [search] = useQueryState("search", { shallow: false, history: "push" });
 
   const { data: latestData, isPending } = useLatestMessages({
@@ -24,6 +55,9 @@ export const ChatPage = () => {
     limit: 20,
     ...(search ? { search } : {}),
   });
+  const { data: supportTickets } = useSupportTickets({ page: 1, limit: 100 });
+  const { mutate: resolveChatTicket, isPending: isResolvingTicket } =
+    useResolveChatTicket();
 
   const [users, setUsers] = useState<User[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -35,21 +69,32 @@ export const ChatPage = () => {
 
   const selectedUserData = users.find((u) => u._id === selectedUser);
   const selectedRoomId = selectedUser ? `room-client-${selectedUser}` : "";
+  const selectedTicket = supportTickets?.data?.find(
+    (ticket) =>
+      ticket.sourceType === SUPPORT_TICKET_SOURCE.CHAT &&
+      ticket.roomId === selectedRoomId
+  );
 
   useEffect(() => {
     selectedUserRef.current = selectedUser;
   }, [selectedUser]);
 
   useEffect(() => {
-    const fetchSocketUrl = async () => {
-      const response = await fetch("/api/chat/socket/connect");
-      const { url } = await response.json();
-      return url;
+    const fetchSocketContext = async () => {
+      const response = await fetch("/api/chat/socket/connect", {
+        credentials: "include",
+      });
+      const { url, token } = await response.json();
+      return { url, token } as { url?: string; token?: string | null };
     };
 
-    fetchSocketUrl().then((socketUrl) => {
-      const socket: Socket = io(socketUrl, {
-        query: { role: USER_ROLE.ADMIN },
+    let socket: Socket | null = null;
+
+    fetchSocketContext().then(({ url, token }) => {
+      if (!url || !token) return;
+
+      socket = io(url, {
+        auth: { token },
       });
       socketRef.current = socket;
 
@@ -68,40 +113,55 @@ export const ChatPage = () => {
       });
 
       socket.on("receive-message", (msg: Message) => {
-        const userId = msg.userId._id;
+        const messageUser = getMessageUser(msg);
+        const userId = messageUser?._id;
         if (!userId) return;
 
+        const incomingMessage: Message = { ...msg, userId: messageUser };
+        const isRoomCurrentlyOpen = selectedUserRef.current === userId;
+        const isMessageFromCustomer = msg.sender === USER_ROLE.CUSTOMER;
+
+        if (isMessageFromCustomer) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.supportTicket.root });
+        }
+
+        if (isRoomCurrentlyOpen && isMessageFromCustomer) {
+          incomingMessage.isRead = true;
+          socketRef.current?.emit("mark-as-read-bulk", {
+            messageIds: [msg._id],
+            roomId: msg.roomId,
+          });
+        }
+
+        const sidebarText = getSidebarText(incomingMessage);
+        const messageTime = new Date(
+          msg.createdAt ?? Date.now()
+        ).toLocaleTimeString();
+
         setUsers((prevUsers) => {
-          return prevUsers.map((user) => {
+          let foundUser = false;
+
+          const nextUsers = prevUsers.map((user) => {
             if (user._id !== userId) return user;
+            foundUser = true;
 
-            const incomingMessage: Message = { ...msg };
-            const isRoomCurrentlyOpen = selectedUserRef.current === userId;
-            const isMessageFromCustomer = msg.sender === USER_ROLE.CUSTOMER;
+            const baseMessages = user.messages.filter(
+              (message) => !isMatchingOptimisticMessage(message, incomingMessage)
+            );
+            const hasSavedMessage = user.messages.some(
+              (message) => message._id === incomingMessage._id
+            );
+            const nextMessages = hasSavedMessage
+              ? baseMessages
+              : [...baseMessages, incomingMessage];
 
-            if (isRoomCurrentlyOpen && isMessageFromCustomer) {
-              incomingMessage.isRead = true;
-              socketRef.current?.emit("mark-as-read-bulk", {
-                messageIds: [msg._id],
-                roomId: msg.roomId,
-              });
-            }
-
-            let updatedUnreadCount: number;
-            if (isMessageFromCustomer) {
-              if (isRoomCurrentlyOpen) {
-                updatedUnreadCount = 0;
-              } else {
-                updatedUnreadCount = msg.unreadCount;
-              }
-            } else {
-              updatedUnreadCount = user.unreadCount;
-            }
-
-            const sidebarText =
-              incomingMessage.isDeleted && isMessageFromCustomer
-                ? "Tin nhắn đã thu hồi"
-                : incomingMessage.text;
+            const updatedUnreadCount = isMessageFromCustomer
+              ? isRoomCurrentlyOpen
+                ? 0
+                : typeof msg.unreadCount === "number"
+                ? msg.unreadCount
+                : user.unreadCount + 1
+              : user.unreadCount;
 
             return {
               ...user,
@@ -109,10 +169,30 @@ export const ChatPage = () => {
               typing: false,
               newMessage: sidebarText,
               unreadCount: updatedUnreadCount,
-              messages: [...user.messages, incomingMessage],
-              time: new Date(msg.createdAt ?? Date.now()).toLocaleTimeString(),
+              messages: nextMessages,
+              time: messageTime,
             };
           });
+
+          if (foundUser) return nextUsers;
+
+          return [
+            {
+              _id: userId,
+              fullName: messageUser.fullName?.trim() || "Ẩn danh",
+              avatarUrl: messageUser.avatarUrl,
+              online: true,
+              typing: false,
+              newMessage: sidebarText,
+              unreadCount:
+                isMessageFromCustomer && !isRoomCurrentlyOpen
+                  ? msg.unreadCount || 1
+                  : 0,
+              messages: [incomingMessage],
+              time: messageTime,
+            },
+            ...nextUsers,
+          ];
         });
       });
 
@@ -182,6 +262,8 @@ export const ChatPage = () => {
       socket.on(
         "update-unread-count",
         ({ userId, unreadCount }: { userId: string; unreadCount: number }) => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.supportTicket.root });
+          queryClient.invalidateQueries({ queryKey: queryKeys.chat.latest() });
           setUsers((prevUsers) => {
             return prevUsers.map((user) => {
               if (user._id === userId) {
@@ -193,17 +275,21 @@ export const ChatPage = () => {
           });
         }
       );
-
-      return () => {
-        socket.disconnect();
-      };
     });
-  }, []);
+
+    return () => {
+      socket?.disconnect();
+    };
+  }, [queryClient]);
 
   useEffect(() => {
     if (!latestData?.data) return;
 
-    const mappedUsers: User[] = latestData.data.map((msg) => {
+    const mappedUsers: User[] = latestData.data.flatMap((msg) => {
+      const messageUser = msg.userId;
+      const userId = messageUser?._id;
+      if (!userId) return [];
+
       const isFromCustomer = msg.sender === USER_ROLE.CUSTOMER;
 
       const initialUnreadCount = isFromCustomer ? msg.unreadCount || 0 : 0;
@@ -212,30 +298,34 @@ export const ChatPage = () => {
         ? "Tin nhắn đã thu hồi"
         : msg.text || "[Ảnh]";
 
-      return {
-        _id: msg.userId._id,
-        fullName: msg.userId.fullName,
-        avatarUrl: msg.userId.avatarUrl,
-        online: false,
-        typing: false,
-        newMessage: lastMessageText,
-        unreadCount: initialUnreadCount,
-        messages: [
-          {
-            _id: msg._id,
-            text: msg.text,
-            sender: msg.sender,
-            roomId: msg.roomId,
-            userId: msg.userId,
-            isRead: msg.isRead,
-            isDeleted: msg.isDeleted,
-            createdAt: msg.createdAt,
-            unreadCount: initialUnreadCount,
-            attachments: msg.attachments || [],
-          },
-        ],
-        time: new Date(msg.createdAt ?? Date.now()).toLocaleTimeString(),
-      };
+      const fullName = messageUser.fullName?.trim() || "Ẩn danh";
+
+      return [
+        {
+          _id: userId,
+          fullName,
+          avatarUrl: messageUser.avatarUrl,
+          online: false,
+          typing: false,
+          newMessage: lastMessageText,
+          unreadCount: initialUnreadCount,
+          messages: [
+            {
+              _id: msg._id,
+              text: msg.text,
+              sender: msg.sender,
+              roomId: msg.roomId,
+              userId: { ...messageUser, fullName },
+              isRead: msg.isRead,
+              isDeleted: msg.isDeleted,
+              createdAt: msg.createdAt,
+              unreadCount: initialUnreadCount,
+              attachments: msg.attachments || [],
+            },
+          ],
+          time: new Date(msg.createdAt ?? Date.now()).toLocaleTimeString(),
+        },
+      ];
     });
 
     setUsers(mappedUsers);
@@ -287,9 +377,8 @@ export const ChatPage = () => {
 
     socketRef.current.emit("typing", {
       typing: true,
-      from: USER_ROLE.ADMIN,
       roomId: selectedRoomId,
-      userId: USER_ROLE.ADMIN,
+      userId: selectedUser,
     });
 
     if (typingTimeoutRef.current) {
@@ -298,8 +387,7 @@ export const ChatPage = () => {
 
     typingTimeoutRef.current = setTimeout(() => {
       socketRef.current?.emit("typing", {
-        from: USER_ROLE.ADMIN,
-        userId: USER_ROLE.ADMIN,
+        userId: selectedUser,
         typing: false,
         roomId: selectedRoomId,
       });
@@ -323,21 +411,52 @@ export const ChatPage = () => {
       createdAt: new Date().toISOString(),
     };
 
+    const optimisticMessage: Message = {
+      ...messagePayload,
+      _id: `optimistic-${messagePayload.createdAt}-${Math.random()
+        .toString(36)
+        .slice(2)}`,
+      userId: {
+        _id: selectedUser,
+        fullName: selectedUserData?.fullName || "Ẩn danh",
+        avatarUrl: selectedUserData?.avatarUrl,
+      },
+      isDeleted: false,
+      unreadCount: 0,
+    };
+
+    setUsers((prevUsers) =>
+      prevUsers.map((user) =>
+        user._id === selectedUser
+          ? {
+              ...user,
+              newMessage: getSidebarText(optimisticMessage),
+              messages: [...user.messages, optimisticMessage],
+              time: new Date(messagePayload.createdAt).toLocaleTimeString(),
+            }
+          : user
+      )
+    );
+
     socketRef.current.emit("send-message", messagePayload);
     setNewMessage("");
     socketRef.current.emit("typing", {
       typing: false,
-      from: USER_ROLE.ADMIN,
       roomId: selectedRoomId,
-      userId: USER_ROLE.ADMIN,
+      userId: selectedUser,
     });
   };
 
   return (
-    <div className="h-[calc(100vh-68px)] flex flex-col sm:flex-row p-2 sm:p-4 space-y-2 sm:space-y-0 border bg-white shadow-sm rounded-md">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold tracking-normal">Chat khách hàng</h1>
+      </div>
+      <SupportTicketPanel />
+      <div className="h-[calc(100vh-300px)] min-h-[520px] flex flex-col sm:flex-row p-2 sm:p-4 space-y-2 sm:space-y-0 border bg-white shadow-sm rounded-md overflow-hidden">
       <div
         className={cn(
-          "flex-shrink-0 w-full sm:w-1/3 overflow-auto transition-transform duration-200",
+          "flex-shrink-0 w-full sm:w-1/3 overflow-y-auto overflow-x-hidden transition-transform duration-200",
           selectedUser ? "hidden sm:block" : "block"
         )}
       >
@@ -353,8 +472,8 @@ export const ChatPage = () => {
 
       <div
         className={cn(
-          "flex-1 flex flex-col h-full min-h-0 transition-transform duration-200",
-          selectedUser ? "block" : "hidden sm:flex"
+          "flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden transition-transform duration-200",
+          selectedUser ? "flex" : "hidden sm:flex"
         )}
       >
         {selectedUser && selectedUserData ? (
@@ -368,7 +487,12 @@ export const ChatPage = () => {
               </button>
             </div>
 
-            <ChatHeader user={selectedUserData} />
+            <ChatHeader
+              user={selectedUserData}
+              ticket={selectedTicket}
+              isResolving={isResolvingTicket}
+              onResolve={() => resolveChatTicket(selectedRoomId)}
+            />
 
             <ChatMessages
               setUsers={setUsers}
@@ -376,7 +500,7 @@ export const ChatPage = () => {
               selectedUser={selectedUser}
               selectedRoomId={selectedRoomId}
               typing={selectedUserData?.typing}
-              userName={selectedUserData?.fullName}
+              userName={selectedUserData.fullName || "Ẩn danh"}
               messages={selectedUserData?.messages || []}
             />
 
@@ -394,6 +518,7 @@ export const ChatPage = () => {
             </p>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
