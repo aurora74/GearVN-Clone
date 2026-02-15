@@ -6,7 +6,7 @@ export class Chat {
   @Prop({ required: true, enum: ['CUSTOMER', 'ADMIN'] })
   sender: 'CUSTOMER' | 'ADMIN';
 
-  @Prop({ type: String, default: '' })
+  @Prop({ required: true })
   text: string;
 
   @Prop({ required: true })

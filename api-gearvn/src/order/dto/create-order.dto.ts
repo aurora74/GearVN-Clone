@@ -5,7 +5,6 @@ import {
   IsNumber,
   IsOptional,
   IsNotEmpty,
-  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -23,12 +22,6 @@ class CreateOrderItemDto {
   @IsNumber()
   @IsNotEmpty()
   quantity: number;
-
-  @ApiPropertyOptional()
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  clientFinalPrice?: number;
 }
 
 export class CreateOrderDto {
@@ -51,11 +44,6 @@ export class CreateOrderDto {
   @IsString()
   @IsOptional()
   note?: string;
-
-  @ApiPropertyOptional()
-  @IsString()
-  @IsOptional()
-  voucherCode?: string;
 
   @ApiProperty({
     type: CreateOrderItemDto,

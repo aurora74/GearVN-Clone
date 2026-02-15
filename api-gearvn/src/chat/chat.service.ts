@@ -78,26 +78,13 @@ export class ChatService {
     const supportActor = this.isSupportActor(actor);
     const sender = supportActor ? UserRole.ADMIN : UserRole.CUSTOMER;
     const userId = supportActor ? roomOwnerId : this.getActorId(actor) ?? roomOwnerId;
-    const text = typeof message.text === 'string' ? message.text.trim() : '';
-    const attachments = Array.isArray(message.attachments)
-      ? message.attachments
-          .filter((attachment): attachment is string => typeof attachment === 'string')
-          .map((attachment) => attachment.trim())
-          .filter(Boolean)
-      : [];
 
     if (String(userId) !== String(roomOwnerId)) {
       throw new BadRequestException('Chat room and user do not match');
     }
 
-    if (!text && attachments.length === 0) {
-      throw new BadRequestException('Message text or attachment is required');
-    }
-
     const chat = new this.chatModel({
       ...message,
-      text,
-      attachments,
       sender,
       userId: roomOwnerId,
       roomId: message.roomId,

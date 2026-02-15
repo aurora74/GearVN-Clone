@@ -16,31 +16,13 @@ import {
 import { Order, OrderDocument } from './order.schema';
 
 import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
 import { OrderStatus } from './enums/order-status';
 import { PaymentStatus } from './enums/payment-status';
 import { ProductService } from 'src/product/product.service';
-import { EventService } from 'src/event/event.service';
-import { VoucherService } from 'src/voucher/voucher.service';
-import { isPromotionEligibleProduct } from '../product/helper/promotion-product-eligibility';
 import { ORDER_STATUS, PAYMENT_STATUS } from 'src/config.global';
 
 const ORDER_CANCEL_NOT_ALLOWED = 'ORDER_CANCEL_NOT_ALLOWED';
-const ORDER_STATUS_TRANSITION_NOT_ALLOWED = 'ORDER_STATUS_TRANSITION_NOT_ALLOWED';
-const ORDER_CANCELLATION_REASON_REQUIRED = 'ORDER_CANCELLATION_REASON_REQUIRED';
-const MAX_ORDER_CODE_GENERATION_ATTEMPTS = 5;
-
-const VALID_STAFF_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  [OrderStatus.PROCESSING]: [
-    OrderStatus.SHIPPING,
-    OrderStatus.COMPLETED,
-    OrderStatus.CANCELLED,
-  ],
-  [OrderStatus.SHIPPING]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
-  [OrderStatus.COMPLETED]: [],
-  [OrderStatus.CANCELLED]: [],
-};
 
 type InventoryTransitionTarget = 'RESERVED' | 'COMMITTED' | 'RELEASED';
 type InventoryStatusValue = 'NONE' | 'RESERVED' | 'COMMITTED' | 'RELEASED';
@@ -52,8 +34,6 @@ export class OrderService {
     private readonly orderModel: Model<OrderDocument>,
     private readonly productService: ProductService,
     private readonly auditService: AuditService,
-    private readonly eventService: EventService,
-    private readonly voucherService: VoucherService,
   ) {}
 
   async create(dto: CreateOrderDto, userId: string) {
@@ -83,35 +63,23 @@ export class OrderService {
       );
     }
 
-    const {
-      items,
-      subtotalAmount,
-      productDiscountAmount,
-      promotionAdjustments,
-    } = await this.buildValidatedOrderItems(dto.items);
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const countToday = await this.orderModel.countDocuments({
+      createdAt: {
+        $gte: new Date(today.setHours(0, 0, 0, 0)),
+        $lt: new Date(today.setHours(23, 59, 59, 999)),
+      },
+    });
 
-    const voucherCode = dto.voucherCode?.trim();
-    const voucherReservation = voucherCode
-      ? await this.voucherService.reserveForOrder(voucherCode, subtotalAmount)
-      : null;
-    const voucherDiscountAmount = voucherReservation?.discountAmount ?? 0;
-    const totalAmount = Math.max(0, subtotalAmount - voucherDiscountAmount);
+    const orderCode = `DH${dateStr}-${(countToday + 1)
+      .toString()
+      .padStart(4, '0')}`;
 
-    if (voucherReservation) {
-      promotionAdjustments.push({
-        type: 'voucher',
-        voucherId: voucherReservation.voucherId,
-        voucherCode: voucherReservation.code,
-        code: voucherReservation.code,
-        amount: voucherReservation.discountAmount,
-        description: `Voucher ${voucherReservation.code}`,
-      });
-    }
+    const { items, totalAmount, promotionAdjustments } =
+      await this.buildValidatedOrderItems(dto.items);
 
     if (totalAmount <= 0) {
-      if (voucherReservation?.reservedUsage) {
-        await this.voucherService.restoreReservation(voucherReservation.voucherId);
-      }
       throw this.createCheckoutError(
         'CHECKOUT_TOTAL_CHANGED',
         'Order total changed. Please review your cart and checkout again.',
@@ -120,37 +88,32 @@ export class OrderService {
 
     const orderData: Partial<Order> = {
       userId,
+      orderCode,
       note,
       items,
       phone,
       address,
       fullName,
-      subtotalAmount,
-      productDiscountAmount,
-      voucherDiscountAmount,
-      promotionAdjustments,
-      ...(voucherReservation && { voucherSnapshot: voucherReservation }),
       totalAmount,
       paymentMethod: dto.paymentMethod,
       orderStatus: ORDER_STATUS.PROCESSING,
       paymentStatus: PAYMENT_STATUS.PENDING,
+      // Placeholder seam for Phase 4 promotions without trusting client pricing.
+      ...((promotionAdjustments.length > 0 && {
+        promotionAdjustments,
+      }) as Record<string, unknown>),
     };
 
-    let createdOrder: any;
+    const createdOrder = await new this.orderModel(orderData).save();
+
     try {
-      createdOrder = await this.saveOrderWithUniqueCode(orderData);
       await this.applyInventoryTransition(
         String(createdOrder._id),
         'RESERVED',
         'order:create',
       );
     } catch (error) {
-      if (createdOrder?._id) {
-        await this.orderModel.findByIdAndDelete(createdOrder._id);
-      }
-      if (voucherReservation?.reservedUsage) {
-        await this.voucherService.restoreReservation(voucherReservation.voucherId);
-      }
+      await this.orderModel.findByIdAndDelete(createdOrder._id);
       throw error;
     }
 
@@ -158,84 +121,11 @@ export class OrderService {
     return hydratedOrder ?? createdOrder;
   }
 
-  private async saveOrderWithUniqueCode(orderData: Partial<Order>) {
-    const attemptedOrderCodes = new Set<string>();
-
-    for (let attempt = 0; attempt < MAX_ORDER_CODE_GENERATION_ATTEMPTS; attempt += 1) {
-      const orderCode = await this.generateUniqueOrderCode(new Date(), attemptedOrderCodes);
-      attemptedOrderCodes.add(orderCode);
-
-      try {
-        return await new this.orderModel({ ...orderData, orderCode }).save();
-      } catch (error) {
-        if (this.isDuplicateOrderCodeError(error)) {
-          continue;
-        }
-
-        throw error;
-      }
-    }
-
-    throw new ConflictException({
-      message: 'Order code generation conflict',
-      description: 'Unable to reserve a unique order code. Please try again.',
-      detail: { code: 'ORDER_CODE_CONFLICT' },
-    });
-  }
-
-  private async generateUniqueOrderCode(
-    issuedAt: Date,
-    attemptedOrderCodes: Set<string>,
-  ) {
-    const dateStr = issuedAt.toISOString().slice(0, 10).replace(/-/g, '');
-    const prefix = `DH${dateStr}-`;
-    const latestOrder = (await this.orderModel
-      .findOne({ orderCode: { $regex: `^${prefix}\\d+$` } })
-      .sort({ orderCode: -1 })
-      .select('orderCode')
-      .lean()
-      .exec()) as { orderCode?: string } | null;
-
-    const latestSequence = this.parseOrderCodeSequence(latestOrder?.orderCode);
-    let nextSequence = latestSequence + 1;
-    let orderCode = this.formatOrderCode(prefix, nextSequence);
-
-    while (attemptedOrderCodes.has(orderCode)) {
-      nextSequence += 1;
-      orderCode = this.formatOrderCode(prefix, nextSequence);
-    }
-
-    return orderCode;
-  }
-
-  private parseOrderCodeSequence(orderCode?: string) {
-    const match = orderCode?.match(/-(\d+)$/);
-    return match ? Number(match[1]) : 0;
-  }
-
-  private formatOrderCode(prefix: string, sequence: number) {
-    return `${prefix}${sequence.toString().padStart(4, '0')}`;
-  }
-
-  private isDuplicateOrderCodeError(error: unknown) {
-    const mongoError = error as {
-      code?: number;
-      keyPattern?: Record<string, unknown>;
-      keyValue?: Record<string, unknown>;
-    };
-
-    return (
-      mongoError?.code === 11000 &&
-      (mongoError.keyPattern?.orderCode === 1 || mongoError.keyValue?.orderCode)
-    );
-  }
-
   private createCheckoutError(
     code:
       | 'CHECKOUT_ITEM_NOT_FOUND'
       | 'CHECKOUT_ITEM_UNAVAILABLE'
       | 'CHECKOUT_STOCK_CHANGED'
-      | 'CHECKOUT_PRICE_CHANGED'
       | 'CHECKOUT_TOTAL_CHANGED'
       | 'CHECKOUT_ADDRESS_INVALID',
     description: string,
@@ -289,19 +179,19 @@ export class OrderService {
       const snapshotProduct = this.buildSnapshotProduct(plainItem);
       const mergedProduct = populatedProduct
         ? {
-            ...populatedProduct,
             ...snapshotProduct,
+            ...populatedProduct,
             _id: populatedProduct._id ?? snapshotProduct._id,
-            slug: snapshotProduct.slug ?? populatedProduct.slug,
-            name: snapshotProduct.name ?? populatedProduct.name,
-            images: snapshotProduct.images.length > 0
-              ? snapshotProduct.images
-              : Array.isArray(populatedProduct.images)
+            slug: populatedProduct.slug ?? snapshotProduct.slug,
+            name: populatedProduct.name ?? snapshotProduct.name,
+            images:
+              Array.isArray(populatedProduct.images) &&
+              populatedProduct.images.length > 0
                 ? populatedProduct.images
-                : [],
-            price: snapshotProduct.price ?? populatedProduct.price,
+                : snapshotProduct.images,
+            price: populatedProduct.price ?? snapshotProduct.price,
             discountPrice:
-              snapshotProduct.discountPrice ?? populatedProduct.discountPrice,
+              populatedProduct.discountPrice ?? snapshotProduct.discountPrice,
           }
         : snapshotProduct;
 
@@ -340,28 +230,6 @@ export class OrderService {
     });
   }
 
-  private async restoreVoucherReservationIfEligible(
-    order: Pick<Order, 'orderStatus' | 'paymentStatus' | 'voucherSnapshot'>,
-    orderId: string,
-  ) {
-    const voucherSnapshot = order.voucherSnapshot;
-
-    if (
-      !voucherSnapshot?.reservedUsage ||
-      voucherSnapshot.restoredAt ||
-      order.orderStatus === ORDER_STATUS.COMPLETED ||
-      order.paymentStatus === PAYMENT_STATUS.PAID
-    ) {
-      return;
-    }
-
-    await this.voucherService.restoreReservation(voucherSnapshot.voucherId);
-    await this.orderModel.findByIdAndUpdate(
-      orderId,
-      { $set: { 'voucherSnapshot.restoredAt': new Date() } },
-      { new: true },
-    );
-  }
   private async buildValidatedOrderItems(items: CreateOrderDto['items']) {
     if (!Array.isArray(items) || items.length === 0) {
       throw this.createCheckoutError(
@@ -400,21 +268,7 @@ export class OrderService {
       unitPrice: number;
       finalPrice: number;
       lineTotal: number;
-      eventTag?: string;
-      eventName?: string;
-      originalPrice?: number;
-      promotionStatus?: string;
     }>;
-    const promotionAdjustments: Array<{
-      type: 'flash_sale' | 'voucher';
-      code?: string;
-      eventTag?: string;
-      eventName?: string;
-      voucherId?: string;
-      voucherCode?: string;
-      amount: number;
-      description?: string;
-    }> = [];
 
     for (const item of items) {
       const productId = String(item.productId ?? '').trim();
@@ -479,25 +333,7 @@ export class OrderService {
       }
 
       const unitPrice = Number(product.price ?? 0);
-      const discountPrice = Number(product.discountPrice ?? unitPrice);
-      const promotionEligible = isPromotionEligibleProduct(product);
-      let activeEvent: Record<string, any> | null = null;
-
-      if (product.event) {
-        activeEvent = await this.eventService.findActiveFlashSaleByTag(product.event);
-      }
-
-      let finalPrice = unitPrice;
-      let promotionStatus = product.event ? 'inactive' : 'none';
-      const eventTag = activeEvent?.tag ?? product.event;
-      const eventName = activeEvent?.name;
-
-      if (activeEvent && promotionEligible) {
-        finalPrice = discountPrice;
-        promotionStatus = activeEvent.status ?? 'active';
-      } else if (activeEvent && !promotionEligible) {
-        promotionStatus = 'ineligible';
-      }
+      const finalPrice = Number(product.discountPrice ?? unitPrice);
 
       if (
         !Number.isFinite(unitPrice) ||
@@ -512,31 +348,7 @@ export class OrderService {
         );
       }
 
-      if (
-        item.clientFinalPrice !== undefined &&
-        Number(item.clientFinalPrice) !== finalPrice
-      ) {
-        throw this.createCheckoutError(
-          'CHECKOUT_PRICE_CHANGED',
-          'Promotion pricing changed. Please review your cart.',
-          {
-            items: [
-              {
-                productId,
-                previousFinalPrice: Number(item.clientFinalPrice),
-                currentFinalPrice: finalPrice,
-                promotionStatus,
-                promotionEligible,
-                eventTag,
-                eventName,
-              },
-            ],
-          },
-        );
-      }
-
       const lineTotal = finalPrice * quantity;
-      const productDiscount = Math.max(0, unitPrice - finalPrice) * quantity;
 
       validatedItems.push({
         productId,
@@ -547,37 +359,23 @@ export class OrderService {
         unitPrice,
         finalPrice,
         lineTotal,
-        eventTag,
-        eventName,
-        originalPrice: unitPrice,
-        promotionStatus,
       });
-
-      if (productDiscount > 0) {
-        promotionAdjustments.push({
-          type: 'flash_sale',
-          eventTag,
-          eventName,
-          amount: productDiscount,
-          description: eventName
-            ? `Flash sale ${eventName}`
-            : 'Flash sale discount',
-        });
-      }
     }
 
-    const subtotalAmount = validatedItems.reduce(
+    const totalAmount = validatedItems.reduce(
       (sum, item) => sum + item.lineTotal,
       0,
     );
-    const productDiscountAmount = promotionAdjustments
-      .filter((adjustment) => adjustment.type === 'flash_sale')
-      .reduce((sum, adjustment) => sum + adjustment.amount, 0);
+
+    const promotionAdjustments: Array<{
+      code: string;
+      amount: number;
+      reason: string;
+    }> = [];
 
     return {
       items: validatedItems,
-      subtotalAmount,
-      productDiscountAmount,
+      totalAmount,
       promotionAdjustments,
     };
   }
@@ -1021,19 +819,10 @@ export class OrderService {
     if (paymentMethod) query.paymentMethod = { $in: paymentMethod.split(',') };
 
     if (search) {
-      const normalizedSearch = search.trim().slice(0, 100);
-      if (Types.ObjectId.isValid(normalizedSearch) && normalizedSearch.length === 24) {
-        query._id = new Types.ObjectId(normalizedSearch);
-      } else if (normalizedSearch) {
-        const escapedSearch = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const searchRegex = { $regex: escapedSearch, $options: 'i' };
-        query.$or = [
-          { orderCode: searchRegex },
-          { fullName: searchRegex },
-          { phone: searchRegex },
-          { address: searchRegex },
-          { note: searchRegex },
-        ];
+      if (Types.ObjectId.isValid(search) && search.length === 24) {
+        query._id = new Types.ObjectId(search);
+      } else {
+        query.orderCode = { $regex: search, $options: 'i' };
       }
     }
 
@@ -1068,16 +857,12 @@ export class OrderService {
       .limit(limit)
       .exec();
 
-    const snapshotSafeOrders = data.map((order) =>
-      this.toSnapshotSafeOrder(order as unknown as Record<string, any>),
-    );
-
     return {
       page,
       limit,
       total,
       totalPages: Math.ceil(total / limit),
-      data: snapshotSafeOrders,
+      data,
     };
   }
 
@@ -1125,125 +910,33 @@ export class OrderService {
     return this.toSnapshotSafeOrder(order as unknown as Record<string, any>);
   }
 
-  async updateStatus(
-    id: string,
-    dto: UpdateOrderStatusDto,
-    actor: OwnershipActor | null = null,
-  ) {
-    const orderBeforeUpdate = await this.orderModel.findById(id);
-
-    if (!orderBeforeUpdate) {
-      throw new NotFoundException(`Order with ID ${id} not found`);
+  async updateStatus(id: string, status: OrderStatus) {
+    if (status === OrderStatus.COMPLETED) {
+      await this.applyInventoryTransition(id, 'COMMITTED', 'order:updateStatus');
     }
 
-    const currentStatus = orderBeforeUpdate.orderStatus as OrderStatus;
-    const targetStatus = dto.orderStatus;
-    const allowedTargets = VALID_STAFF_TRANSITIONS[currentStatus] ?? [];
-
-    if (!allowedTargets.includes(targetStatus)) {
-      throw new BadRequestException(ORDER_STATUS_TRANSITION_NOT_ALLOWED);
+    if (status === OrderStatus.CANCELLED) {
+      await this.applyInventoryTransition(id, 'RELEASED', 'order:updateStatus');
     }
 
-    const cancellationReason = dto.cancellationReason?.trim();
-    if (targetStatus === OrderStatus.CANCELLED && !cancellationReason) {
-      throw new BadRequestException(ORDER_CANCELLATION_REASON_REQUIRED);
-    }
+    const updateData: Partial<Order> = { orderStatus: status };
 
-
-    const changedAt = new Date();
-    const actorId = String(actor?.id ?? actor?._id ?? '');
-    const actorRole = actor?.role ? String(actor.role) : undefined;
-    const statusHistoryEntry = {
-      fromStatus: currentStatus,
-      toStatus: targetStatus,
-      changedBy: actorId || undefined,
-      changedByRole: actorRole,
-      reason: cancellationReason,
-      changedAt,
-    };
-    const orderEvent = {
-      type: 'ORDER_STATUS_CHANGED',
-      message: `Order status changed from ${currentStatus} to ${targetStatus}`,
-      actorId: actorId || undefined,
-      actorRole,
-      metadata: {
-        fromStatus: currentStatus,
-        toStatus: targetStatus,
-        ...(cancellationReason && { reason: cancellationReason }),
-      },
-      createdAt: changedAt,
-    };
-
-    const updateData: Record<string, unknown> = { orderStatus: targetStatus };
-
-    if (targetStatus === OrderStatus.COMPLETED) {
+    if (status === OrderStatus.COMPLETED) {
       updateData.paymentStatus = PaymentStatus.PAID;
     }
 
-    if (targetStatus === OrderStatus.CANCELLED) {
+    if (status === OrderStatus.CANCELLED) {
       updateData.paymentStatus = PaymentStatus.CANCELLED;
-      updateData.cancellationReason = cancellationReason;
-      updateData.cancelledBy = actorId || undefined;
-      updateData.cancelledByRole = actorRole;
-      updateData.cancelledAt = changedAt;
     }
 
-    const updatedOrder = await this.orderModel.findOneAndUpdate(
-      { _id: id, orderStatus: currentStatus },
-      {
-        $set: updateData,
-        $push: {
-          statusHistory: statusHistoryEntry,
-          orderEvents: orderEvent,
-        },
-      },
+    const updatedOrder = await this.orderModel.findByIdAndUpdate(
+      id,
+      updateData,
       { new: true },
     );
 
     if (!updatedOrder) {
-      throw new BadRequestException(ORDER_STATUS_TRANSITION_NOT_ALLOWED);
-    }
-
-    try {
-      if (targetStatus === OrderStatus.COMPLETED) {
-        await this.applyInventoryTransition(id, 'COMMITTED', 'order:updateStatus');
-      }
-
-      if (targetStatus === OrderStatus.CANCELLED) {
-        await this.applyInventoryTransition(id, 'RELEASED', 'order:updateStatus');
-        await this.restoreVoucherReservationIfEligible(orderBeforeUpdate, id);
-      }
-    } catch (error) {
-      const rollbackSet: Record<string, unknown> = {
-        orderStatus: currentStatus,
-        paymentStatus: orderBeforeUpdate.paymentStatus,
-      };
-      const rollbackUnset: Record<string, number> = {};
-
-      [
-        'cancellationReason',
-        'cancelledBy',
-        'cancelledByRole',
-        'cancelledAt',
-      ].forEach((field) => {
-        const value = (orderBeforeUpdate as unknown as Record<string, unknown>)[field];
-        if (value === undefined || value === null) {
-          rollbackUnset[field] = 1;
-        } else {
-          rollbackSet[field] = value;
-        }
-      });
-
-      await this.orderModel.findByIdAndUpdate(id, {
-        $set: rollbackSet,
-        ...(Object.keys(rollbackUnset).length ? { $unset: rollbackUnset } : {}),
-        $pull: {
-          statusHistory: { changedAt },
-          orderEvents: { type: 'ORDER_STATUS_CHANGED', createdAt: changedAt },
-        },
-      });
-
-      throw error;
+      throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
     return updatedOrder;
@@ -1284,7 +977,6 @@ export class OrderService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    await this.restoreVoucherReservationIfEligible(order, id);
     await this.auditService.record({
       actorId: String(actor?.id ?? actor?._id ?? ''),
       actorRole: actor?.role,
@@ -1304,83 +996,6 @@ export class OrderService {
     return this.toSnapshotSafeOrder(
       cancelledOrder as unknown as Record<string, any>,
     );
-  }
-
-  async getCompletedRevenueByPaymentMethod(startDate: Date, endDate: Date) {
-    const result = await this.orderModel.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startDate, $lte: endDate },
-          orderStatus: OrderStatus.COMPLETED,
-        },
-      },
-      {
-        $group: {
-          _id: { $ifNull: ['$paymentMethod', 'UNKNOWN'] },
-          revenue: { $sum: '$totalAmount' },
-          orders: { $sum: 1 },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          paymentMethod: '$_id',
-          revenue: 1,
-          orders: 1,
-        },
-      },
-      { $sort: { paymentMethod: 1 } },
-    ]);
-
-    return result;
-  }
-
-  async getOrderPipelineSummary(startDate: Date, endDate: Date) {
-    const [summary] = await this.orderModel.aggregate<{
-      processing: number;
-      shipping: number;
-      paymentPending: number;
-      cancelled: number;
-    }>([
-      {
-        $match: {
-          createdAt: { $gte: startDate, $lte: endDate },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          processing: {
-            $sum: { $cond: [{ $eq: ['$orderStatus', OrderStatus.PROCESSING] }, 1, 0] },
-          },
-          shipping: {
-            $sum: { $cond: [{ $eq: ['$orderStatus', OrderStatus.SHIPPING] }, 1, 0] },
-          },
-          paymentPending: {
-            $sum: { $cond: [{ $eq: ['$paymentStatus', PaymentStatus.PENDING] }, 1, 0] },
-          },
-          cancelled: {
-            $sum: { $cond: [{ $eq: ['$orderStatus', OrderStatus.CANCELLED] }, 1, 0] },
-          },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          processing: 1,
-          shipping: 1,
-          paymentPending: 1,
-          cancelled: 1,
-        },
-      },
-    ]);
-
-    return {
-      processing: summary?.processing ?? 0,
-      shipping: summary?.shipping ?? 0,
-      paymentPending: summary?.paymentPending ?? 0,
-      cancelled: summary?.cancelled ?? 0,
-    };
   }
 
   async getTotalRevenue(startDate: Date, endDate: Date): Promise<number> {
@@ -1437,41 +1052,9 @@ export class OrderService {
     const currentCount = await this.getOrdersCount(currentStart, currentEnd);
     const previousCount = await this.getOrdersCount(previousStart, previousEnd);
 
-    if (previousCount === 0) return currentCount > 0 ? 1 : 0;
+    if (previousCount === 0) return 1;
 
     return (currentCount - previousCount) / previousCount;
-  }
-
-  async getTopSellingProducts(startDate: Date, endDate: Date, limit = 5) {
-    return this.orderModel.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startDate, $lte: endDate },
-          orderStatus: OrderStatus.COMPLETED,
-        },
-      },
-      { $unwind: '$items' },
-      {
-        $group: {
-          _id: '$items.productId',
-          name: { $first: '$items.productName' },
-          image: { $first: '$items.productImage' },
-          soldQuantity: { $sum: '$items.quantity' },
-        },
-      },
-      { $sort: { soldQuantity: -1 } },
-      { $limit: limit },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          images: {
-            $cond: [{ $ifNull: ['$image', false] }, ['$image'], []],
-          },
-          soldQuantity: 1,
-        },
-      },
-    ]);
   }
 
   async getSalesAndOrdersByDate(startDate: Date, endDate: Date) {
@@ -1493,15 +1076,7 @@ export class OrderService {
           _id: {
             $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
           },
-          sales: {
-            $sum: {
-              $cond: [
-                { $eq: ['$orderStatus', OrderStatus.COMPLETED] },
-                '$totalAmount',
-                0,
-              ],
-            },
-          },
+          sales: { $sum: '$totalAmount' },
           orders: { $sum: 1 },
         },
       },

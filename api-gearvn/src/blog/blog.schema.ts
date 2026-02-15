@@ -19,6 +19,15 @@ export class Blog {
 
   @Prop({ required: true })
   thumbnail: string;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  isPublished: boolean;
+
+  @Prop({ type: Date })
+  publishedAt?: Date;
+
+  @Prop({ type: Date })
+  unpublishedAt?: Date;
 }
 
 export const BlogSchema = SchemaFactory.createForClass(Blog);

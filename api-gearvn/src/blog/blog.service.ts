@@ -10,7 +10,7 @@ import { CreateBlogDto } from './dto/create-blog.dto';
 import { UpdateBlogDto } from './dto/update-blog.dto';
 
 import { Blog, BlogDocument } from './blog.schema';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class BlogService {
@@ -28,6 +28,9 @@ export class BlogService {
     const blog = new this.blogModel({
       ...dto,
       thumbnail: uploaded.secure_url,
+      isPublished: false,
+      publishedAt: undefined,
+      unpublishedAt: undefined,
     });
 
     return blog.save();
@@ -39,21 +42,33 @@ export class BlogService {
     search,
     sortBy,
     fields,
+    publicOnly = true,
   }: {
     page: number;
     limit: number;
     search?: string;
     sortBy?: string;
     fields?: string;
+    publicOnly?: boolean;
   }) {
     const filter: any = {};
     const skip = (page - 1) * limit;
 
+    if (publicOnly) {
+      filter.$or = [{ isPublished: true }, { isPublished: { $exists: false } }];
+    }
+
     if (search) {
-      filter.$or = [
+      const searchFilter = [
         { title: { $regex: search, $options: 'i' } },
         { summary: { $regex: search, $options: 'i' } },
       ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchFilter }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchFilter;
+      }
     }
 
     let mongooseQuery: Query<BlogDocument[], BlogDocument> =
@@ -105,7 +120,10 @@ export class BlogService {
       throw new NotFoundException(`Blog with id "${id}" not found`);
     }
 
-    const filter: any = { _id: { $ne: id } };
+    const filter: any = {
+      _id: { $ne: id },
+      $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
+    };
 
     if ((blog as any).category) {
       filter.category = (blog as any).category;
@@ -159,12 +177,32 @@ export class BlogService {
     return blog;
   }
 
-  async findBySlug(slug: string): Promise<Blog> {
+  async findBySlug(slug: string, options: { publicOnly?: boolean } = {}): Promise<Blog> {
     const blog = await this.blogModel.findOne({ slug });
     if (!blog) {
       throw new BadRequestException(`Blog with slug "${slug}" not found`);
     }
 
+    if (options.publicOnly !== false && blog.isPublished === false) {
+      throw new BadRequestException(`Blog with slug "${slug}" not found`);
+    }
+
+    return blog;
+  }
+
+  async setPublished(id: string, isPublished: boolean) {
+    const blog = await this.blogModel.findById(id);
+    if (!blog) throw new NotFoundException('Blog not found');
+
+    blog.isPublished = isPublished;
+    if (isPublished) {
+      blog.publishedAt = blog.publishedAt ?? new Date();
+      blog.unpublishedAt = undefined;
+    } else {
+      blog.unpublishedAt = new Date();
+    }
+
+    await blog.save();
     return blog;
   }
 
