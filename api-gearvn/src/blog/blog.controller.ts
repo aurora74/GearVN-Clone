@@ -3,6 +3,7 @@ import {
   Body,
   Post,
   Put,
+  Patch,
   Param,
   Query,
   Delete,
@@ -24,10 +25,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { CreateBlogDto } from './dto/create-blog.dto';
 import { UpdateBlogDto } from './dto/update-blog.dto';
 
-import { Permissions } from 'src/auth/decorators/permissions.decorator';
-import { JwtGuard } from 'src/auth/guards/jwt.guard';
-import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
-import { Permission } from 'src/auth/policy/permissions';
+import { Permissions } from '../auth/decorators/permissions.decorator';
+import { JwtGuard } from '../auth/guards/jwt.guard';
+import { PermissionsGuard } from '../auth/guards/permissions.guard';
+import { Permission } from '../auth/policy/permissions';
 
 import { BlogService } from './blog.service';
 
@@ -91,6 +92,33 @@ export class BlogController {
       search,
       sortBy,
       fields,
+      publicOnly: true,
+    });
+  }
+
+  @Get('manage')
+  @ApiBearerAuth()
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'fields', required: false, type: String })
+  async findAllForManage(
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('fields') fields?: string,
+  ) {
+    return this.blogService.findAll({
+      page,
+      limit,
+      search,
+      sortBy,
+      fields,
+      publicOnly: false,
     });
   }
 
@@ -128,16 +156,37 @@ export class BlogController {
     });
   }
 
+  @Get('slug/:slug')
+  @ApiParam({ name: 'slug', required: true })
+  async findBySlug(@Param('slug') slug: string) {
+    return this.blogService.findBySlug(slug);
+  }
+
   @Get(':id')
+  @ApiBearerAuth()
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', required: true })
   async findOne(@Param('id') id: string) {
     return this.blogService.findOne(id);
   }
 
-  @Get('slug/:slug')
-  @ApiParam({ name: 'slug', required: true })
-  async findBySlug(@Param('slug') slug: string) {
-    return this.blogService.findBySlug(slug);
+  @Patch(':id/publish')
+  @ApiBearerAuth()
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiParam({ name: 'id', required: true })
+  async publish(@Param('id') id: string) {
+    return this.blogService.setPublished(id, true);
+  }
+
+  @Patch(':id/unpublish')
+  @ApiBearerAuth()
+  @Permissions(Permission.CONTENT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiParam({ name: 'id', required: true })
+  async unpublish(@Param('id') id: string) {
+    return this.blogService.setPublished(id, false);
   }
 
   @Put(':id')
@@ -169,7 +218,7 @@ export class BlogController {
 
   @Delete(':id')
   @ApiBearerAuth()
-@Permissions(Permission.CONTENT_MANAGE)
+  @Permissions(Permission.CONTENT_MANAGE)
   @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', required: true })
   async remove(@Param('id') id: string) {

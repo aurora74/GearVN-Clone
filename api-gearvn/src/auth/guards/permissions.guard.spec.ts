@@ -1,7 +1,6 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import { ANY_PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { UserRole } from '../enums/user-role.enum';
 import { Permission } from '../policy/permissions';
 import { PermissionsGuard } from './permissions.guard';
@@ -33,7 +32,9 @@ describe('PermissionsGuard', () => {
   });
 
   it('rejects permission metadata when authenticated user is missing', () => {
-    reflector.getAllAndOverride.mockReturnValue([Permission.CATALOG_MANAGE]);
+    reflector.getAllAndOverride.mockReturnValue([
+      Permission.CATALOG_MANAGE,
+    ]);
 
     expect(() => guard.canActivate(createContext())).toThrow(
       'Missing authenticated user role',
@@ -47,9 +48,7 @@ describe('PermissionsGuard', () => {
     ]);
 
     expect(
-      guard.canActivate(
-        createContext({ role: UserRole.PRODUCT_MARKETING_STAFF }),
-      ),
+      guard.canActivate(createContext({ role: UserRole.PRODUCT_MARKETING_STAFF })),
     ).toBe(false);
   });
 
@@ -62,19 +61,5 @@ describe('PermissionsGuard', () => {
     expect(guard.canActivate(createContext({ role: UserRole.MANAGER }))).toBe(
       true,
     );
-  });
-
-  it('allows a role with any configured alternate permission', () => {
-    reflector.getAllAndOverride.mockImplementation((key: string) =>
-      key === ANY_PERMISSIONS_KEY
-        ? [Permission.CATALOG_MANAGE, Permission.INVENTORY_MANAGE]
-        : undefined,
-    );
-
-    expect(
-      guard.canActivate(
-        createContext({ role: UserRole.SALES_OPERATIONS_STAFF }),
-      ),
-    ).toBe(true);
   });
 });

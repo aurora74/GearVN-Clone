@@ -1,3 +1,12 @@
+export const USER_ROLE = {
+  ADMIN: 'ADMIN',
+  MANAGER: 'MANAGER',
+  PRODUCT_MARKETING_STAFF: 'PRODUCT_MARKETING_STAFF',
+  SALES_OPERATIONS_STAFF: 'SALES_OPERATIONS_STAFF',
+  CSR: 'CSR',
+  CUSTOMER: 'CUSTOMER',
+} as const;
+
 export const ORDER_STATUS = {
   PROCESSING: 'PROCESSING',
   SHIPPING: 'SHIPPING',
@@ -20,4 +29,15 @@ export const ACCOUNT_STATUS = {
 export const PAYMENT_METHOD = {
   COD: 'COD',
   VNPAY: 'VNPAY',
+} as const;
+
+export const SUPPORT_TICKET_STATUS = {
+  NEW: 'new',
+  PROCESSING: 'processing',
+  RESOLVED: 'resolved',
+} as const;
+
+export const SUPPORT_TICKET_SOURCE = {
+  PRODUCT_QNA: 'product_qna',
+  CHAT: 'chat',
 } as const;

@@ -6,14 +6,10 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import {
-  ANY_PERMISSIONS_KEY,
-  PERMISSIONS_KEY,
-} from '../decorators/permissions.decorator';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { UserRole } from '../enums/user-role.enum';
 import {
   Permission,
-  roleHasAnyPermission,
   roleHasEveryPermission,
 } from '../policy/permissions';
 
@@ -26,11 +22,8 @@ export class PermissionsGuard implements CanActivate {
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
-    const requiredAnyPermissions = this.reflector.getAllAndOverride<
-      Permission[]
-    >(ANY_PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
 
-    if (!requiredPermissions?.length && !requiredAnyPermissions?.length) {
+    if (!requiredPermissions?.length) {
       return true;
     }
 
@@ -40,14 +33,6 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Missing authenticated user role');
     }
 
-    const role = user.role as UserRole;
-    const satisfiesEvery =
-      !requiredPermissions?.length ||
-      roleHasEveryPermission(role, requiredPermissions);
-    const satisfiesAny =
-      !requiredAnyPermissions?.length ||
-      roleHasAnyPermission(role, requiredAnyPermissions);
-
-    return satisfiesEvery && satisfiesAny;
+    return roleHasEveryPermission(user.role as UserRole, requiredPermissions);
   }
 }

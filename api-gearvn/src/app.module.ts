@@ -14,7 +14,12 @@ import { ProductModule } from './product/product.module';
 import { PaymentModule } from './payment/payment.module';
 import { CategoryModule } from './category/category.module';
 import { DashboardModule } from './dashboard/dashboard.module';
-
+import { AuditModule } from './audit/audit.module';
+import { SystemConfigModule } from './system-config/system-config.module';
+import { SupportTicketModule } from './support-ticket/support-ticket.module';
+import { ProductQuestionModule } from './product-question/product-question.module';
+import { BlogCommentModule } from './blog-comment/blog-comment.module';
+import { ModerationModule } from './moderation/moderation.module';
 @Module({
   imports: [
     ChatModule,
@@ -27,6 +32,12 @@ import { DashboardModule } from './dashboard/dashboard.module';
     ProductModule,
     CategoryModule,
     DashboardModule,
+    AuditModule,
+    SystemConfigModule,
+    SupportTicketModule,
+    ProductQuestionModule,
+    BlogCommentModule,
+    ModerationModule,
     ConfigModule.forRoot({
       isGlobal: true,
       expandVariables: true,
