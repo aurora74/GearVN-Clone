@@ -1,5 +1,7 @@
+import { UseBlogsParams } from "@/types/blog";
 import { UseOrdersParams } from "@/types/order";
 import { UseProductsParams, UseRelatedProductsParams } from "@/types/product";
+import { SupportTicketListParams } from "@/types/engagement";
 
 export const queryKeys = {
   user: {
@@ -16,7 +18,24 @@ export const queryKeys = {
       search?: string;
       sortBy?: string;
     }) => ["users", "list", page, limit, search, sortBy],
+    staff: ({
+      page = 1,
+      limit = 20,
+      search = "",
+      sortBy = "",
+    }: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      sortBy?: string;
+    }) => ["users", "staff", page, limit, search, sortBy],
     detail: (id: string) => ["users", "detail", id],
+  },
+
+  systemConfig: {
+    root: ["system-config"],
+    list: ["system-config", "list"],
+    detail: (key: string) => ["system-config", "detail", key],
   },
 
   product: {
@@ -56,14 +75,19 @@ export const queryKeys = {
       limit = 10,
       search = "",
       sortBy = "",
-    }: {
-      page?: number;
-      limit?: number;
-      search?: string;
-      sortBy?: string;
-    }) => ["blogs", "list", page, limit, search, sortBy],
+      includeUnpublished = false,
+    }: UseBlogsParams) => [
+      "blogs",
+      "list",
+      page,
+      limit,
+      search,
+      sortBy,
+      includeUnpublished,
+    ],
     detail: (slug: string) => ["blogs", "detail", slug],
     related: (blogId: string) => ["blogs", "related", blogId],
+    comments: (blogIdOrSlug: string) => ["blogs", "comments", blogIdOrSlug],
   },
 
   order: {
@@ -189,5 +213,22 @@ export const queryKeys = {
       search?: string;
       sortBy?: string;
     } = {}) => ["chats", "byRoom", roomId, page, limit, search, sortBy],
+  },
+
+  productQuestion: {
+    root: ["product-questions"],
+    byProduct: (productId: string) => ["product-questions", "product", productId],
+  },
+
+  supportTicket: {
+    root: ["support-tickets"],
+    list: ({ status = undefined, page = 1, limit = 20 }: SupportTicketListParams = {}) => [
+      "support-tickets",
+      "list",
+      status ?? "",
+      page,
+      limit,
+    ],
+    detail: (ticketId: string) => ["support-tickets", "detail", ticketId],
   },
 };

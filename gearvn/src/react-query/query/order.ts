@@ -5,6 +5,12 @@ import { queryKeys } from "../query-keys";
 import { PaginatedResponse } from "@/types/global";
 import { UseOrdersParams, Order } from "@/types/order";
 
+const parseOrderResponse = async (response: Response) => {
+  const data = await response.json();
+  if (!response.ok) throw data;
+  return data.result;
+};
+
 export const useOrder = (orderId: string) =>
   useQuery<Order>({
     queryKey: queryKeys.order.detail(orderId),
@@ -14,8 +20,7 @@ export const useOrder = (orderId: string) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseOrderResponse(response);
     },
   });
 
@@ -30,8 +35,7 @@ export const useOrderByCode = (orderCode: string) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseOrderResponse(response);
     },
   });
 
@@ -50,8 +54,7 @@ export const useMyOrders = (params: UseOrdersParams = { page: 1, limit: 10 }) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseOrderResponse(response);
     },
   });
 
@@ -69,7 +72,6 @@ export const useOrders = (params: UseOrdersParams = {}) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseOrderResponse(response);
     },
   });

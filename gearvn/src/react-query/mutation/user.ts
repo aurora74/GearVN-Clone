@@ -1,9 +1,73 @@
 import { queryKeys } from "@/react-query/query-keys";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { CreateUserPayload, EditUserPayload } from "@/types/user";
+import {
+  CreateUserPayload,
+  EditUserPayload,
+  UserRole,
+} from "@/types/user";
 
+import { getCsrfHeaders } from "@/utils/api/csrf";
 import { toastError, toastSuccess } from "@/components/ui/toaster";
+
+type GovernanceMutationOptions = {
+  showToast?: boolean;
+  onSuccessCallback?: () => void;
+};
+
+type StaffPayload = CreateUserPayload & {
+  role: Exclude<UserRole, "ADMIN" | "CUSTOMER" | "MANAGER">;
+};
+
+type UpdateStaffPayload = {
+  id: string;
+  fullName?: string;
+  phone?: string;
+  address?: string;
+  role?: StaffPayload["role"];
+};
+
+type AccountStatusPayload = {
+  userId: string;
+  status: string;
+  reason: string;
+};
+
+type BanAccountPayload = {
+  userId: string;
+  reason: string;
+};
+
+type DeleteAccountPayload = {
+  userId: string;
+  reason: string;
+};
+
+export type UpdateSystemConfigPayload = {
+  key: string;
+  value: unknown;
+  description?: string;
+  reason: string;
+};
+
+const readResponse = async (res: Response) => {
+  const response = await res.json();
+  if (!res.ok) throw response;
+  return response;
+};
+
+const handleSuccess = (
+  data: any,
+  onSuccessCallback?: () => void,
+  showToast = true
+) => {
+  if (showToast) toastSuccess(data.message, data.description);
+  onSuccessCallback?.();
+};
+
+const handleError = (err: any) => {
+  toastError(err?.message, err?.description);
+};
 
 export const useCreateUser = (onSuccessCallback?: () => void) => {
   const queryClient = useQueryClient();
@@ -12,25 +76,79 @@ export const useCreateUser = (onSuccessCallback?: () => void) => {
     mutationFn: async (data: CreateUserPayload) => {
       const res = await fetch("/api/users", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify(data),
       });
 
-      const response = await res.json();
-      if (!res.ok) throw response;
-
-      return response;
+      return readResponse(res);
     },
 
     onSuccess: (data) => {
-      toastSuccess(data.message, data.description);
+      handleSuccess(data, onSuccessCallback);
       queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
-      onSuccessCallback?.();
     },
 
-    onError: (err: any) => {
-      toastError(err?.message, err?.description);
+    onError: handleError,
+  });
+};
+
+export const useCreateManager = (
+  onSuccessCallback?: () => void,
+  options: GovernanceMutationOptions = {}
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: CreateUserPayload) => {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ ...data, role: "MANAGER" }),
+      });
+
+      return readResponse(res);
     },
+
+    onSuccess: (data) => {
+      handleSuccess(
+        data,
+        options.onSuccessCallback ?? onSuccessCallback,
+        options.showToast
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
+    },
+
+    onError: handleError,
+  });
+};
+
+export const useCreateStaff = (
+  onSuccessCallback?: () => void,
+  options: GovernanceMutationOptions = {}
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: StaffPayload) => {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify(data),
+      });
+
+      return readResponse(res);
+    },
+
+    onSuccess: (data) => {
+      handleSuccess(
+        data,
+        options.onSuccessCallback ?? onSuccessCallback,
+        options.showToast
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
+    },
+
+    onError: handleError,
   });
 };
 
@@ -52,24 +170,49 @@ export const useEditUser = (onSuccessCallback?: () => void) => {
 
       const res = await fetch(`/api/users/${data.id}`, {
         method: "PUT",
+        headers: getCsrfHeaders(),
         body: formData,
       });
 
-      const response = await res.json();
-      if (!res.ok) throw response;
-
-      return response;
+      return readResponse(res);
     },
 
     onSuccess: (data) => {
-      toastSuccess(data.message, data.description);
+      handleSuccess(data, onSuccessCallback);
       queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
-      onSuccessCallback?.();
     },
 
-    onError: (err: any) => {
-      toastError(err.message, err.description);
+    onError: handleError,
+  });
+};
+
+export const useUpdateStaff = (
+  onSuccessCallback?: () => void,
+  options: GovernanceMutationOptions = {}
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateStaffPayload) => {
+      const res = await fetch(`/api/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify(data),
+      });
+
+      return readResponse(res);
     },
+
+    onSuccess: (data) => {
+      handleSuccess(
+        data,
+        options.onSuccessCallback ?? onSuccessCallback,
+        options.showToast
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
+    },
+
+    onError: handleError,
   });
 };
 
@@ -80,23 +223,48 @@ export const useDeleteUser = (onSuccessCallback?: () => void) => {
     mutationFn: async (userId: string) => {
       const res = await fetch(`/api/users/${userId}`, {
         method: "DELETE",
+        headers: getCsrfHeaders(),
       });
 
-      const response = await res.json();
-      if (!res.ok) throw response;
-
-      return response;
+      return readResponse(res);
     },
 
     onSuccess: (data) => {
-      toastSuccess(data.message, data.description);
+      handleSuccess(data, onSuccessCallback);
       queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
-      onSuccessCallback?.();
     },
 
-    onError: (err: any) => {
-      toastError(err?.message, err?.description);
+    onError: handleError,
+  });
+};
+
+export const useDeleteAccount = (
+  onSuccessCallback?: () => void,
+  options: GovernanceMutationOptions = {}
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ userId, reason }: DeleteAccountPayload) => {
+      const res = await fetch(`/api/users/${userId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ reason }),
+      });
+
+      return readResponse(res);
     },
+
+    onSuccess: (data) => {
+      handleSuccess(
+        data,
+        options.onSuccessCallback ?? onSuccessCallback,
+        options.showToast
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
+    },
+
+    onError: handleError,
   });
 };
 
@@ -104,29 +272,81 @@ export const useBanUser = (onSuccessCallback?: () => void) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (userId: string) => {
+    mutationFn: async ({ userId, reason }: BanAccountPayload) => {
       const res = await fetch(`/api/users/status/${userId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ status: "BANNED" }),
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ status: "BANNED", reason }),
       });
 
-      const response = await res.json();
-      if (!res.ok) throw response;
-
-      return response;
+      return readResponse(res);
     },
 
     onSuccess: (data) => {
-      toastSuccess(data.message, data.description);
+      handleSuccess(data, onSuccessCallback);
       queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
-      onSuccessCallback?.();
     },
 
-    onError: (err: any) => {
-      toastError(err?.message, err?.description);
+    onError: handleError,
+  });
+};
+
+export const useUpdateAccountStatus = (
+  onSuccessCallback?: () => void,
+  options: GovernanceMutationOptions = {}
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ userId, status, reason }: AccountStatusPayload) => {
+      const res = await fetch(`/api/users/status/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ status, reason }),
+      });
+
+      return readResponse(res);
     },
+
+    onSuccess: (data) => {
+      handleSuccess(
+        data,
+        options.onSuccessCallback ?? onSuccessCallback,
+        options.showToast
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.root });
+    },
+
+    onError: handleError,
+  });
+};
+
+export const useUpdateSystemConfig = (
+  onSuccessCallback?: () => void,
+  options: GovernanceMutationOptions = {}
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ key, ...data }: UpdateSystemConfigPayload) => {
+      const res = await fetch(`/api/system-config/${encodeURIComponent(key)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify(data),
+      });
+
+      return readResponse(res);
+    },
+
+    onSuccess: (data) => {
+      handleSuccess(
+        data,
+        options.onSuccessCallback ?? onSuccessCallback,
+        options.showToast
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.systemConfig.root });
+    },
+
+    onError: handleError,
   });
 };

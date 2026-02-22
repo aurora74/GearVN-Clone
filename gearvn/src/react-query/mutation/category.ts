@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { queryKeys } from "../query-keys";
 import { CreateCategoryPayload, UpdateCategoryPayload } from "@/types/category";
-
+import { getCsrfHeaders } from "@/utils/api/csrf";
 import { toastError, toastSuccess } from "@/components/ui/toaster";
 
 export const useCreateCategory = (onSuccessCallback?: () => void) => {
@@ -18,6 +18,7 @@ export const useCreateCategory = (onSuccessCallback?: () => void) => {
 
       const res = await fetch("/api/categories", {
         method: "POST",
+        headers: getCsrfHeaders(),
         body: formData,
       });
       const response = await res.json();
@@ -52,6 +53,7 @@ export const useUpdateCategory = (onSuccessCallback?: () => void) => {
 
       const res = await fetch(`/api/categories/${data.id}`, {
         method: "PUT",
+        headers: getCsrfHeaders(),
         body: formData,
       });
       const response = await res.json();
@@ -78,7 +80,10 @@ export const useDeleteCategory = (onSuccessCallback?: () => void) => {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/categories/${id}`, {
+        method: "DELETE",
+        headers: getCsrfHeaders(),
+      });
       const response = await res.json();
       if (!res.ok) throw response;
       return response;

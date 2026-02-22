@@ -19,6 +19,8 @@ type CartState = {
   increaseQuantity: (id: string) => void;
   decreaseQuantity: (id: string) => void;
 
+  setAvailabilityWarnings: (warnings: Record<string, string>) => void;
+  clearAvailabilityWarnings: () => void;
   clearJustAdded: () => void;
 };
 
@@ -37,14 +39,18 @@ export const useCartStore = create<CartState>()(
           set({
             items: get().items.map((i) =>
               i.id === item.id
-                ? { ...i, quantity: i.quantity + item.quantity }
+                ? {
+                    ...i,
+                    quantity: i.quantity + item.quantity,
+                    availabilityWarning: undefined,
+                  }
                 : i
             ),
             justAddedItem: false,
           });
         } else {
           set({
-            items: [...get().items, item],
+            items: [...get().items, { ...item, availabilityWarning: undefined }],
             justAddedItem: false,
           });
         }
@@ -65,7 +71,7 @@ export const useCartStore = create<CartState>()(
         } else {
           set({
             items: get().items.map((i) =>
-              i.id === id ? { ...i, quantity } : i
+              i.id === id ? { ...i, quantity, availabilityWarning: undefined } : i
             ),
           });
         }
@@ -79,6 +85,24 @@ export const useCartStore = create<CartState>()(
       decreaseQuantity: (id) => {
         const item = get().items.find((i) => i.id === id);
         if (item) get().updateQuantity(id, item.quantity - 1);
+      },
+
+      setAvailabilityWarnings: (warnings) => {
+        set({
+          items: get().items.map((item) => ({
+            ...item,
+            availabilityWarning: warnings[item.id],
+          })),
+        });
+      },
+
+      clearAvailabilityWarnings: () => {
+        set({
+          items: get().items.map((item) => ({
+            ...item,
+            availabilityWarning: undefined,
+          })),
+        });
       },
 
       clearJustAdded: () => set({ justAddedItem: false }),

@@ -6,22 +6,46 @@ import {
   UpdateOrderStatusPayload,
 } from "@/types/order";
 import { queryKeys } from "../query-keys";
+import { getCsrfHeaders } from "@/utils/api/csrf";
 
 import { toastError, toastSuccess } from "@/components/ui/toaster";
 
-export const useCreateOrder = (onSuccessCallback?: (data: Order) => void) => {
+type OrderMutationError = {
+  status?: number;
+  message?: string;
+  description?: string;
+  detail?: {
+    code?: string;
+    items?: Array<Record<string, unknown>>;
+    [key: string]: unknown;
+  };
+};
+
+export const useCreateOrder = (
+  onSuccessCallback?: (data: Order) => void,
+  onErrorCallback?: (error: OrderMutationError) => void,
+) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (payload: CreateOrderPayload) => {
+      const requestBody: CreateOrderPayload = {
+        fullName: payload.fullName,
+        phone: payload.phone,
+        address: payload.address,
+        note: payload.note,
+        items: payload.items,
+        paymentMethod: payload.paymentMethod,
+      };
+
       const response = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
-      if (!response.ok) throw response;
+      if (!response.ok) throw data;
 
       return data;
     },
@@ -32,8 +56,12 @@ export const useCreateOrder = (onSuccessCallback?: (data: Order) => void) => {
       onSuccessCallback?.(data.result);
     },
 
-    onError: (err: any) => {
-      toastError(err.message, err.description);
+    onError: (err: OrderMutationError) => {
+      toastError(
+        err.message ?? "Đã có lỗi xảy ra",
+        err.description ?? "Vui lòng thử lại sau.",
+      );
+      onErrorCallback?.(err);
     },
   });
 };
@@ -45,12 +73,12 @@ export const useUpdateOrderStatus = (onSuccessCallback?: () => void) => {
     mutationFn: async ({ orderId, status }: UpdateOrderStatusPayload) => {
       const response = await fetch(`/api/orders/status/${orderId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify({ orderStatus: status }),
       });
 
       const data = await response.json();
-      if (!response.ok) throw response;
+      if (!response.ok) throw data;
 
       return data;
     },
@@ -61,8 +89,11 @@ export const useUpdateOrderStatus = (onSuccessCallback?: () => void) => {
       onSuccessCallback?.();
     },
 
-    onError: (err: any) => {
-      toastError(err.message, err.description);
+    onError: (err: OrderMutationError) => {
+      toastError(
+        err.message ?? "Đã có lỗi xảy ra",
+        err.description ?? "Vui lòng thử lại sau.",
+      );
     },
   });
 };
@@ -74,11 +105,11 @@ export const useCancelOrder = (onSuccessCallback?: () => void) => {
     mutationFn: async ({ orderId }: { orderId: string }) => {
       const response = await fetch(`/api/orders/cancel/${orderId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getCsrfHeaders(),
       });
 
       const data = await response.json();
-      if (!response.ok) throw response;
+      if (!response.ok) throw data;
 
       return data;
     },
@@ -89,8 +120,11 @@ export const useCancelOrder = (onSuccessCallback?: () => void) => {
       onSuccessCallback?.();
     },
 
-    onError: (err: any) => {
-      toastError(err.message, err.description);
+    onError: (err: OrderMutationError) => {
+      toastError(
+        err.message ?? "Đã có lỗi xảy ra",
+        err.description ?? "Vui lòng thử lại sau.",
+      );
     },
   });
 };

@@ -5,6 +5,9 @@ export type BlogType = {
   summary: string;
   description: string;
   thumbnail: string;
+  isPublished?: boolean;
+  publishedAt?: Date | string;
+  unpublishedAt?: Date | string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -15,6 +18,7 @@ export type UseBlogsParams = {
   search?: string;
   sortBy?: string;
   fields?: string;
+  includeUnpublished?: boolean;
 };
 
 export type CreateBlogPayload = {
@@ -31,4 +35,25 @@ export type UpdateBlogPayload = {
   summary: string;
   description: string;
   thumbnail?: File | string;
+};
+
+export type BlogCommentAuthor = {
+  displayName: string;
+  avatarUrl?: string;
+};
+
+export type BlogComment = {
+  id: string;
+  blogId: string;
+  authorId: string;
+  author: BlogCommentAuthor;
+  content: string;
+  status: "visible" | "hidden" | "deleted";
+  createdAt: Date | string;
+  updatedAt?: Date | string;
+};
+
+export type CreateBlogCommentPayload = {
+  blogId: string;
+  content: string;
 };

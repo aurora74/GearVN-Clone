@@ -1,16 +1,8 @@
 import { create } from "zustand";
 
-type OrderItem = {
-  quantity: number;
-  productId: string;
-};
+import type { CreateOrderDraft } from "@/types/order";
 
-export type OrderTypeStore = {
-  note?: string;
-  phone: string;
-  address: string;
-  fullName: string;
-  items: OrderItem[];
+export type OrderTypeStore = CreateOrderDraft & {
   totalAmount: number;
 };
 

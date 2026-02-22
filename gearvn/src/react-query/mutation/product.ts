@@ -9,7 +9,7 @@ import {
   UseDeleteCommentParams,
 } from "@/types/product";
 import { queryKeys } from "@/react-query/query-keys";
-
+import { getCsrfHeaders } from "@/utils/api/csrf";
 import { toastError, toastSuccess } from "@/components/ui/toaster";
 
 export const useCreateProduct = (onSuccessCallback?: () => void) => {
@@ -46,6 +46,7 @@ export const useCreateProduct = (onSuccessCallback?: () => void) => {
 
       const res = await fetch("/api/products", {
         method: "POST",
+        headers: getCsrfHeaders(),
         body: formData,
       });
 
@@ -103,6 +104,7 @@ export const useUpdateProduct = (onSuccessCallback?: () => void) => {
 
       const res = await fetch(`/api/products/${data.id}`, {
         method: "PUT",
+        headers: getCsrfHeaders(),
         body: formData,
       });
 
@@ -131,6 +133,7 @@ export const useDeleteProduct = (onSuccessCallback?: () => void) => {
     mutationFn: async (productId: string) => {
       const res = await fetch(`/api/products/${productId}`, {
         method: "DELETE",
+        headers: getCsrfHeaders(),
       });
 
       const response = await res.json();
@@ -171,6 +174,7 @@ export const useComment = (
 
       const res = await fetch(`/api/products/comment/${productId}`, {
         method: "POST",
+        headers: getCsrfHeaders(),
         body: formData,
       });
 
@@ -205,7 +209,7 @@ export const useToggleLikeComment = (onSuccessCallback?: () => void) => {
     }) => {
       const res = await fetch(
         `/api/products/comment/${productId}/${commentId}/like`,
-        { method: "POST" }
+        { method: "POST", headers: getCsrfHeaders() }
       );
 
       const response = await res.json();
@@ -249,6 +253,7 @@ export const useReplyComment = (onSuccessCallback?: () => void) => {
         `/api/products/comment/${productId}/${parentCommentId}/reply`,
         {
           method: "POST",
+          headers: getCsrfHeaders(),
           body: formData,
         }
       );
@@ -296,7 +301,7 @@ export const useEditComment = (onSuccessCallback?: () => void) => {
 
       const response = await fetch(
         `/api/products/comment/${productId}/${commentId}`,
-        { method: "PUT", body: formData }
+        { method: "PUT", headers: getCsrfHeaders(), body: formData }
       );
 
       const result = await response.json();
@@ -324,7 +329,7 @@ export const useDeleteComment = (onSuccessCallback?: () => void) => {
     mutationFn: async ({ productId, commentId }: UseDeleteCommentParams) => {
       const res = await fetch(
         `/api/products/comment/${productId}/${commentId}`,
-        { method: "DELETE" }
+        { method: "DELETE", headers: getCsrfHeaders() }
       );
       const response = await res.json();
       if (!res.ok) throw response;
@@ -341,5 +346,77 @@ export const useDeleteComment = (onSuccessCallback?: () => void) => {
     onError: (err: any) => {
       toastError(err?.message, err?.description);
     },
+  });
+};
+
+export const useModerateProductComment = (onSuccessCallback?: () => void) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      productId,
+      commentId,
+      action,
+      reason,
+    }: {
+      productId: string;
+      commentId: string;
+      action: "hide" | "delete";
+      reason: string;
+    }) => {
+      const res = await fetch(
+        `/api/products/comment/${productId}/${commentId}/moderate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+          body: JSON.stringify({ action, reason }),
+        }
+      );
+      const response = await res.json();
+      if (!res.ok) throw response;
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.product.root });
+      onSuccessCallback?.();
+    },
+    onError: (err: any) => toastError(err?.message, err?.description),
+  });
+};
+
+export const useModerateProductReply = (onSuccessCallback?: () => void) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      productId,
+      commentId,
+      replyId,
+      action,
+      reason,
+    }: {
+      productId: string;
+      commentId: string;
+      replyId: string;
+      action: "hide" | "delete";
+      reason: string;
+    }) => {
+      const res = await fetch(
+        `/api/products/comment/${productId}/${commentId}/replies/${replyId}/moderate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+          body: JSON.stringify({ action, reason }),
+        }
+      );
+      const response = await res.json();
+      if (!res.ok) throw response;
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.product.root });
+      onSuccessCallback?.();
+    },
+    onError: (err: any) => toastError(err?.message, err?.description),
   });
 };

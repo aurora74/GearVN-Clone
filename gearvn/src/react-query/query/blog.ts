@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "../query-keys";
 
 import { PaginatedResponse } from "@/types/global";
-import { BlogType, UseBlogsParams } from "@/types/blog";
+import { BlogComment, BlogType, UseBlogsParams } from "@/types/blog";
 
 export const useBlogs = (params: UseBlogsParams = { page: 1, limit: 10 }) =>
   useQuery<PaginatedResponse<BlogType>>({
@@ -54,4 +54,17 @@ export const useBlog = (id: string) =>
     },
 
     enabled: !!id,
+  });
+
+export const useBlogComments = (blogIdOrSlug: string) =>
+  useQuery<BlogComment[]>({
+    queryKey: queryKeys.blog.comments(blogIdOrSlug),
+    enabled: !!blogIdOrSlug,
+    queryFn: async () => {
+      const response = await fetch(`/api/blogs/${blogIdOrSlug}/comments`, {
+        credentials: "include",
+      });
+      const { result } = await response.json();
+      return result;
+    },
   });

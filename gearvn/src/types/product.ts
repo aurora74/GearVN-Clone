@@ -11,6 +11,7 @@ export type Reply = {
   content: string;
   images?: string[];
   createdAt: string;
+  moderationStatus?: "visible" | "hidden" | "deleted";
 };
 
 export type Comment = {
@@ -22,6 +23,7 @@ export type Comment = {
   likes: string[];
   createdAt: string;
   replies: Comment[];
+  moderationStatus?: "visible" | "hidden" | "deleted";
 };
 
 export type ProductType = {

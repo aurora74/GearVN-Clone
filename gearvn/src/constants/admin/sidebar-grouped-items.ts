@@ -98,11 +98,11 @@ export const SIDEBAR_GROUPED_ITEMS = [
     ],
   },
   {
-    title: "Ho tro khach hang",
+    title: "Hỗ trợ khách hàng",
     allowedRoles: CSR_ROLES,
     items: [
       {
-        title: "Chat khach hang",
+        title: "Chat khách hàng",
         url: "/admin/chat",
         icon: MessageSquare,
         allowedRoles: CSR_ROLES,
@@ -117,7 +117,13 @@ export const SIDEBAR_GROUPED_ITEMS = [
         title: "Khach hang",
         url: "/admin/customers",
         icon: Users,
-        allowedRoles: ACCOUNT_GOVERNANCE_ROLES,
+        allowedRoles: ADMIN_ROLES,
+      },
+      {
+        title: "Nhan su",
+        url: "/admin/staff",
+        icon: Users,
+        allowedRoles: MANAGER_ROLES,
       },
     ],
   },

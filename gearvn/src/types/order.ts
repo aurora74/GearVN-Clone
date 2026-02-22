@@ -12,6 +12,17 @@ export type PaymentMethod = "COD" | "VNPAY" | string;
 
 export type PaymentStatusType = "PENDING" | "PAID" | "CANCELLED" | string;
 
+export type OrderItemSnapshot = {
+  productId: ProductType;
+  quantity: number;
+  productName: string;
+  productSlug: string;
+  productImage: string;
+  unitPrice: number;
+  finalPrice: number;
+  lineTotal: number;
+};
+
 export type Order = {
   _id: string;
   userId: User;
@@ -19,7 +30,7 @@ export type Order = {
   phone: string;
   address: string;
   note?: string;
-  items: OrderItemWithProduct[];
+  items: OrderItemSnapshot[];
   totalAmount: number;
   orderCode: string;
   orderStatus: OrderStatus;
@@ -29,10 +40,7 @@ export type Order = {
   updatedAt: Date;
 };
 
-export type OrderItemWithProduct = {
-  productId: ProductType;
-  quantity: number;
-};
+export type OrderItemWithProduct = OrderItemSnapshot;
 
 export type OrderItemWithId = {
   productId: string;
@@ -62,8 +70,9 @@ export type CreateOrderPayload = {
   note?: string;
   paymentMethod: PaymentMethod;
   items: OrderItemWithId[];
-  totalAmount: number;
 };
+
+export type CreateOrderDraft = Omit<CreateOrderPayload, "paymentMethod">;
 
 export type UpdateOrderStatusPayload = {
   orderId: string;
@@ -79,6 +88,7 @@ export type CartItemType = {
   quantity: number;
   finalPrice: number;
   discountPercent?: number;
+  availabilityWarning?: string;
 };
 
 export type ProvinceType = {
