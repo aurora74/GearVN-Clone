@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 import { USER_ROLE } from "@/config.global";
 
@@ -40,17 +40,42 @@ export const ProductInfo = ({
 
   const finalPrice = useMemo(
     () => calculateFinalPrice(product.price, product.discountPercent),
-    [product.price, product.discountPercent]
+    [product.price, product.discountPercent],
   );
 
-  const increase = () => setQuantity((q) => q + 1);
-  const decrease = () => setQuantity((q) => Math.max(1, q - 1));
+  const normalizedStock = Number(product.stock);
+  const hasStockLimit = Number.isFinite(normalizedStock) && normalizedStock >= 0;
+  const maxQuantity = hasStockLimit ? Math.max(1, Math.floor(normalizedStock)) : undefined;
+  const isOutOfStock = hasStockLimit ? normalizedStock <= 0 : false;
+
+  useEffect(() => {
+    if (typeof maxQuantity !== "number") {
+      return;
+    }
+
+    setQuantity((current) => Math.min(current, maxQuantity));
+  }, [maxQuantity]);
+
+  const increase = () => {
+    if (typeof maxQuantity === "number") {
+      setQuantity((current) => Math.min(maxQuantity, current + 1));
+      return;
+    }
+
+    setQuantity((current) => current + 1);
+  };
+
+  const decrease = () => setQuantity((current) => Math.max(1, current - 1));
 
   const handleAddToCart = () => {
     if (!role) return setModal("login");
+    if (isOutOfStock) return;
+
+    const safeQuantity =
+      typeof maxQuantity === "number" ? Math.min(quantity, maxQuantity) : quantity;
 
     addToCart({
-      quantity,
+      quantity: safeQuantity,
       finalPrice,
       id: product._id,
       slug: product.slug,
@@ -110,13 +135,15 @@ export const ProductInfo = ({
           decrease={decrease}
           increase={increase}
           setQuantity={setQuantity}
+          max={maxQuantity}
+          disabled={isOutOfStock}
         />
       </div>
 
       <Button
         onClick={handleAddToCart}
         aria-label="Mua ngay sản phẩm"
-        disabled={role === USER_ROLE.ADMIN}
+        disabled={role === USER_ROLE.ADMIN || isOutOfStock}
         className="w-full h-[70px] flex flex-col gap-1"
       >
         <p className="text-lg font-bold uppercase">Mua ngay</p>

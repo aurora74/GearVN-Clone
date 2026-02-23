@@ -12,6 +12,7 @@ import { Blogs } from "./_components/blogs";
 import { ProductInfo } from "./_components/product-info";
 import { ProductImage } from "./_components/product-image";
 import { ProductReview } from "./_components/product-review";
+import { ProductQa } from "./_components/product-qa";
 import { RelatedProducts } from "./_components/related-products";
 import { ProductConfiguration } from "./_components/product-configuration";
 
@@ -109,6 +110,8 @@ const ProductDetailsPage = async ({ params }: ProductDetailsPageProps) => {
                   </p>
                 )}
               </div>
+
+              <ProductQa productId={product._id} />
 
               <ProductReview productId={product._id} />
             </div>

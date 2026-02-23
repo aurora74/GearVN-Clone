@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Icon } from "@iconify/react";
 import { Edit, Trash } from "lucide-react";
+import { USER_ROLE } from "@/config.global";
 
 import { User } from "@/types/user";
 import { Comment, ProductType } from "@/types/product";
@@ -11,7 +12,10 @@ import { cn } from "@/utils/cn";
 import { formatTimeFromNow } from "@/utils/format/format-time-from-now";
 
 import { RATING_LABELS } from "@/constants/products/rating-labels";
-import { useEditComment } from "@/react-query/mutation/product";
+import {
+  useEditComment,
+  useModerateProductComment,
+} from "@/react-query/mutation/product";
 import { useProductReviewStore } from "@/stores/use-product-review";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +26,7 @@ import { EditCommentForm } from "./edit-comment";
 import { ReplyCommentsList } from "./reply-comments-lists";
 
 import { ModalDeleteComment } from "@/components/modals/comment/delete";
+import { ModerationActions } from "@/components/moderation/moderation-actions";
 
 type ReviewItemProps = {
   comment: Comment;
@@ -49,6 +54,8 @@ export const ReviewItem = ({
   const { mutate: editComment, isPending: isEditing } = useEditComment(() =>
     setEditId(null)
   );
+  const { mutate: moderateComment, isPending: isModerating } =
+    useModerateProductComment();
 
   const handleSaveEdit = (content: string, images: (File | string)[]) => {
     editComment({
@@ -64,6 +71,8 @@ export const ReviewItem = ({
 
   const images = comment.images || [];
   const isOwner = user?._id === comment.userId._id;
+  const isModerator =
+    user?.role === USER_ROLE.CSR || user?.role === USER_ROLE.MANAGER;
 
   return (
     <div className="group flex flex-col sm:flex-row gap-3">
@@ -101,6 +110,22 @@ export const ReviewItem = ({
             </p>
           </div>
 
+          <div className="flex items-center gap-2">
+            {isModerator && (
+              <ModerationActions
+                disabled={isPending || isModerating}
+                deleteLabel="Xóa bình luận"
+                onModerate={({ action, reason }) =>
+                  moderateComment({
+                    productId: product._id,
+                    commentId: comment._id,
+                    action,
+                    reason,
+                  })
+                }
+              />
+            )}
+
           {isOwner && !editId && (
             <div className="flex gap-2">
               <Button
@@ -121,6 +146,7 @@ export const ReviewItem = ({
               </ModalDeleteComment>
             </div>
           )}
+          </div>
         </div>
 
         {editId === comment._id ? (
@@ -209,7 +235,8 @@ export const ReviewItem = ({
 
         <ReplyCommentsList
           productId={product._id}
-          currentUserId={user?._id}
+          parentCommentId={comment._id}
+          currentUser={user}
           comments={comment.replies}
         />
 

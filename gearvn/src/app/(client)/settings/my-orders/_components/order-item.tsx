@@ -42,10 +42,13 @@ export const OrderItem = ({ order }: { order: Order }) => {
   const handlePayment = () => {
     createPayment({
       orderId: order._id,
-      amount: order.totalAmount,
       orderInfo: `Thanh toán đơn hàng ${order.orderCode}`,
     });
   };
+
+  const canCancelOrder =
+    order.orderStatus === ORDER_STATUS.PROCESSING &&
+    order.paymentStatus === PAYMENT_STATUS.PENDING;
 
   const showPaymentButton =
     order.paymentMethod === "VNPAY" &&
@@ -108,33 +111,45 @@ export const OrderItem = ({ order }: { order: Order }) => {
             <ShoppingBag className="size-4" /> Sản phẩm ({order.items.length})
           </h4>
           <div className="space-y-2">
-            {order.items.map((item) => (
-              <Link
-                key={item.productId._id}
-                href={`/products/${item.productId.slug}`}
-                className="flex items-center gap-6 p-3"
-              >
-                <Image
-                  width={80}
-                  height={80}
-                  loading="lazy"
-                  alt={item.productId.name}
-                  src={item.productId.images[0]}
-                  className="object-contain"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-base font-medium line-clamp-2">
-                    {item.productId.name}
-                  </p>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                    <span>Số lượng: {item.quantity}</span>
-                    <span className="font-semibold text-primary">
-                      {formatPrice(item.productId.discountPrice)}
-                    </span>
+            {order.items.map((item) => {
+              const snapshotSlug = item.productSlug;
+              const snapshotName = item.productName;
+              const snapshotImage = item.productImage;
+
+              const liveProduct = item.productId as Record<string, any> | undefined;
+              const productSlug = snapshotSlug || liveProduct?.slug;
+              const productName = snapshotName || liveProduct?.name || "Sản phẩm";
+              const productImage =
+                snapshotImage ||
+                (Array.isArray(liveProduct?.images) ? liveProduct.images[0] : undefined) ||
+                "/images/product-placeholder.png";
+
+              return (
+                <Link
+                  key={`${order._id}-${item.productId?._id ?? snapshotSlug ?? productName}`}
+                  href={productSlug ? `/products/${productSlug}` : "#"}
+                  className="flex items-center gap-6 p-3"
+                >
+                  <Image
+                    width={80}
+                    height={80}
+                    loading="lazy"
+                    alt={productName}
+                    src={productImage}
+                    className="object-contain"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-medium line-clamp-2">{productName}</p>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                      <span>Số lượng: {item.quantity}</span>
+                      <span className="font-semibold text-primary">
+                        {formatPrice(item.finalPrice)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         </div>
 
@@ -156,30 +171,31 @@ export const OrderItem = ({ order }: { order: Order }) => {
           </>
         )}
 
-        {order.orderStatus === ORDER_STATUS.PROCESSING &&
-          order.paymentStatus !== PAYMENT_STATUS.PAID && (
-            <>
-              <Separator />
-              <div className="flex justify-end gap-2">
+        {(canCancelOrder || showPaymentButton) && (
+          <>
+            <Separator />
+            <div className="flex justify-end gap-2">
+              {canCancelOrder &&
                 <ModalCancelOrder order={order}>
                   <Button variant="destructive" disabled={isPending}>
                     Hủy đơn hàng
                   </Button>
                 </ModalCancelOrder>
+              }
 
-                {showPaymentButton && (
-                  <Button
-                    disabled={isPending}
-                    onClick={handlePayment}
-                    className="text-green-800 hover:text-green-800 border-green-300 bg-green-100 border hover:bg-green-100"
-                  >
-                    {isPending && <Loader className="size-4 animate-spin" />}
-                    Thanh toán
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
+              {showPaymentButton && (
+                <Button
+                  disabled={isPending}
+                  onClick={handlePayment}
+                  className="text-green-800 hover:text-green-800 border-green-300 bg-green-100 border hover:bg-green-100"
+                >
+                  {isPending && <Loader className="size-4 animate-spin" />}
+                  Thanh toán
+                </Button>
+              )}
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

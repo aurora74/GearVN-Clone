@@ -66,6 +66,12 @@ export const CartItem = ({
               </p>
             )}
           </div>
+
+          {item.availabilityWarning && (
+            <p className="mt-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              {item.availabilityWarning}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-2 mt-3">

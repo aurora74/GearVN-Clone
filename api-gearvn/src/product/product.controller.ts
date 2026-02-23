@@ -319,6 +319,33 @@ export class ProductController {
     );
   }
 
+  @Post('comment/:productId/:commentId/moderate')
+  @ApiBearerAuth()
+  @Permissions(Permission.CSR_SUPPORT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  async moderateComment(
+    @Param('productId') productId: string,
+    @Param('commentId') commentId: string,
+    @Body() body: { action: 'hide' | 'delete'; reason: string },
+    @Request() req,
+  ) {
+    return this.productService.moderateComment(productId, commentId, req.user, body);
+  }
+
+  @Post('comment/:productId/:commentId/replies/:replyId/moderate')
+  @ApiBearerAuth()
+  @Permissions(Permission.CSR_SUPPORT_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  async moderateReply(
+    @Param('productId') productId: string,
+    @Param('commentId') commentId: string,
+    @Param('replyId') replyId: string,
+    @Body() body: { action: 'hide' | 'delete'; reason: string },
+    @Request() req,
+  ) {
+    return this.productService.moderateReply(productId, commentId, replyId, req.user, body);
+  }
+
   @Delete('comment/:productId/:commentId')
   @ApiBearerAuth()
   @UseGuards(JwtGuard)

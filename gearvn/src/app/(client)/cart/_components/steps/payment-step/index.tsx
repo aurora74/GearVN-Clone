@@ -21,43 +21,117 @@ import { PaymentOptions } from "./payment-options";
 
 import { Button } from "@/components/ui/button";
 
+type CheckoutItemError = {
+  productId?: string;
+  requestedQuantity?: number;
+  availableStock?: number;
+};
+
+type CheckoutErrorDetail = {
+  code?: string;
+  items?: CheckoutItemError[];
+};
+
+type CheckoutError = {
+  detail?: CheckoutErrorDetail;
+};
+
+const buildAvailabilityWarnings = (
+  items: CheckoutItemError[] | undefined,
+): Record<string, string> => {
+  if (!Array.isArray(items)) {
+    return {};
+  }
+
+  return items.reduce<Record<string, string>>((warnings, item) => {
+    if (!item.productId) {
+      return warnings;
+    }
+
+    const availableStock = Number(item.availableStock ?? 0);
+    const requestedQuantity = Number(item.requestedQuantity ?? 0);
+
+    if (Number.isFinite(availableStock) && Number.isFinite(requestedQuantity)) {
+      warnings[item.productId] = `Ton kho thay doi: con ${availableStock}, ban dang chon ${requestedQuantity}.`;
+      return warnings;
+    }
+
+    warnings[item.productId] = "San pham khong con du so luong da chon.";
+    return warnings;
+  }, {});
+};
+
 export const PaymentStep = () => {
   const { order } = useOrderStore();
   const { setStep } = useCheckoutStepStore();
-  const { items, clearCart } = useCartStore();
+  const {
+    items,
+    clearCart,
+    setAvailabilityWarnings,
+    clearAvailabilityWarnings,
+  } = useCartStore();
 
   const totalPrice = useTotalPrice(items);
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHOD.COD);
 
-  const { mutate: createPayment } = useCreatePayment();
-
-  const { mutate: createOrder, isPending } = useCreateOrder((order) => {
-    switch (paymentMethod) {
-      case PAYMENT_METHOD.COD: {
-        setStep("complete");
+  const { mutate: createPayment } = useCreatePayment({
+    onSuccess: (data) => {
+      if (data?.paymentUrl) {
         clearCart();
-        replaceUrlParams({
-          status: "success",
-          orderId: btoa(order._id),
-        });
-        break;
+      }
+    },
+  });
+
+  const { mutate: createOrder, isPending } = useCreateOrder(
+    (createdOrder) => {
+      clearAvailabilityWarnings();
+
+      switch (paymentMethod) {
+        case PAYMENT_METHOD.COD: {
+          setStep("complete");
+          clearCart();
+          replaceUrlParams({
+            status: "success",
+            orderId: btoa(createdOrder._id),
+          });
+          break;
+        }
+
+        case PAYMENT_METHOD.VNPAY: {
+          createPayment({
+            orderId: createdOrder._id,
+            orderInfo: `Thanh toán đơn hàng ${createdOrder.orderCode}`,
+          });
+          break;
+        }
+      }
+    },
+    (error: CheckoutError) => {
+      if (error?.detail?.code !== "CHECKOUT_STOCK_CHANGED") {
+        return;
       }
 
-      case PAYMENT_METHOD.VNPAY: {
-        createPayment({
-          amount: totalPrice,
-          orderId: order._id,
-          orderInfo: `Thanh toán đơn hàng ${order.orderCode}`,
-        });
-        break;
+      const warnings = buildAvailabilityWarnings(error.detail.items);
+      if (Object.keys(warnings).length === 0) {
+        return;
       }
-    }
-  });
+
+      setAvailabilityWarnings(warnings);
+      setStep("cart");
+    },
+  );
 
   const handlePayment = useCallback(() => {
     if (!order || !order.items.length || totalPrice <= 0) return;
-    createOrder({ ...order, paymentMethod });
-  }, [order, paymentMethod, totalPrice, createOrder]);
+
+    clearAvailabilityWarnings();
+
+    const checkoutDraft = Object.fromEntries(
+      Object.entries(order).filter(([key]) => key !== "totalAmount"),
+    ) as Omit<typeof order, "totalAmount">;
+
+    createOrder({ ...checkoutDraft, paymentMethod });
+  }, [order, paymentMethod, totalPrice, createOrder, clearAvailabilityWarnings]);
 
   return (
     <div className="space-y-6 pt-3">
