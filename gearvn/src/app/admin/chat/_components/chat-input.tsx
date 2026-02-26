@@ -110,7 +110,7 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
   }, []);
 
   return (
-    <div className="flex-shrink-0 relative p-4 border-t bg-white">
+    <div className="flex-1 relative pt-4 pl-4 border-t bg-white">
       {attachments.length > 0 && (
         <div className="flex absolute bottom-full space-x-2 mb-2 overflow-x-auto custom-scroll">
           {attachments.map((att) => (

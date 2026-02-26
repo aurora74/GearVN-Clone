@@ -368,12 +368,7 @@ export class UserService {
   getNewCustomersCount(startDate: Date, endDate: Date): Promise<number> {
     return this.userModel.countDocuments({
       createdAt: { $gte: startDate, $lte: endDate },
-      role: UserRole.CUSTOMER,
     });
-  }
-
-  getCustomersCount(): Promise<number> {
-    return this.userModel.countDocuments({ role: UserRole.CUSTOMER });
   }
 
   async getNewCustomersDecline(

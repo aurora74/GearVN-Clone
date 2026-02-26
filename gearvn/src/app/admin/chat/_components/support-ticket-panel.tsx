@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { CheckCircle2, Clock, ExternalLink, MessageSquareText } from "lucide-react";
+import { CheckCircle2, Clock, MessageSquareText } from "lucide-react";
 
 import { SUPPORT_TICKET_SOURCE, SUPPORT_TICKET_STATUS } from "@/config.global";
 import {
@@ -38,24 +37,12 @@ const getCustomerLabel = (ticket: SupportTicket) => {
 const getSourceLabel = (ticket: SupportTicket) =>
   ticket.sourceType === SUPPORT_TICKET_SOURCE.PRODUCT_QNA ? "Q&A" : "Chat";
 
-const getQuestionHref = (ticket: SupportTicket) => {
-  if (
-    ticket.sourceType !== SUPPORT_TICKET_SOURCE.PRODUCT_QNA ||
-    !ticket.sourceId ||
-    !ticket.metadata?.productSlug
-  ) {
-    return null;
-  }
-
-  return `/products/${ticket.metadata.productSlug}#question-${ticket.sourceId}`;
-};
-
 const TicketRow = ({ ticket }: { ticket: SupportTicket }) => {
   const { mutate: updateStatus, isPending } = useUpdateSupportTicketStatus();
   const isResolved = ticket.status === SUPPORT_TICKET_STATUS.RESOLVED;
-  const questionHref = getQuestionHref(ticket);
+
   return (
-    <div className="grid gap-3 border-t py-3 first:border-t-0 md:grid-cols-[140px_90px_minmax(0,1fr)_140px_160px_44px] md:items-center">
+    <div className="grid gap-3 border-t py-3 first:border-t-0 md:grid-cols-[140px_90px_minmax(0,1fr)_140px_160px] md:items-center">
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{ticket.ticketCode}</p>
         <p className="text-xs text-muted-foreground">
@@ -103,16 +90,6 @@ const TicketRow = ({ ticket }: { ticket: SupportTicket }) => {
           >
             <CheckCircle2 className="size-4" />
             Đánh dấu đã giải quyết
-          </Button>
-        )}
-      </div>
-
-      <div className="flex justify-start md:justify-end">
-        {questionHref && (
-          <Button size="icon" variant="ghost" asChild aria-label="Mở câu hỏi sản phẩm">
-            <Link href={questionHref}>
-              <ExternalLink className="size-4" />
-            </Link>
           </Button>
         )}
       </div>

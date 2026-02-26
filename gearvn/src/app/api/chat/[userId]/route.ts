@@ -3,6 +3,22 @@ import { NextRequest } from "next/server";
 
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+import { validateCsrfRequest } from "@/utils/api/csrf";
+
+const getSessionId = (accessToken: string) => {
+  try {
+    const [, payload] = accessToken.split(".");
+    if (!payload) return null;
+
+    const decoded = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8")
+    ) as { sub?: string };
+
+    return decoded.sub ?? null;
+  } catch {
+    return null;
+  }
+};
 
 export const DELETE = async (
   req: NextRequest,
@@ -17,6 +33,15 @@ export const DELETE = async (
     if (!accessToken) {
       return errorResponse({ status: 401, message: "Missing token" });
     }
+
+    const sessionId = getSessionId(accessToken);
+
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+    if (csrfError) return csrfError;
 
     const result = await fetchFromApi(`/chat/${userId}`, {
       method: "DELETE",
