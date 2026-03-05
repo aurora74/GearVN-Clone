@@ -1,11 +1,11 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
-import { fetchFromApi } from "@/utils/api/fetch-from-api";
-import { successResponse, errorResponse } from "@/utils/api/api-response";
+import { errorResponse, successResponse } from "@/utils/api/api-response";
 import { validateCsrfRequest } from "@/utils/api/csrf";
+import { fetchFromApi } from "@/utils/api/fetch-from-api";
 
-const getSessionId = (accessToken: string) => {
+export const getSessionId = (accessToken: string) => {
   try {
     const [, payload] = accessToken.split(".");
     if (!payload) return null;
@@ -20,7 +20,19 @@ const getSessionId = (accessToken: string) => {
   }
 };
 
-export const POST = async (req: NextRequest) => {
+export const proxySupportTicketJsonMutation = async ({
+  req,
+  endpoint,
+  method,
+  successMessage,
+  successDescription,
+}: {
+  req: NextRequest;
+  endpoint: string;
+  method: "PATCH" | "POST" | "DELETE";
+  successMessage: string;
+  successDescription?: string;
+}) => {
   try {
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("accessToken")?.value;
@@ -30,7 +42,6 @@ export const POST = async (req: NextRequest) => {
     }
 
     const sessionId = getSessionId(accessToken);
-
     if (!sessionId) {
       return errorResponse({ status: 401, message: "Invalid session" });
     }
@@ -38,17 +49,16 @@ export const POST = async (req: NextRequest) => {
     const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
     if (csrfError) return csrfError;
 
-    const formData = await req.formData();
-
-    const result = await fetchFromApi("/chat/upload", {
-      method: "POST",
+    const body = await req.json();
+    const result = await fetchFromApi(endpoint, {
+      method,
       headers: { Authorization: `Bearer ${accessToken}` },
-      body: formData,
+      body,
     });
 
     return successResponse({
-      message: "Upload thành công",
-      description: "File đã được tải lên hệ thống.",
+      message: successMessage,
+      description: successDescription,
       result,
     });
   } catch (err: any) {
@@ -56,7 +66,7 @@ export const POST = async (req: NextRequest) => {
       status: err.status || 500,
       message: "Đã có lỗi xảy ra",
       description: "Vui lòng thử lại sau.",
-      detail: err.detail,
+      detail: err.detail ?? err.details?.detail ?? err.details,
     });
   }
 };

@@ -30,13 +30,12 @@ const getSessionId = (accessToken: string) => {
   }
 };
 
-export const PUT = async (
+export const PATCH = async (
   req: NextRequest,
-  { params }: { params: Promise<{ eventId: string }> }
+  { params }: { params: Promise<{ blogId: string }> }
 ) => {
   try {
-    const eventId = (await params).eventId;
-
+    const blogId = (await params).blogId;
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("accessToken")?.value;
 
@@ -56,63 +55,15 @@ export const PUT = async (
       return csrfError;
     }
 
-    const formData = await req.formData();
-
-    const result = await fetchFromApi(`/events/${eventId}`, {
-      method: "PUT",
+    const result = await fetchFromApi(`/blogs/${blogId}/publish`, {
+      method: "PATCH",
       headers: { Authorization: `Bearer ${accessToken}` },
-      body: formData,
     });
 
     return successResponse({
-      message: "Cập nhật sự kiện thành công",
-      description: "Sự kiện đã được cập nhật.",
+      message: "Xuất bản thành công",
+      description: "Bài viết đã được hiển thị công khai.",
       result,
-    });
-  } catch (err: any) {
-    return errorResponse({
-      status: err.status || 500,
-      message: "Đã có lỗi xảy ra",
-      description: "Vui lòng thử lại sau.",
-      detail: err.detail,
-    });
-  }
-};
-
-export const DELETE = async (
-  req: NextRequest,
-  { params }: { params: Promise<{ eventId: string }> }
-) => {
-  try {
-    const eventId = (await params).eventId;
-
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("accessToken")?.value;
-
-    if (!accessToken) {
-      return errorResponse({ status: 401, message: "Missing token" });
-    }
-
-    const sessionId = getSessionId(accessToken);
-
-    if (!sessionId) {
-      return errorResponse({ status: 401, message: "Invalid session" });
-    }
-
-    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
-
-    if (csrfError) {
-      return csrfError;
-    }
-
-    await fetchFromApi(`/events/${eventId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    return successResponse({
-      message: "Xóa sự kiện thành công",
-      description: "Sự kiện đã được xóa khỏi hệ thống.",
     });
   } catch (err: any) {
     return errorResponse({

@@ -1,8 +1,12 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
+import { decode } from "jsonwebtoken";
+
+import { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+import { validateCsrfRequest } from "@/utils/api/csrf";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -36,6 +40,16 @@ export const POST = async (req: NextRequest) => {
     if (!accessToken) {
       return errorResponse({ status: 401, message: "Missing token" });
     }
+
+    const decoded = decode(accessToken) as (TokenPayload & { sub?: string }) | null;
+    const sessionId = decoded?.sub;
+
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+    if (csrfError) return csrfError;
 
     const formData = await req.formData();
 

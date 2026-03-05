@@ -1,8 +1,12 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
+import { decode } from "jsonwebtoken";
+
+import { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+import { validateCsrfRequest } from "@/utils/api/csrf";
 
 export async function GET(
   _req: NextRequest,
@@ -41,6 +45,16 @@ export async function PUT(
       return errorResponse({ status: 401, message: "Missing token" });
     }
 
+    const decoded = decode(accessToken) as (TokenPayload & { sub?: string }) | null;
+    const sessionId = decoded?.sub;
+
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+    if (csrfError) return csrfError;
+
     const formData = await req.formData();
 
     const result = await fetchFromApi(`/products/${productId}`, {
@@ -65,7 +79,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ productId: string }> }
 ) {
   try {
@@ -76,6 +90,16 @@ export async function DELETE(
 
     if (!accessToken)
       return errorResponse({ status: 401, message: "Missing token" });
+
+    const decoded = decode(accessToken) as (TokenPayload & { sub?: string }) | null;
+    const sessionId = decoded?.sub;
+
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+    if (csrfError) return csrfError;
 
     await fetchFromApi(`/products/${productId}`, {
       method: "DELETE",

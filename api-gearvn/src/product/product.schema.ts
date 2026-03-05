@@ -20,6 +20,18 @@ export class Reply {
   @Prop({ type: [String], default: [] })
   likes: string[];
 
+  @Prop({ enum: ['visible', 'hidden', 'deleted'], default: 'visible' })
+  moderationStatus: 'visible' | 'hidden' | 'deleted';
+
+  @Prop()
+  moderationReason?: string;
+
+  @Prop({ type: String, ref: 'User' })
+  moderatedBy?: string;
+
+  @Prop({ type: Date })
+  moderatedAt?: Date;
+
   @Prop({ type: Date, default: Date.now })
   createdAt: Date;
 }
@@ -43,6 +55,18 @@ export class Comment {
 
   @Prop({ type: [Reply], default: [] })
   replies: Reply[];
+
+  @Prop({ enum: ['visible', 'hidden', 'deleted'], default: 'visible' })
+  moderationStatus: 'visible' | 'hidden' | 'deleted';
+
+  @Prop()
+  moderationReason?: string;
+
+  @Prop({ type: String, ref: 'User' })
+  moderatedBy?: string;
+
+  @Prop({ type: Date })
+  moderatedAt?: Date;
 
   @Prop({ type: Date, default: Date.now })
   createdAt: Date;

@@ -1,8 +1,8 @@
-import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+import { getAuthorizedMutationContext } from "../_utils";
 
 export async function POST(
   req: NextRequest,
@@ -11,18 +11,14 @@ export async function POST(
   try {
     const productId = (await params).productId;
 
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("accessToken")?.value;
-
-    if (!accessToken) {
-      return errorResponse({ status: 401, message: "Missing token" });
-    }
+    const context = await getAuthorizedMutationContext(req);
+    if ("error" in context) return context.error;
 
     const formData = await req.formData();
 
     const result = await fetchFromApi(`/products/comment/${productId}`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${context.accessToken}` },
       body: formData,
     });
 

@@ -30,43 +30,18 @@ const getSessionId = (accessToken: string) => {
   }
 };
 
-export const PUT = async (
+export const GET = async (
   req: NextRequest,
-  { params }: { params: Promise<{ eventId: string }> }
+  { params }: { params: Promise<{ blogId: string }> }
 ) => {
   try {
-    const eventId = (await params).eventId;
-
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("accessToken")?.value;
-
-    if (!accessToken) {
-      return errorResponse({ status: 401, message: "Missing token" });
-    }
-
-    const sessionId = getSessionId(accessToken);
-
-    if (!sessionId) {
-      return errorResponse({ status: 401, message: "Invalid session" });
-    }
-
-    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
-
-    if (csrfError) {
-      return csrfError;
-    }
-
-    const formData = await req.formData();
-
-    const result = await fetchFromApi(`/events/${eventId}`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${accessToken}` },
-      body: formData,
+    const blogId = (await params).blogId;
+    const result = await fetchFromApi(`/blogs/${blogId}/comments`, {
+      method: "GET",
     });
 
     return successResponse({
-      message: "Cập nhật sự kiện thành công",
-      description: "Sự kiện đã được cập nhật.",
+      message: "Lấy bình luận bài viết thành công",
       result,
     });
   } catch (err: any) {
@@ -79,13 +54,12 @@ export const PUT = async (
   }
 };
 
-export const DELETE = async (
+export const POST = async (
   req: NextRequest,
-  { params }: { params: Promise<{ eventId: string }> }
+  { params }: { params: Promise<{ blogId: string }> }
 ) => {
   try {
-    const eventId = (await params).eventId;
-
+    const blogId = (await params).blogId;
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("accessToken")?.value;
 
@@ -105,14 +79,18 @@ export const DELETE = async (
       return csrfError;
     }
 
-    await fetchFromApi(`/events/${eventId}`, {
-      method: "DELETE",
+    const body = await req.json();
+    const result = await fetchFromApi(`/blogs/${blogId}/comments`, {
+      method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
+      body,
     });
 
     return successResponse({
-      message: "Xóa sự kiện thành công",
-      description: "Sự kiện đã được xóa khỏi hệ thống.",
+      status: 201,
+      message: "Đăng bình luận thành công",
+      description: "Bình luận của bạn đã được hiển thị.",
+      result,
     });
   } catch (err: any) {
     return errorResponse({
