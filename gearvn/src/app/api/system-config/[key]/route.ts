@@ -1,32 +1,23 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
+import { decode } from "jsonwebtoken";
+import type { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
-import { successResponse, errorResponse } from "@/utils/api/api-response";
 import { validateCsrfRequest } from "@/utils/api/csrf";
+import { successResponse, errorResponse } from "@/utils/api/api-response";
 
 const getSessionId = (accessToken: string) => {
-  try {
-    const [, payload] = accessToken.split(".");
-    if (!payload) return null;
-
-    const decoded = JSON.parse(
-      Buffer.from(payload, "base64url").toString("utf8")
-    ) as { sub?: string };
-
-    return decoded.sub ?? null;
-  } catch {
-    return null;
-  }
+  const decoded = decode(accessToken) as (TokenPayload & { sub?: string }) | null;
+  return decoded?.sub;
 };
 
-export const PUT = async (
+export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ orderId: string }> }
-) => {
+  { params }: { params: Promise<{ key: string }> }
+) {
   try {
-    const orderId = (await params).orderId;
-
+    const { key } = await params;
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("accessToken")?.value;
 
@@ -45,23 +36,26 @@ export const PUT = async (
 
     const body = await req.json();
 
-    const result = await fetchFromApi(`/orders/status/${orderId}`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${accessToken}` },
-      body,
-    });
+    const result = await fetchFromApi(
+      `/system-config/${encodeURIComponent(key)}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body,
+      }
+    );
 
     return successResponse({
-      message: "Cập nhật trạng thái thành công",
-      description: `Đơn hàng đã chuyển sang trạng thái ${body.orderStatus}`,
+      message: "Cap nhat cau hinh he thong thanh cong",
+      description: "Cau hinh he thong da duoc cap nhat.",
       result,
     });
   } catch (err: any) {
     return errorResponse({
       status: err.status || 500,
-      message: "Đã có lỗi xảy ra",
-      description: "Vui lòng thử lại sau.",
+      message: "Da co loi xay ra",
+      description: "Vui long thu lai sau.",
       detail: err.detail,
     });
   }
-};
+}

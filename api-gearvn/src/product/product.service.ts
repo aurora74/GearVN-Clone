@@ -3,19 +3,91 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { Product, ProductDocument } from './product.schema';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { validateImageUploads } from '../common/validators/upload-validator';
+import { sanitizePlainTextContent } from '../common/validators/content-safety';
+import {
+  ModerationActor,
+  ModerationService,
+} from '../moderation/moderation.service';
+
+const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Moderator.';
+
+export interface ProductModerationDto {
+  action: 'hide' | 'delete';
+  reason: string;
+}
 
 @Injectable()
 export class ProductService {
   constructor(
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     private cloudinaryService: CloudinaryService,
+    private moderationService: ModerationService,
   ) {}
+
+  private getActorId(actor: ModerationActor) {
+    const actorId = actor?.id ?? actor?._id;
+    if (!actorId) {
+      throw new BadRequestException('Missing authenticated actor');
+    }
+    return String(actorId);
+  }
+
+  private recalculateRatingAggregates(product: ProductDocument | any) {
+    const visibleReviews = (product.comments ?? []).filter(
+      (comment) => (comment.moderationStatus ?? 'visible') === 'visible',
+    );
+    product.ratingsCount = visibleReviews.length;
+    product.averageRating = visibleReviews.length
+      ? visibleReviews.reduce((sum, comment) => sum + comment.rating, 0) /
+        visibleReviews.length
+      : 0;
+  }
+
+  private toPublicReplyItem(reply: any): any | null {
+    const status = reply.moderationStatus ?? 'visible';
+    if (status === 'deleted') return null;
+
+    const publicReply = {
+      ...reply,
+      content: status === 'hidden' ? HIDDEN_CONTENT_PLACEHOLDER : reply.content,
+      images: status === 'hidden' ? [] : (reply.images ?? []),
+    };
+    delete publicReply.moderationReason;
+    delete publicReply.moderatedBy;
+    delete publicReply.moderatedAt;
+    return publicReply;
+  }
+
+  private toPublicCommentItem(comment: any): any | null {
+    const status = comment.moderationStatus ?? 'visible';
+    if (status === 'deleted') return null;
+
+    const publicComment = {
+      ...comment,
+      content: status === 'hidden' ? HIDDEN_CONTENT_PLACEHOLDER : comment.content,
+      images: status === 'hidden' ? [] : (comment.images ?? []),
+      replies: (comment.replies ?? [])
+        .map((reply) => this.toPublicReplyItem(reply))
+        .filter(Boolean),
+    };
+    delete publicComment.moderationReason;
+    delete publicComment.moderatedBy;
+    delete publicComment.moderatedAt;
+    return publicComment;
+  }
+
+  private toPublicComments(comments: any[] = []) {
+    return comments
+      .map((comment) => this.toPublicCommentItem(comment))
+      .filter(Boolean);
+  }
 
   async create(body: any, files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
@@ -281,7 +353,8 @@ export class ProductService {
     dto: CreateCommentDto,
     files: Express.Multer.File[],
   ) {
-    const { content, rating } = dto;
+    const { rating } = dto;
+    const content = sanitizePlainTextContent(dto.content, 'Comment content');
 
     if (rating < 1 || rating > 5) {
       throw new BadRequestException('Rating must be between 1 and 5');
@@ -290,6 +363,7 @@ export class ProductService {
     const product = await this.productModel.findById(productId);
     if (!product) throw new NotFoundException('Product not found');
 
+    validateImageUploads(files);
     let uploadedImages: { secure_url: string }[] = [];
     if (files && files.length > 0) {
       uploadedImages = await Promise.all(
@@ -303,20 +377,16 @@ export class ProductService {
       images: uploadedImages.map((img) => img.secure_url),
       rating,
       createdAt: new Date(),
+      moderationStatus: 'visible',
       likes: [],
       replies: [],
     });
 
-    const totalRatings = product.comments.length;
-    const avgRating =
-      product.comments.reduce((sum, c) => sum + c.rating, 0) / totalRatings;
-
-    product.averageRating = avgRating;
-    product.ratingsCount = totalRatings;
+    this.recalculateRatingAggregates(product);
 
     await product.save();
 
-    return product.comments;
+    return this.toPublicComments(product.comments);
   }
 
   async toggleLikeComment(
@@ -342,7 +412,7 @@ export class ProductService {
 
     await product.save();
 
-    return product.comments;
+    return this.toPublicComments(product.comments);
   }
 
   async replyComment(
@@ -360,6 +430,8 @@ export class ProductService {
     );
     if (!parentComment) throw new NotFoundException('Parent comment not found');
 
+    const normalizedContent = sanitizePlainTextContent(content, 'Reply content');
+    validateImageUploads(files);
     let uploadedImages: string[] = [];
     if (files?.length) {
       const results = await Promise.all(
@@ -368,13 +440,14 @@ export class ProductService {
       uploadedImages = results.map((img) => img.secure_url);
     }
 
-    const reply = {
+    const reply: any = {
       _id: new Types.ObjectId().toString(),
       userId: userId,
-      content,
+      content: normalizedContent,
       images: uploadedImages,
       likes: [],
       createdAt: new Date(),
+      moderationStatus: 'visible',
     };
 
     if (!parentComment.replies) {
@@ -383,7 +456,7 @@ export class ProductService {
     parentComment.replies.push(reply);
 
     await product.save();
-    return product.comments;
+    return this.toPublicComments(product.comments);
   }
 
   async editComment(
@@ -408,6 +481,8 @@ export class ProductService {
       parsedOldImages = oldImages;
     }
 
+    const normalizedContent = sanitizePlainTextContent(content, 'Comment content');
+    validateImageUploads(files);
     let uploadedImages: string[] = [];
     if (files?.length) {
       const results = await Promise.all(
@@ -419,7 +494,7 @@ export class ProductService {
     const updateCommentRecursively = (comments: any[]): any => {
       for (const c of comments) {
         if (c._id.toString() === commentId && c.userId.toString() === userId) {
-          c.content = content;
+          c.content = normalizedContent;
           c.images = [...parsedOldImages, ...uploadedImages];
           return c;
         }
@@ -467,18 +542,84 @@ export class ProductService {
 
     if (!found) throw new NotFoundException('Comment not found');
 
-    const totalRatings = product.comments.length;
-    const avgRating =
-      totalRatings === 0
-        ? 0
-        : product.comments.reduce((sum, c) => sum + c.rating, 0) / totalRatings;
-
-    product.averageRating = avgRating;
-    product.ratingsCount = totalRatings;
+    this.recalculateRatingAggregates(product);
 
     await product.save();
 
-    return product.comments;
+    return this.toPublicComments(product.comments);
+  }
+
+  async moderateComment(
+    productId: string,
+    commentId: string,
+    actor: ModerationActor,
+    dto: ProductModerationDto,
+  ) {
+    const product = await this.productModel.findById(productId);
+    if (!product) throw new NotFoundException('Product not found');
+
+    const comment = product.comments.find(
+      (c: any) => c._id.toString() === commentId,
+    );
+    if (!comment) throw new NotFoundException('Comment not found');
+
+    const reason = this.moderationService.assertModerationReason(dto.reason);
+    comment.moderationStatus = dto.action === 'delete' ? 'deleted' : 'hidden';
+    comment.moderationReason = reason;
+    comment.moderatedBy = this.getActorId(actor);
+    comment.moderatedAt = new Date();
+
+    this.recalculateRatingAggregates(product);
+    await product.save();
+    await this.moderationService.recordModerationAudit({
+      actor,
+      action: dto.action,
+      targetType: 'product-review',
+      targetId: commentId,
+      reason,
+      metadata: { productId },
+    });
+
+    return this.toPublicComments(product.comments);
+  }
+
+  async moderateReply(
+    productId: string,
+    commentId: string,
+    replyId: string,
+    actor: ModerationActor,
+    dto: ProductModerationDto,
+  ) {
+    const product = await this.productModel.findById(productId);
+    if (!product) throw new NotFoundException('Product not found');
+
+    const comment = product.comments.find(
+      (c: any) => c._id.toString() === commentId,
+    );
+    if (!comment) throw new NotFoundException('Comment not found');
+
+    const reply = (comment.replies ?? []).find(
+      (item: any) => item._id.toString() === replyId,
+    );
+    if (!reply) throw new NotFoundException('Reply not found');
+
+    const reason = this.moderationService.assertModerationReason(dto.reason);
+    reply.moderationStatus = dto.action === 'delete' ? 'deleted' : 'hidden';
+    reply.moderationReason = reason;
+    reply.moderatedBy = this.getActorId(actor);
+    reply.moderatedAt = new Date();
+
+    await product.save();
+    await this.moderationService.recordModerationAudit({
+      actor,
+      action: dto.action,
+      targetType: 'product-review-reply',
+      targetId: replyId,
+      reason,
+      metadata: { productId, commentId },
+    });
+
+    return this.toPublicComments(product.comments);
   }
 
   async getTopSellingProduct() {
@@ -493,18 +634,53 @@ export class ProductService {
     return product;
   }
 
-  decreaseStock(productId: string, quantity: number) {
-    return this.productModel.findByIdAndUpdate(
-      productId,
+  decreaseStock(
+    productId: string,
+    quantity: number,
+    session?: ClientSession,
+  ) {
+    return this.productModel.findOneAndUpdate(
+      {
+        _id: productId,
+        stock: { $gte: quantity },
+      },
       { $inc: { stock: -quantity } },
-      { new: true },
+      { new: true, session },
     );
   }
 
-  increaseSoldQuantity(productId: string, quantity: number) {
+  increaseStock(productId: string, quantity: number, session?: ClientSession) {
+    return this.productModel.updateOne(
+      { _id: productId },
+      { $inc: { stock: quantity } },
+      { session },
+    );
+  }
+
+  increaseSoldQuantity(
+    productId: string,
+    quantity: number,
+    session?: ClientSession,
+  ) {
     return this.productModel.updateOne(
       { _id: productId },
       { $inc: { soldQuantity: quantity } },
+      { session },
+    );
+  }
+
+  decreaseSoldQuantity(
+    productId: string,
+    quantity: number,
+    session?: ClientSession,
+  ) {
+    return this.productModel.updateOne(
+      {
+        _id: productId,
+        soldQuantity: { $gte: quantity },
+      },
+      { $inc: { soldQuantity: -quantity } },
+      { session },
     );
   }
 }

@@ -5,6 +5,7 @@ import { fetchBlog, fetchRelatedBlogs } from "@/utils/api/blogs";
 
 import { MainContent } from "./_components/main-content";
 import { RelatedBlogs } from "./_components/related-blogs";
+import { BlogComments } from "./_components/blog-comments";
 
 import { Breadcrumbs } from "@/components/global/breadcrumbs";
 import { AdImageGrid, AutoBanner } from "@/components/global/advertise-images";
@@ -65,6 +66,7 @@ export default async function BlogDetailsPage({
         <div className="wrapper space-y-3">
           <AutoBanner />
           <MainContent blog={blog} />
+          <BlogComments blogId={blog._id} />
         </div>
         <AdImageGrid />
         <RelatedBlogs blogs={relatedBlogs} />

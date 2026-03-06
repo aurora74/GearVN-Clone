@@ -4,6 +4,35 @@ import { NextRequest } from "next/server";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
 
+const mapOrderCodeError = (err: any) => {
+  const status = err?.status || 500;
+
+  if (status === 403) {
+    return {
+      status,
+      message: "Không có quyền truy cập đơn hàng",
+      description: "Bạn chỉ có thể xem đơn hàng của mình.",
+      detail: err?.detail,
+    };
+  }
+
+  if (status === 404) {
+    return {
+      status,
+      message: "Không tìm thấy đơn hàng",
+      description: "Mã đơn hàng không tồn tại hoặc không thuộc tài khoản này.",
+      detail: err?.detail,
+    };
+  }
+
+  return {
+    status,
+    message: err?.message || "Đã có lỗi xảy ra",
+    description: err?.description || "Vui lòng thử lại sau.",
+    detail: err?.detail,
+  };
+};
+
 export const GET = async (
   _req: NextRequest,
   { params }: { params: Promise<{ orderCode: string }> }
@@ -28,11 +57,6 @@ export const GET = async (
       result,
     });
   } catch (err: any) {
-    return errorResponse({
-      status: err.status || 500,
-      message: "Đã có lỗi xảy ra",
-      description: "Vui lòng thử lại sau.",
-      detail: err.detail,
-    });
+    return errorResponse(mapOrderCodeError(err));
   }
 };

@@ -58,3 +58,14 @@ export const PAYMENT_METHOD = {
   COD: "COD",
   VNPAY: "VNPAY",
 };
+
+export const SUPPORT_TICKET_STATUS = {
+  NEW: "new",
+  PROCESSING: "processing",
+  RESOLVED: "resolved",
+} as const;
+
+export const SUPPORT_TICKET_SOURCE = {
+  PRODUCT_QNA: "product_qna",
+  CHAT: "chat",
+} as const;
