@@ -2,6 +2,7 @@ import Image from "next/image";
 import { useState, ChangeEvent } from "react";
 
 import { X, Edit, Loader, Trash, Link as LinkIcon } from "lucide-react";
+import { USER_ROLE } from "@/config.global";
 
 import Lightbox from "yet-another-react-lightbox";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
@@ -16,23 +17,30 @@ import { cn } from "@/utils/cn";
 import { formatTimeFromNow } from "@/utils/format/format-time-from-now";
 
 import { Comment } from "@/types/product";
-import { useEditComment } from "@/react-query/mutation/product";
+import { User } from "@/types/user";
+import {
+  useEditComment,
+  useModerateProductReply,
+} from "@/react-query/mutation/product";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { ModalDeleteComment } from "@/components/modals/comment/delete";
+import { ModerationActions } from "@/components/moderation/moderation-actions";
 
 type ReplyCommentsListProps = {
   productId: string;
+  parentCommentId: string;
   comments: Comment[];
-  currentUserId?: string;
+  currentUser?: User | null;
 };
 
 export const ReplyCommentsList = ({
   comments,
   productId,
-  currentUserId,
+  parentCommentId,
+  currentUser,
 }: ReplyCommentsListProps) => {
   const [editContent, setEditContent] = useState("");
   const [editReplyId, setEditReplyId] = useState<string | null>(null);
@@ -50,6 +58,8 @@ export const ReplyCommentsList = ({
       setEditReplyId(null);
     }
   );
+  const { mutate: moderateReply, isPending: isModerating } =
+    useModerateProductReply();
 
   const handleEditClick = (reply: Comment) => {
     setEditReplyId(reply._id);
@@ -93,7 +103,10 @@ export const ReplyCommentsList = ({
           : null;
 
         const isEditing = editReplyId === reply._id;
-        const canEdit = currentUserId === reply.userId._id;
+        const canEdit = currentUser?._id === reply.userId._id;
+        const isModerator =
+          currentUser?.role === USER_ROLE.CSR ||
+          currentUser?.role === USER_ROLE.MANAGER;
 
         return (
           <div key={reply._id} className="group flex gap-3">
@@ -110,24 +123,43 @@ export const ReplyCommentsList = ({
                   {replyCreatedAt && formatTimeFromNow(replyCreatedAt)}
                 </span>
 
-                {canEdit && !isEditing && (
+                {(isModerator || canEdit) && !isEditing && (
                   <div className="absolute top-0 right-0 flex gap-1">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => handleEditClick(reply)}
-                    >
-                      <Edit />
-                    </Button>
+                    {isModerator && (
+                      <ModerationActions
+                        disabled={isModerating}
+                        deleteLabel="Xóa bình luận"
+                        onModerate={({ action, reason }) =>
+                          moderateReply({
+                            productId,
+                            commentId: parentCommentId,
+                            replyId: reply._id,
+                            action,
+                            reason,
+                          })
+                        }
+                      />
+                    )}
+                    {canEdit && (
+                      <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleEditClick(reply)}
+                        >
+                          <Edit />
+                        </Button>
 
-                    <ModalDeleteComment
-                      productId={productId}
-                      commentId={reply._id}
-                    >
-                      <Button size="icon" variant="ghost">
-                        <Trash />
-                      </Button>
-                    </ModalDeleteComment>
+                        <ModalDeleteComment
+                          productId={productId}
+                          commentId={reply._id}
+                        >
+                          <Button size="icon" variant="ghost">
+                            <Trash />
+                          </Button>
+                        </ModalDeleteComment>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

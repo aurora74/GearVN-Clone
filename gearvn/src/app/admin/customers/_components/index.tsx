@@ -36,9 +36,9 @@ export const CustomersPage = () => {
   return (
     <div className="h-full p-4 space-y-4 border bg-white shadow-sm rounded-md">
       <div className="flex items-center gap-2">
-        <h1 className="text-lg font-semibold">Danh sách khách hàng</h1>
+        <h1 className="text-lg font-semibold">Tai khoan</h1>
         <p className="text-sm text-muted-foreground">
-          ({totalItems} khách hàng)
+          ({totalItems} tai khoan)
         </p>
       </div>
       <DataTable

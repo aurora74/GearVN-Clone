@@ -73,11 +73,14 @@ export const ChatMessage = () => {
     if (!user) return;
 
     const initSocket = async () => {
-      const response = await fetch("/api/chat/socket/connect");
-      const { url } = await response.json();
+      const response = await fetch("/api/chat/socket/connect", {
+        credentials: "include",
+      });
+      const { url, token } = await response.json();
+      if (!url || !token) return;
 
       const socketClient: Socket = io(url, {
-        query: { role: USER_ROLE.CUSTOMER, userId: user._id },
+        auth: { token },
       });
       socketRef.current = socketClient;
 

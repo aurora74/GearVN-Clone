@@ -1,10 +1,26 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
+import { decode } from "jsonwebtoken";
+
+import type { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
+import { validateCsrfRequest } from "@/utils/api/csrf";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
 
-export async function PUT(
+const getSessionId = (accessToken: string) => {
+  const decoded = decode(accessToken) as (TokenPayload & { sub?: string }) | null;
+  return decoded?.sub;
+};
+
+export async function PUT() {
+  return errorResponse({
+    status: 410,
+    message: "Use PATCH /api/users/status/[userId] with reason",
+  });
+}
+
+export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
@@ -18,17 +34,26 @@ export async function PUT(
       return errorResponse({ status: 401, message: "Missing token" });
     }
 
+    const sessionId = getSessionId(accessToken);
+
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+    if (csrfError) return csrfError;
+
     const body = await req.json();
 
-    const result = await fetchFromApi(`/users/status/${userId}`, {
-      method: "PUT",
+    const result = await fetchFromApi(`/users/${userId}/status`, {
+      method: "PATCH",
       headers: { Authorization: `Bearer ${accessToken}` },
       body,
     });
 
     return successResponse({
-      message: "Khóa tài khoản thành công",
-      description: "Người dùng đã bị cấm truy cập hệ thống.",
+      message: "Cập nhật trạng thái tài khoản thành công",
+      description: "Trạng thái tài khoản đã được cập nhật.",
       result,
     });
   } catch (err: any) {

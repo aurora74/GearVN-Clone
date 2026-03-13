@@ -17,7 +17,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-
+import { Textarea } from "@/components/ui/textarea";
 type ModalBanUserProps = {
   user: User;
   children: React.ReactNode;
@@ -30,14 +30,21 @@ export const ModalBanUser = ({
   setOpenDropdown,
 }: ModalBanUserProps) => {
   const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const trimmedReason = reason.trim();
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) setReason("");
+  };
 
   const { mutate, isPending } = useBanUser(() => {
-    setOpen(false);
+    handleOpenChange(false);
     setOpenDropdown(false);
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
 
       <DialogContent>
@@ -56,20 +63,33 @@ export const ModalBanUser = ({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="space-y-2">
+          <label className="text-sm font-semibold" htmlFor={`ban-reason-${user._id}`}>
+            Ly do
+          </label>
+          <Textarea
+            id={`ban-reason-${user._id}`}
+            value={reason}
+            disabled={isPending}
+            placeholder="Nhap ly do de ghi nhan vao audit log."
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </div>
+
         <DialogFooter className="flex justify-end gap-3 mt-6">
           <Button
             type="button"
             variant="outline"
             disabled={isPending}
-            onClick={() => setOpen(false)}
+            onClick={() => handleOpenChange(false)}
           >
             Huỷ
           </Button>
 
           <Button
             variant="destructive"
-            disabled={isPending}
-            onClick={() => mutate(user._id)}
+            disabled={isPending || !trimmedReason}
+            onClick={() => mutate({ userId: user._id, reason: trimmedReason })}
           >
             {isPending && <Loader className="size-4 animate-spin" />}
             Khóa ngay

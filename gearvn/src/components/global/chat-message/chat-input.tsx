@@ -34,6 +34,7 @@ export const ChatInput = ({ user, roomId, socketRef }: ChatInputProps) => {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [text, setText] = useState("");
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const sendMessage = () => {
@@ -102,6 +103,8 @@ export const ChatInput = ({ user, roomId, socketRef }: ChatInputProps) => {
 
     setAttachments((prev) => [...prev, ...newAttachments]);
 
+    setUploadError(null);
+
     try {
       const uploadedUrls = await uploadFiles(selectedFiles);
 
@@ -114,6 +117,9 @@ export const ChatInput = ({ user, roomId, socketRef }: ChatInputProps) => {
         })
       );
     } catch {
+      setUploadError(
+        "Không thể gửi nội dung. Kiểm tra lại nội dung hoặc ảnh đính kèm rồi thử lại."
+      );
       setAttachments((prev) =>
         prev.map((att) =>
           selectedFiles.includes(att.file) ? { ...att, uploading: false } : att
@@ -163,10 +169,15 @@ export const ChatInput = ({ user, roomId, socketRef }: ChatInputProps) => {
         </div>
       )}
 
+      {uploadError && (
+        <p className="text-sm text-red-600">{uploadError}</p>
+      )}
+
       <div className="flex items-center gap-2">
         <input
           multiple
           type="file"
+          accept="image/*"
           ref={fileInputRef}
           className="hidden"
           onChange={handleFilesChange}

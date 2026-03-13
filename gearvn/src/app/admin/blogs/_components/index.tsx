@@ -23,6 +23,7 @@ export const BlogsPage = () => {
       limit: 20,
       sortBy: sortBy || "-createdAt",
       search: search || undefined,
+      includeUnpublished: true,
     }),
     [page, sortBy, search]
   );

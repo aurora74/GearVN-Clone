@@ -1,8 +1,8 @@
-import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+import { getAuthorizedMutationContext } from "../../_utils";
 
 export async function PUT(
   req: NextRequest,
@@ -11,12 +11,8 @@ export async function PUT(
   try {
     const { productId, commentId } = await params;
 
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("accessToken")?.value;
-
-    if (!accessToken) {
-      return errorResponse({ status: 401, message: "Missing token" });
-    }
+    const context = await getAuthorizedMutationContext(req);
+    if ("error" in context) return context.error;
 
     const formData = await req.formData();
 
@@ -24,7 +20,7 @@ export async function PUT(
       `/products/comment/${productId}/${commentId}`,
       {
         method: "PUT",
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${context.accessToken}` },
         body: formData,
       }
     );
@@ -46,7 +42,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   {
     params,
   }: {
@@ -60,8 +56,8 @@ export async function DELETE(
   try {
     const { productId, commentId, parentCommentId } = await params;
 
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("accessToken")?.value;
+    const context = await getAuthorizedMutationContext(req);
+    if ("error" in context) return context.error;
 
     const url = parentCommentId
       ? `/products/comment/${productId}/${parentCommentId}/reply/${commentId}`
@@ -69,7 +65,7 @@ export async function DELETE(
 
     const result = await fetchFromApi(url, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${context.accessToken}` },
     });
 
     return successResponse({

@@ -1,8 +1,34 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
+import type { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
+import { validateCsrfRequest } from "@/utils/api/csrf";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+
+const decodeTokenPayload = (payload: string) => {
+  const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
+  const paddedPayload = normalizedPayload.padEnd(
+    normalizedPayload.length + ((4 - (normalizedPayload.length % 4)) % 4),
+    "="
+  );
+
+  return JSON.parse(atob(paddedPayload)) as TokenPayload & { sub?: string };
+};
+
+const getSessionId = (accessToken: string) => {
+  const payload = accessToken.split(".")[1];
+
+  if (!payload) {
+    return undefined;
+  }
+
+  try {
+    return decodeTokenPayload(payload).sub;
+  } catch {
+    return undefined;
+  }
+};
 
 export const GET = async (
   req: NextRequest,
@@ -51,6 +77,18 @@ export const PUT = async (
       return errorResponse({ status: 401, message: "Missing token" });
     }
 
+    const sessionId = getSessionId(accessToken);
+
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+
+    if (csrfError) {
+      return csrfError;
+    }
+
     const formData = await req.formData();
 
     const result = await fetchFromApi(`/blogs/${blogId}`, {
@@ -86,6 +124,18 @@ export const DELETE = async (
 
     if (!accessToken) {
       return errorResponse({ status: 401, message: "Missing token" });
+    }
+
+    const sessionId = getSessionId(accessToken);
+
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+
+    if (csrfError) {
+      return csrfError;
     }
 
     await fetchFromApi(`/blogs/${blogId}`, {

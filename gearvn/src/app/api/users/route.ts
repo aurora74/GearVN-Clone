@@ -1,8 +1,17 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
+import { decode } from "jsonwebtoken";
+
+import type { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
+import { validateCsrfRequest } from "@/utils/api/csrf";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+
+const getSessionId = (accessToken: string) => {
+  const decoded = decode(accessToken) as (TokenPayload & { sub?: string }) | null;
+  return decoded?.sub;
+};
 
 export async function GET(req: NextRequest) {
   try {
@@ -47,12 +56,37 @@ export async function POST(req: NextRequest) {
       return errorResponse({ status: 401, message: "Missing token" });
     }
 
-    const body = await req.json();
+    const sessionId = getSessionId(accessToken);
 
-    const result = await fetchFromApi("/users", {
+    if (!sessionId) {
+      return errorResponse({ status: 401, message: "Invalid session" });
+    }
+
+    const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
+    if (csrfError) return csrfError;
+
+    const body = await req.json();
+    const { role, ...accountData } = body;
+    let endpoint: "/users/managers" | "/users/staff";
+    let payload = body;
+
+    if (role === "MANAGER") {
+      endpoint = "/users/managers";
+      payload = accountData;
+    } else if (
+      ["PRODUCT_MARKETING_STAFF", "SALES_OPERATIONS_STAFF", "CSR"].includes(
+        role
+      )
+    ) {
+      endpoint = "/users/staff";
+    } else {
+      return errorResponse({ status: 400, message: "Unsupported account role" });
+    }
+
+    const result = await fetchFromApi(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
-      body,
+      body: payload,
     });
 
     return successResponse({

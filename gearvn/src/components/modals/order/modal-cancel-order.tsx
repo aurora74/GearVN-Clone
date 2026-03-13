@@ -22,8 +22,14 @@ type Props = {
   children: React.ReactNode;
 };
 
+type CancelOrderError = {
+  message?: string;
+  description?: string;
+};
+
 export const ModalCancelOrder = ({ order, children }: Props) => {
   const [open, setOpen] = useState(false);
+  const [denyMessage, setDenyMessage] = useState<string | null>(null);
 
   const { mutate: cancelOrder, isPending } = useCancelOrder();
 
@@ -32,14 +38,28 @@ export const ModalCancelOrder = ({ order, children }: Props) => {
       { orderId: order._id },
       {
         onSuccess: () => {
+          setDenyMessage(null);
           setOpen(false);
+        },
+        onError: (err: CancelOrderError) => {
+          setDenyMessage(
+            err.description ||
+              err.message ||
+              "Không thể hủy đơn hàng ở trạng thái hiện tại."
+          );
         },
       }
     );
   };
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => setOpen(isOpen)}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (!isOpen) setDenyMessage(null);
+      }}
+    >
       <DialogTrigger asChild>{children}</DialogTrigger>
 
       <DialogContent>
@@ -53,6 +73,12 @@ export const ModalCancelOrder = ({ order, children }: Props) => {
             không? Hành động này không thể hoàn tác.
           </DialogDescription>
         </DialogHeader>
+
+        {denyMessage && (
+          <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+            {denyMessage}
+          </p>
+        )}
 
         <DialogFooter className="flex justify-end gap-3 mt-4">
           <Button
