@@ -16,6 +16,9 @@ export class ProductQuestionComment {
   @Prop({ required: true })
   authorRoleLabel: ProductQuestionRoleLabel;
 
+  @Prop()
+  authorDisplayName?: string;
+
   @Prop({ type: Boolean, default: false })
   isModerator: boolean;
 

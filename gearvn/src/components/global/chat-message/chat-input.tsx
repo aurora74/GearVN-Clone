@@ -19,13 +19,25 @@ type Attachment = {
   uploading: boolean;
 };
 
+type OptimisticMessagePayload = {
+  text: string;
+  attachments: string[];
+  createdAt: string;
+};
+
 type ChatInputProps = {
   roomId: string;
   user: User | null;
   socketRef: RefObject<Socket | null>;
+  onOptimisticMessage?: (message: OptimisticMessagePayload) => void;
 };
 
-export const ChatInput = ({ user, roomId, socketRef }: ChatInputProps) => {
+export const ChatInput = ({
+  user,
+  roomId,
+  socketRef,
+  onOptimisticMessage,
+}: ChatInputProps) => {
   const { setModal } = useAuthModal();
 
   const { mutateAsync: uploadFiles } = useUpload();
@@ -46,16 +58,25 @@ export const ChatInput = ({ user, roomId, socketRef }: ChatInputProps) => {
     if ((!text.trim() && attachments.length === 0) || !socketRef.current)
       return;
 
+    const messageAttachments = attachments
+      .map((att) => att.url)
+      .filter(Boolean) as string[];
+    const createdAt = new Date().toISOString();
+
     socketRef.current.emit("send-message", {
       text,
       roomId,
       isRead: false,
       userId: user._id,
       sender: "CUSTOMER",
-      createdAt: new Date().toISOString(),
-      attachments: attachments
-        .map((att) => att.url)
-        .filter(Boolean) as string[],
+      createdAt,
+      attachments: messageAttachments,
+    });
+
+    onOptimisticMessage?.({
+      text,
+      attachments: messageAttachments,
+      createdAt,
     });
 
     setText("");

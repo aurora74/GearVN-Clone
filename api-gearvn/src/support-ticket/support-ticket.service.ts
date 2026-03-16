@@ -19,6 +19,7 @@ import {
 export interface CreateProductQuestionTicketInput {
   questionId: string;
   productId: string;
+  productSlug?: string;
   customerId: string;
   contextLabel: string;
 }
@@ -83,6 +84,7 @@ export class SupportTicketService {
       resolvedAt: null,
       metadata: {
         productId: input.productId,
+        productSlug: input.productSlug,
       },
     });
 

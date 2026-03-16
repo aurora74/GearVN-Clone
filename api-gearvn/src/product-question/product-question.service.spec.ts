@@ -45,6 +45,7 @@ describe('ProductQuestionService', () => {
       findById: jest.fn().mockResolvedValue({
         _id: productId,
         name: 'Laptop gaming',
+        slug: 'laptop-gaming',
         averageRating: 4.5,
         ratingsCount: 12,
       }),
@@ -109,6 +110,7 @@ describe('ProductQuestionService', () => {
         productId,
         customerId: actor.id,
         contextLabel: 'Laptop gaming',
+        productSlug: 'laptop-gaming',
       }),
     );
     expect(productModel.findById.mock.results[0].value).resolves.toEqual(
@@ -149,6 +151,7 @@ describe('ProductQuestionService', () => {
     expect(result!.comments[0]).toEqual(
       expect.objectContaining({
         authorId: actor.id,
+        author: expect.objectContaining({ displayName: actor.fullName }),
         authorRoleLabel: 'Customer',
         content: 'Minh cung can biet thong tin nay.',
       }),
@@ -176,6 +179,7 @@ describe('ProductQuestionService', () => {
 
     expect(result!.comments[0]).toEqual(
       expect.objectContaining({
+        author: expect.objectContaining({ displayName: 'Moderator' }),
         authorRoleLabel: 'Moderator',
         isModerator: true,
       }),
@@ -204,6 +208,41 @@ describe('ProductQuestionService', () => {
       }),
     );
     expect(service.toPublicQuestion(question as any)).not.toHaveProperty('metadata');
+  });
+
+  it('uses populated customer account names over stored generic customer labels', () => {
+    const question = {
+      _id: new Types.ObjectId(),
+      productId,
+      authorId: { _id: actor.id, fullName: actor.fullName, email: actor.email },
+      content: 'Con hang khong?',
+      images: [],
+      comments: [
+        {
+          _id: new Types.ObjectId().toString(),
+          authorId: { _id: actor.id, fullName: actor.fullName, email: actor.email },
+          authorDisplayName: 'Customer',
+          authorRoleLabel: 'Customer',
+          isModerator: false,
+          content: 'Minh muon hoi them.',
+          images: [],
+          moderationStatus: 'visible',
+          createdAt: new Date('2026-05-01T00:00:00Z'),
+        },
+      ],
+      publicStatus: 'visible',
+      createdAt: new Date('2026-05-01T00:00:00Z'),
+      updatedAt: new Date('2026-05-01T00:00:00Z'),
+    };
+
+    const result = service.toPublicQuestion(question as any);
+
+    expect(result?.comments[0]).toEqual(
+      expect.objectContaining({
+        author: expect.objectContaining({ displayName: actor.fullName }),
+        authorRoleLabel: 'Customer',
+      }),
+    );
   });
 
   it('throws not found when adding a comment to a missing question', async () => {

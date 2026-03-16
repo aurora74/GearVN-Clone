@@ -87,6 +87,50 @@ export class ProductQuestionService {
     };
   }
 
+  private getActorDisplayName(actor: ProductQuestionActor, fallback: string) {
+    return actor.fullName?.trim() || actor.email?.trim() || fallback;
+  }
+
+  private getCommentAuthor(comment: any) {
+    const author = comment.authorId;
+    const authorId = typeof author === 'object' ? author?._id?.toString() : author?.toString();
+    const populatedDisplayName =
+      typeof author === 'object'
+        ? author?.fullName?.trim() || author?.email?.trim()
+        : undefined;
+    const storedDisplayName =
+      typeof comment.authorDisplayName === 'string'
+        ? comment.authorDisplayName.trim()
+        : undefined;
+    const isGenericCustomerDisplayName =
+      !comment.isModerator &&
+      (storedDisplayName === 'Customer' || storedDisplayName === 'Khach hang');
+    const displayName = comment.isModerator
+      ? 'Moderator'
+      : populatedDisplayName ||
+        (!isGenericCustomerDisplayName ? storedDisplayName : undefined) ||
+        'Khach hang';
+
+    return {
+      authorId,
+      author: {
+        displayName,
+        avatarUrl: typeof author === 'object' ? author?.avatarUrl : undefined,
+      },
+    };
+  }
+
+  private async toPopulatedPublicQuestion(question: ProductQuestionDocument | any) {
+    if (typeof question.populate === 'function') {
+      await question.populate([
+        { path: 'authorId', select: 'fullName email avatarUrl' },
+        { path: 'comments.authorId', select: 'fullName email avatarUrl' },
+      ]);
+    }
+
+    return this.toPublicQuestion(question);
+  }
+
   private async uploadImages(files: Express.Multer.File[] = []) {
     this.assertImages(files);
     if (!files.length) return [];
@@ -131,9 +175,12 @@ export class ProductQuestionService {
     const status = comment.moderationStatus ?? 'visible';
     if (status === 'deleted') return null;
 
+    const { authorId, author } = this.getCommentAuthor(comment);
+
     return {
       id: comment._id?.toString(),
-      authorId: comment.authorId?.toString(),
+      authorId,
+      author,
       authorRoleLabel: comment.authorRoleLabel,
       isModerator: comment.isModerator,
       content: status === 'hidden' ? HIDDEN_CONTENT_PLACEHOLDER : comment.content,
@@ -146,6 +193,7 @@ export class ProductQuestionService {
     const questions = await this.productQuestionModel
       .find({ productId, publicStatus: 'visible' })
       .populate({ path: 'authorId', select: 'fullName email avatarUrl' })
+      .populate({ path: 'comments.authorId', select: 'fullName email avatarUrl' })
       .sort({ createdAt: -1 });
 
     return questions.map((question) => this.toPublicQuestion(question)).filter(Boolean);
@@ -182,6 +230,7 @@ export class ProductQuestionService {
     const ticket = await this.supportTicketService.createForProductQuestion({
       questionId: question._id.toString(),
       productId,
+      productSlug: product.slug,
       customerId: actorId,
       contextLabel: product.name,
     });
@@ -189,8 +238,10 @@ export class ProductQuestionService {
     question.ticketId = ticket._id.toString();
     await question.save();
 
+    const publicQuestion = await this.toPopulatedPublicQuestion(question);
+
     return {
-      question: this.toPublicQuestion(question),
+      question: publicQuestion,
       ticket,
     };
   }
@@ -213,6 +264,10 @@ export class ProductQuestionService {
     question.comments.push({
       _id: new Types.ObjectId().toString(),
       authorId: this.getActorId(actor),
+      authorDisplayName: this.getActorDisplayName(
+        actor,
+        roleLabel.isModerator ? 'Moderator' : 'Khach hang',
+      ),
       ...roleLabel,
       content,
       images,
@@ -221,7 +276,7 @@ export class ProductQuestionService {
     });
 
     await question.save();
-    return this.toPublicQuestion(question);
+    return this.toPopulatedPublicQuestion(question);
   }
 
   async answerQuestion(
@@ -263,7 +318,7 @@ export class ProductQuestionService {
       metadata: { productId: question.productId?.toString() },
     });
 
-    return this.toPublicQuestion(question);
+    return this.toPopulatedPublicQuestion(question);
   }
 
   async moderateQuestionComment(
@@ -296,6 +351,6 @@ export class ProductQuestionService {
       metadata: { questionId, productId: question.productId?.toString() },
     });
 
-    return this.toPublicQuestion(question);
+    return this.toPopulatedPublicQuestion(question);
   }
 }

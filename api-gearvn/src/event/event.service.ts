@@ -38,9 +38,10 @@ export class EventService {
       name: dto.name,
       frame: uploadedFrame.secure_url,
       image: uploadedImageUrl,
-      tag: dto.tag
-        .replace(/[-_ ]+(\w)/g, (_, c) => c.toUpperCase())
-        .replace(/^./, (c) => c.toLowerCase()),
+      tag: toCamelCase(dto.tag),
+      startsAt: new Date(dto.startsAt),
+      endsAt: new Date(dto.endsAt),
+      isEnabled: dto.isEnabled ?? true,
     });
 
     return newEvent.save();
@@ -72,6 +73,9 @@ export class EventService {
 
     event.name = dto.name ?? event.name;
     event.tag = dto.tag ? toCamelCase(dto.tag) : event.tag;
+    event.startsAt = dto.startsAt ? new Date(dto.startsAt) : event.startsAt;
+    event.endsAt = dto.endsAt ? new Date(dto.endsAt) : event.endsAt;
+    event.isEnabled = dto.isEnabled ?? event.isEnabled;
 
     return event.save();
   }

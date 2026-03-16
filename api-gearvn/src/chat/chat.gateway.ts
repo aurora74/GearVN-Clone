@@ -128,7 +128,8 @@ export class ChatGateway implements OnGatewayConnection {
         });
       }
 
-      this.server.to(message.roomId).emit('receive-message', populatedMessage);
+      socket.to(message.roomId).emit('receive-message', populatedMessage);
+      socket.emit('receive-message', populatedMessage);
     } catch (error) {
       this.handleSocketError(socket, error);
     }
