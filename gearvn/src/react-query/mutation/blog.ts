@@ -130,6 +130,13 @@ export const useCreateBlogComment = (onSuccessCallback?: () => void) => {
 
     onSuccess: (data, variables) => {
       toastSuccess(data.message, data.description);
+      if (data.result) {
+        queryClient.setQueryData(
+          queryKeys.blog.comments(variables.blogId),
+          (current: unknown) =>
+            Array.isArray(current) ? [data.result, ...current] : [data.result]
+        );
+      }
       queryClient.invalidateQueries({
         queryKey: queryKeys.blog.comments(variables.blogId),
       });

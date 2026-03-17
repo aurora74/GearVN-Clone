@@ -200,8 +200,9 @@ export const ProductQa = ({ productId }: { productId: string }) => {
         ) : (
           questions.map((question) => (
             <article
+              id={`question-${question.id}`}
               key={question.id}
-              className="space-y-4 border-t pt-4 first:border-t-0 first:pt-0"
+              className="scroll-mt-24 space-y-4 border-t pt-4 first:border-t-0 first:pt-0"
             >
               <div className="flex gap-3">
                 <Avatar className="size-9">
@@ -265,7 +266,9 @@ export const ProductQa = ({ productId }: { productId: string }) => {
                             comment.isModerator && "bg-primary"
                           )}
                         >
-                          {comment.authorRoleLabel}
+                          {comment.isModerator
+                            ? "Moderator"
+                            : comment.author?.displayName || comment.authorRoleLabel}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
                           {new Date(comment.createdAt).toLocaleDateString(

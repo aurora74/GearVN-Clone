@@ -239,7 +239,7 @@ export const ChatMessages = ({
     <div
       ref={containerRef}
       className={cn(
-        "flex-1 h-[calc(100vh-270px)] sm:h-[calc(100vh-230px)] p-4 space-y-4 custom-scroll",
+        "flex-1 min-h-0 p-4 space-y-4 custom-scroll",
         isPending ? "overflow-hidden" : "overflow-y-auto"
       )}
     >
