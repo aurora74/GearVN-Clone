@@ -9,6 +9,10 @@ export type SupportTicketSource =
 export type ProductQuestionComment = {
   id: string;
   authorId: string;
+  author?: {
+    displayName: string;
+    avatarUrl?: string;
+  };
   authorRoleLabel: "Customer" | "Moderator";
   isModerator: boolean;
   content: string;
@@ -52,7 +56,12 @@ export type SupportTicket = {
   status: SupportTicketStatus;
   latestActivityAt: string;
   resolvedAt?: string | null;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    productId?: string;
+    productSlug?: string;
+    latestMessageId?: string;
+    [key: string]: unknown;
+  };
   createdAt?: string;
   updatedAt?: string;
 };

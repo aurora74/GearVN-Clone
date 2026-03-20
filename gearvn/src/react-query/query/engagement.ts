@@ -47,6 +47,7 @@ export const useSupportTickets = (
 
       return parseResult<PaginatedResponse<SupportTicket>>(response);
     },
+    refetchInterval: 5000,
   });
 
 export const useSupportTicket = (ticketId?: string) =>

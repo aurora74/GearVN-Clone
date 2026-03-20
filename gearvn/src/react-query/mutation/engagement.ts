@@ -41,7 +41,19 @@ export const useCreateProductQuestion = (onSuccessCallback?: () => void) => {
       if (!response.ok) throw data;
       return data.result;
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
+      const question = data?.question ?? data;
+      if (question?.productId) {
+        queryClient.setQueryData(
+          queryKeys.productQuestion.byProduct(question.productId),
+          (current: unknown) => {
+            if (!Array.isArray(current)) return [question];
+            return current.some((item: any) => item.id === question.id)
+              ? current
+              : [question, ...current];
+          }
+        );
+      }
       queryClient.invalidateQueries({
         queryKey: queryKeys.productQuestion.byProduct(variables.productId),
       });
@@ -73,7 +85,18 @@ export const useAddProductQuestionComment = (onSuccessCallback?: () => void) => 
       if (!response.ok) throw data;
       return data.result;
     },
-    onSuccess: () => {
+    onSuccess: (question) => {
+      if (question?.productId) {
+        queryClient.setQueryData(
+          queryKeys.productQuestion.byProduct(question.productId),
+          (current: unknown) =>
+            Array.isArray(current)
+              ? current.map((item: any) =>
+                  item.id === question.id ? question : item
+                )
+              : current
+        );
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.productQuestion.root });
       toastSuccess("Gửi phản hồi thành công", "Nội dung đã được cập nhật.");
       onSuccessCallback?.();
@@ -102,7 +125,18 @@ export const useAnswerProductQuestion = (onSuccessCallback?: () => void) => {
       if (!response.ok) throw data;
       return data.result;
     },
-    onSuccess: () => {
+    onSuccess: (question) => {
+      if (question?.productId) {
+        queryClient.setQueryData(
+          queryKeys.productQuestion.byProduct(question.productId),
+          (current: unknown) =>
+            Array.isArray(current)
+              ? current.map((item: any) =>
+                  item.id === question.id ? question : item
+                )
+              : current
+        );
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.productQuestion.root });
       toastSuccess("Đã trả lời câu hỏi", "Phản hồi Moderator đã được đăng.");
       onSuccessCallback?.();

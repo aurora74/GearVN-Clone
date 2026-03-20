@@ -1,12 +1,30 @@
 import { Message } from "@/types/chat";
 
+const haveSameAttachments = (left: string[] = [], right: string[] = []) => {
+  if (left.length !== right.length) return false;
+  return left.every((url, index) => url === right[index]);
+};
+
+const isMatchingOptimisticMessage = (message: Message, savedMessage: Message) =>
+  message._id?.startsWith("optimistic-") &&
+  message.sender === savedMessage.sender &&
+  message.text === savedMessage.text &&
+  haveSameAttachments(message.attachments, savedMessage.attachments);
+
 export const mergeAndSortMessages = (
   prev: Message[],
   incoming: Message[]
 ): Message[] => {
   const merged = [...prev, ...incoming].reduce<Message[]>((acc, msg) => {
-    if (!acc.find((m) => m._id === msg._id)) acc.push(msg);
-    return acc;
+    const withoutMatchingOptimistic = acc.filter(
+      (existing) => !isMatchingOptimisticMessage(existing, msg)
+    );
+
+    if (!withoutMatchingOptimistic.find((m) => m._id === msg._id)) {
+      withoutMatchingOptimistic.push(msg);
+    }
+
+    return withoutMatchingOptimistic;
   }, []);
 
   merged.sort(

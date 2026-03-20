@@ -49,4 +49,6 @@ export const useLatestMessages = (params: UseMessageParams) =>
       const { result } = await response.json();
       return result;
     },
+    refetchInterval: 2000,
+    refetchIntervalInBackground: true,
   });

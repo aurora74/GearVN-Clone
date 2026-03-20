@@ -15,6 +15,17 @@ import { ChatInput } from "./chat-input";
 import { ChatHeader } from "./chat-header";
 import { ChatPreview } from "./chat-preview";
 
+const haveSameAttachments = (left: string[] = [], right: string[] = []) => {
+  if (left.length !== right.length) return false;
+  return left.every((url, index) => url === right[index]);
+};
+
+const isMatchingOptimisticMessage = (message: Message, savedMessage: Message) =>
+  message._id?.startsWith("optimistic-") &&
+  message.sender === savedMessage.sender &&
+  message.text === savedMessage.text &&
+  haveSameAttachments(message.attachments, savedMessage.attachments);
+
 export const ChatMessage = () => {
   const { data: user } = useMe();
 
@@ -23,6 +34,7 @@ export const ChatMessage = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
   const [isTyping, setIsTyping] = useState(false);
 
   const [previews, setPreviews] = useState<string[]>([]);
@@ -70,112 +82,167 @@ export const ChatMessage = () => {
   );
 
   useEffect(() => {
-    if (!user) return;
+    openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    if (!user?._id || !roomId) return;
+
+    let isCancelled = false;
+    let socketClient: Socket | null = null;
 
     const initSocket = async () => {
-      const response = await fetch("/api/chat/socket/connect", {
-        credentials: "include",
-      });
-      const { url, token } = await response.json();
-      if (!url || !token) return;
+      try {
+        const response = await fetch("/api/chat/socket/connect", {
+          credentials: "include",
+        });
+        if (!response.ok) return;
 
-      const socketClient: Socket = io(url, {
-        auth: { token },
-      });
-      socketRef.current = socketClient;
+        const { url, token } = await response.json();
+        if (isCancelled || !url || !token) return;
 
-      socketClient.emit("join-room", roomId);
+        socketClient = io(url, {
+          auth: { token },
+        });
+        socketRef.current = socketClient;
 
-      socketClient.on(
-        "receive-message",
-        (msg: Message & { unreadCount?: number }) => {
-          if (msg.roomId !== roomId) return;
+        socketClient.emit("join-room", roomId);
 
-          setMessages((prevMessages) => {
-            if (prevMessages.some((m) => m._id === msg._id))
-              return prevMessages;
+        socketClient.on(
+          "receive-message",
+          (msg: Message & { unreadCount?: number }) => {
+            if (!msg || msg.roomId !== roomId) return;
 
-            const newMessage = {
-              ...msg,
-              isRead: open && msg.sender === USER_ROLE.ADMIN,
-            };
-
-            if (open && msg.sender === USER_ROLE.ADMIN && socketRef.current) {
-              setUnreadCount(0);
-              markAdminMessagesAsRead([...prevMessages, newMessage]);
-            }
-
-            if (!open && msg.sender === USER_ROLE.ADMIN) {
-              setUnreadCount((prevCount) =>
-                typeof msg.unreadCount === "number"
-                  ? msg.unreadCount
-                  : prevCount + 1
+            setMessages((prevMessages) => {
+              const hasSavedMessage = prevMessages.some((m) => m._id === msg._id);
+              const baseMessages = prevMessages.filter(
+                (message) => !isMatchingOptimisticMessage(message, msg)
               );
-            }
 
-            return [...prevMessages, newMessage];
-          });
-        }
-      );
+              if (hasSavedMessage) return baseMessages;
 
-      socketClient.on("message-edited", (editedMessage: Message) => {
-        setMessages((prevMessages) =>
-          prevMessages.map((message) =>
-            message._id === editedMessage._id
-              ? { ...message, ...editedMessage }
-              : message
-          )
+              const isChatOpen = openRef.current;
+              const newMessage = {
+                ...msg,
+                isRead: isChatOpen && msg.sender === USER_ROLE.ADMIN,
+              };
+
+              if (isChatOpen && msg.sender === USER_ROLE.ADMIN && socketRef.current) {
+                setUnreadCount(0);
+                markAdminMessagesAsRead([...baseMessages, newMessage]);
+              }
+
+              if (!isChatOpen && msg.sender === USER_ROLE.ADMIN) {
+                setUnreadCount((prevCount) =>
+                  typeof msg.unreadCount === "number"
+                    ? msg.unreadCount
+                    : prevCount + 1
+                );
+              }
+
+              return [...baseMessages, newMessage];
+            });
+          }
         );
-      });
 
-      socketClient.on(
-        "message-deleted",
-        ({ messageId }: { messageId: string }) => {
+        socketClient.on("message-edited", (editedMessage: Message) => {
           setMessages((prevMessages) =>
             prevMessages.map((message) =>
-              message._id === messageId
-                ? {
-                    ...message,
-                    attachments: [],
-                    isDeleted: true,
-                    text: "Tin nhắn đã thu hồi",
-                  }
+              message._id === editedMessage._id
+                ? { ...message, ...editedMessage }
                 : message
             )
           );
-        }
-      );
+        });
 
-      socketClient.on(
-        "typing",
-        (event: { roomId: string; from: string; typing: boolean }) => {
-          if (event.roomId !== roomId) return;
-          const isAdminTyping =
-            event.from === USER_ROLE.ADMIN ? event.typing : false;
-          setIsTyping(isAdminTyping);
-        }
-      );
+        socketClient.on(
+          "message-deleted",
+          ({ messageId }: { messageId: string }) => {
+            setMessages((prevMessages) =>
+              prevMessages.map((message) =>
+                message._id === messageId
+                  ? {
+                      ...message,
+                      attachments: [],
+                      isDeleted: true,
+                      text: "Tin nhắn đã thu hồi",
+                    }
+                  : message
+              )
+            );
+          }
+        );
 
-      socketClient.on(
-        "message-read",
-        (event: { messageId: string; isRead: boolean }) => {
-          const { messageId, isRead } = event;
+        socketClient.on(
+          "typing",
+          (event: { roomId: string; from: string; typing: boolean }) => {
+            if (event.roomId !== roomId) return;
+            const isAdminTyping =
+              event.from === USER_ROLE.ADMIN ? event.typing : false;
+            setIsTyping(isAdminTyping);
+          }
+        );
 
-          setMessages((prevMessages) =>
-            prevMessages.map((message) =>
-              message._id === messageId ? { ...message, isRead } : message
-            )
-          );
-        }
-      );
+        socketClient.on(
+          "message-read",
+          (event: { messageId: string; isRead: boolean }) => {
+            const { messageId, isRead } = event;
 
-      return () => {
-        socketClient.disconnect();
-      };
+            setMessages((prevMessages) =>
+              prevMessages.map((message) =>
+                message._id === messageId ? { ...message, isRead } : message
+              )
+            );
+          }
+        );
+      } catch {
+        if (!isCancelled) socketRef.current = null;
+      }
     };
 
     initSocket();
-  }, [roomId, user, open, markAdminMessagesAsRead]);
+
+    return () => {
+      isCancelled = true;
+      socketClient?.disconnect();
+      if (socketRef.current === socketClient) socketRef.current = null;
+    };
+  }, [roomId, user?._id, markAdminMessagesAsRead]);
+
+  const handleOptimisticMessage = useCallback(
+    ({
+      text,
+      attachments,
+      createdAt,
+    }: {
+      text: string;
+      attachments: string[];
+      createdAt: string;
+    }) => {
+      if (!user || !roomId) return;
+
+      const optimisticMessage: Message = {
+        _id: `optimistic-${createdAt}-${Math.random().toString(36).slice(2)}`,
+        text,
+        sender: USER_ROLE.CUSTOMER,
+        roomId,
+        userId: {
+          _id: user._id,
+          fullName: user.fullName,
+          avatarUrl: user.avatarUrl,
+        },
+        isRead: false,
+        isDeleted: false,
+        unreadCount: 0,
+        createdAt,
+        attachments,
+        isDefault: true,
+      };
+
+      setMessages((prevMessages) => [...prevMessages, optimisticMessage]);
+    },
+    [roomId, user]
+  );
 
   const handleOpenChat = () => {
     setOpen((prevIsOpen) => {
@@ -229,6 +296,7 @@ export const ChatMessage = () => {
           user={user ?? null}
           roomId={roomId ?? ""}
           socketRef={socketRef}
+          onOptimisticMessage={handleOptimisticMessage}
         />
 
         <ChatPreview

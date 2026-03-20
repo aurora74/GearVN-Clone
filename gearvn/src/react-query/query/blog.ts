@@ -5,6 +5,12 @@ import { queryKeys } from "../query-keys";
 import { PaginatedResponse } from "@/types/global";
 import { BlogComment, BlogType, UseBlogsParams } from "@/types/blog";
 
+const parseResult = async <T>(response: Response): Promise<T> => {
+  const data = await response.json();
+  if (!response.ok) throw data;
+  return data.result;
+};
+
 export const useBlogs = (params: UseBlogsParams = { page: 1, limit: 10 }) =>
   useQuery<PaginatedResponse<BlogType>>({
     queryKey: queryKeys.blog.list(params),
@@ -64,7 +70,6 @@ export const useBlogComments = (blogIdOrSlug: string) =>
       const response = await fetch(`/api/blogs/${blogIdOrSlug}/comments`, {
         credentials: "include",
       });
-      const { result } = await response.json();
-      return result;
+      return parseResult<BlogComment[]>(response);
     },
   });
