@@ -120,6 +120,21 @@ export class Product {
   @Prop({ required: true, min: 0, default: 0 })
   stock: number;
 
+  @Prop({ type: Boolean, default: true, index: true })
+  isPublished: boolean;
+
+  @Prop({ type: Date })
+  publishedAt?: Date;
+
+  @Prop({ type: Date })
+  unpublishedAt?: Date;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  isArchived: boolean;
+
+  @Prop({ type: Date })
+  archivedAt?: Date;
+
   @Prop({ type: Number, default: 0, min: 0 })
   soldQuantity: number;
 

@@ -89,6 +89,49 @@ describe('product promotion eligibility', () => {
   });
 });
 
+describe('EventService list serialization', () => {
+  it('adds server-derived status to listed events', async () => {
+    const event = {
+      _id: 'event-id',
+      tag: 'laptopSale',
+      startsAt: new Date('2026-01-01T00:00:00.000Z'),
+      endsAt: new Date('2026-12-31T23:59:59.000Z'),
+      isEnabled: true,
+      toObject() {
+        return {
+          _id: this._id,
+          tag: this.tag,
+          startsAt: this.startsAt,
+          endsAt: this.endsAt,
+          isEnabled: this.isEnabled,
+        };
+      },
+    };
+    const query = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([event]),
+    };
+    const eventModel = {
+      find: jest.fn().mockReturnValue(query),
+      countDocuments: jest.fn().mockResolvedValue(1),
+    };
+    const service = new EventService(
+      eventModel as any,
+      { uploadImage: jest.fn() } as any,
+      { record: jest.fn() } as any,
+    );
+
+    const result = await service.findAll({ page: 1, limit: 20 });
+
+    expect(result.data[0]).toMatchObject({
+      tag: 'laptopSale',
+      status: 'active',
+    });
+  });
+});
+
 describe('EventService flash-sale lifecycle', () => {
   const now = new Date('2026-05-02T08:00:00.000Z');
   const actor = { id: 'staff-id', role: UserRole.PRODUCT_MARKETING_STAFF };
@@ -149,6 +192,31 @@ describe('EventService flash-sale lifecycle', () => {
     );
   });
 
+  it('disables a legacy event without requiring missing window fields', async () => {
+    const event: any = {
+      _id: 'legacy-event-id',
+      tag: 'legacySale',
+      isEnabled: true,
+      save: jest.fn().mockImplementation(function (this: any) {
+        return Promise.resolve(this);
+      }),
+    };
+    const { service } = createService(event);
+
+    const result = await service.setEnabled(
+      'legacy-event-id',
+      false,
+      actor,
+      requestContext,
+      'Pause legacy campaign',
+      now,
+    );
+
+    expect(event.save).toHaveBeenCalledWith({ validateModifiedOnly: true });
+    expect(result.status).toBe('disabled');
+    expect(event.isEnabled).toBe(false);
+  });
+
   it('setEnabled(true) clears disabledAt and returns server-derived status', async () => {
     const event: any = {
       _id: 'event-id',
@@ -205,6 +273,42 @@ describe('EventService flash-sale lifecycle', () => {
         action: 'FLASH_SALE_ENDED',
         targetType: 'flash-sale',
         targetId: 'event-id',
+      }),
+    );
+  });
+
+
+  it('archive soft-archives an event and audits the change', async () => {
+    const event: any = {
+      _id: 'event-id',
+      tag: 'laptopSale',
+      startsAt: new Date('2026-05-02T07:00:00.000Z'),
+      endsAt: new Date('2026-05-02T09:00:00.000Z'),
+      isEnabled: true,
+      isArchived: false,
+      save: jest.fn().mockImplementation(function (this: any) {
+        return Promise.resolve(this);
+      }),
+    };
+    const { service, auditService } = createService(event);
+
+    const result = await service.archive(
+      'event-id',
+      actor,
+      requestContext,
+      'Archive campaign',
+      now,
+    );
+
+    expect(result.isArchived).toBe(true);
+    expect(result.isEnabled).toBe(false);
+    expect(event.archivedAt).toEqual(now);
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'FLASH_SALE_ARCHIVED',
+        targetType: 'flash-sale',
+        targetId: 'event-id',
+        reason: 'Archive campaign',
       }),
     );
   });

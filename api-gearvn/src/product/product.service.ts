@@ -15,6 +15,7 @@ import {
   ModerationActor,
   ModerationService,
 } from '../moderation/moderation.service';
+import { Permission, roleHasPermission } from '../auth/policy/permissions';
 
 const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Moderator.';
 
@@ -23,6 +24,45 @@ export interface ProductModerationDto {
   reason: string;
 }
 
+type ProductMutationActor = { role?: string } | undefined;
+
+const CATALOG_CREATE_FIELDS = [
+  'name',
+  'slug',
+  'category',
+  'price',
+  'discountPrice',
+  'discountPercent',
+  'description',
+  'event',
+  'isPublished',
+  'isArchived',
+] as const;
+
+const CATALOG_UPDATE_FIELDS = [
+  ...CATALOG_CREATE_FIELDS,
+  'publishedAt',
+  'unpublishedAt',
+  'archivedAt',
+] as const;
+
+const STOCK_UPDATE_FORBIDDEN_FIELDS = [
+  'name',
+  'slug',
+  'category',
+  'price',
+  'discountPrice',
+  'discountPercent',
+  'description',
+  'attributes',
+  'event',
+  'events',
+  'images',
+  'oldImages',
+  'isPublished',
+  'isArchived',
+] as const;
+
 @Injectable()
 export class ProductService {
   constructor(
@@ -30,6 +70,35 @@ export class ProductService {
     private cloudinaryService: CloudinaryService,
     private moderationService: ModerationService,
   ) {}
+
+  private actorCanManageStock(actor: ProductMutationActor) {
+    return Boolean(
+      actor?.role && roleHasPermission(actor.role as any, Permission.INVENTORY_MANAGE),
+    );
+  }
+
+  private assertStockMutationAllowed(body: any, actor: ProductMutationActor) {
+    if (body?.stock !== undefined && !this.actorCanManageStock(actor)) {
+      throw new BadRequestException('Inventory fields require INVENTORY_MANAGE');
+    }
+  }
+
+  private assertStockOnlyPayload(body: Record<string, unknown>) {
+    const hasForbiddenField = STOCK_UPDATE_FORBIDDEN_FIELDS.some(
+      (field) => body?.[field] !== undefined,
+    );
+
+    if (hasForbiddenField) {
+      throw new BadRequestException('Unknown stock fields are not allowed');
+    }
+  }
+
+  private pickCatalogFields(body: any, fields: readonly string[]) {
+    return fields.reduce((acc, field) => {
+      if (body[field] !== undefined) acc[field] = body[field];
+      return acc;
+    }, {} as Record<string, any>);
+  }
 
   private getActorId(actor: ModerationActor) {
     const actorId = actor?.id ?? actor?._id;
@@ -89,7 +158,13 @@ export class ProductService {
       .filter(Boolean);
   }
 
-  async create(body: any, files: Express.Multer.File[]) {
+  async create(
+    body: any,
+    files: Express.Multer.File[],
+    actor?: ProductMutationActor,
+  ) {
+    this.assertStockMutationAllowed(body, actor);
+
     if (!files || files.length === 0) {
       throw new BadRequestException('Please upload at least one image');
     }
@@ -108,17 +183,29 @@ export class ProductService {
       files.map((file) => this.cloudinaryService.uploadImage(file)),
     );
 
-    const productData = {
-      ...body,
+    const productData: Record<string, any> = {
+      ...this.pickCatalogFields(body, CATALOG_CREATE_FIELDS),
       attributes: parsedAttributes,
       images: uploadedImages.map((img) => img.secure_url),
+      publishedAt: body.isPublished === false ? undefined : new Date(),
+      unpublishedAt: body.isPublished === false ? new Date() : undefined,
     };
+
+    if (this.actorCanManageStock(actor) && body.stock !== undefined) {
+      productData.stock = body.stock;
+    }
 
     const product = new this.productModel(productData);
     return product.save();
   }
 
-  async update(id: string, body: any, files: Express.Multer.File[]) {
+  async update(
+    id: string,
+    body: any,
+    files: Express.Multer.File[],
+    actor?: ProductMutationActor,
+  ) {
+    this.assertStockMutationAllowed(body, actor);
     let parsedAttributes: Record<string, any>;
     try {
       parsedAttributes =
@@ -139,6 +226,25 @@ export class ProductService {
       oldImages = [];
     }
 
+    const existingProduct = await this.productModel.findById(id);
+    if (!existingProduct) {
+      throw new BadRequestException(`Product with id "${id}" not found`);
+    }
+
+    const currentEvent = String(existingProduct.event ?? '').trim();
+    const nextEvent =
+      typeof body.event === 'string' ? body.event.trim() : body.event;
+
+    if (body.event !== undefined) {
+      body.event = nextEvent;
+    }
+
+    if (nextEvent && currentEvent && nextEvent !== currentEvent) {
+      throw new BadRequestException(
+        `Product is already attached to event "${currentEvent}"`,
+      );
+    }
+
     const newImages = files?.length
       ? await Promise.all(
           files.map((file) => this.cloudinaryService.uploadImage(file)),
@@ -150,16 +256,40 @@ export class ProductService {
       ...newImages.map((img) => img.secure_url),
     ];
 
-    const updateData = {
-      ...body,
+    const updateData: Record<string, any> = {
+      ...this.pickCatalogFields(body, CATALOG_UPDATE_FIELDS),
       attributes: parsedAttributes,
       images: updatedImages,
     };
+
+    if (this.actorCanManageStock(actor) && body.stock !== undefined) {
+      updateData.stock = body.stock;
+    }
 
     const updated = await this.productModel.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: true,
     });
+
+    if (!updated) {
+      throw new BadRequestException(`Product with id "${id}" not found`);
+    }
+
+    return updated;
+  }
+
+  async updateStock(id: string, stock: number, body: Record<string, unknown> = { stock }) {
+    this.assertStockOnlyPayload(body);
+
+    if (!Number.isInteger(stock) || stock < 0) {
+      throw new BadRequestException('Invalid stock value');
+    }
+
+    const updated = await this.productModel.findByIdAndUpdate(
+      id,
+      { stock },
+      { new: true, runValidators: true },
+    );
 
     if (!updated) {
       throw new BadRequestException(`Product with id "${id}" not found`);
@@ -264,6 +394,8 @@ export class ProductService {
     const query: any = {
       _id: { $ne: productId },
       category: original.category,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
     };
 
     if (search) {
@@ -298,7 +430,7 @@ export class ProductService {
 
   async findBySlug(slug: string) {
     const product = await this.productModel
-      .findOne({ slug })
+      .findOne({ slug, isPublished: { $ne: false }, isArchived: { $ne: true } })
       .populate({
         path: 'comments.userId',
         select: 'fullName email avatarUrl createdAt',
@@ -334,16 +466,42 @@ export class ProductService {
     return product;
   }
 
-  async delete(id: string) {
+  async setPublished(id: string, isPublished: boolean) {
     const product = await this.productModel.findById(id);
     if (!product) {
       throw new BadRequestException(`Product with id "${id}" not found`);
     }
 
-    await this.productModel.findByIdAndDelete(id);
+    product.isPublished = isPublished;
+    if (isPublished) {
+      product.publishedAt = product.publishedAt ?? new Date();
+      product.unpublishedAt = undefined;
+    } else {
+      product.unpublishedAt = new Date();
+    }
+
+    return product.save();
+  }
+
+  async archive(id: string) {
+    const product = await this.productModel.findById(id);
+    if (!product) {
+      throw new BadRequestException(`Product with id "${id}" not found`);
+    }
+
+    product.isArchived = true;
+    product.archivedAt = new Date();
+    product.isPublished = false;
+    product.unpublishedAt = product.unpublishedAt ?? new Date();
+
+    return product.save();
+  }
+
+  async delete(id: string) {
+    await this.archive(id);
 
     return {
-      message: 'Product deleted successfully',
+      message: 'Product archived successfully',
     };
   }
 

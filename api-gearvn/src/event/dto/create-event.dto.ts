@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsBoolean,
@@ -20,13 +21,20 @@ export class CreateEventDto {
 
   @ApiProperty()
   @IsDateString()
+  @IsNotEmpty()
   startsAt: string;
 
   @ApiProperty()
   @IsDateString()
+  @IsNotEmpty()
   endsAt: string;
 
   @ApiProperty({ required: false })
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
   @IsBoolean()
   @IsOptional()
   isEnabled?: boolean;

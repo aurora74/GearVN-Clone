@@ -155,8 +155,9 @@ export class OrderController {
   updateOrderStatus(
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,
+    @Request() req,
   ) {
-    return this.orderService.updateStatus(id, dto.orderStatus);
+    return this.orderService.updateStatus(id, dto, req.user);
   }
 
   @Put('cancel/:id')

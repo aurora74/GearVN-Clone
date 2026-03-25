@@ -3,6 +3,7 @@ import {
   Put,
   Post,
   Body,
+  Patch,
   Query,
   Param,
   Delete,
@@ -29,6 +30,7 @@ import { JwtGuard } from 'src/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { Permission } from 'src/auth/policy/permissions';
 
+import { UpdateProductStockDto } from './dto/update-product-stock.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 
 @ApiTags('Products')
@@ -73,8 +75,12 @@ export class ProductController {
       ],
     },
   })
-  create(@Body() body: any, @UploadedFiles() files: Express.Multer.File[]) {
-    return this.productService.create(body, files);
+  create(
+    @Body() body: any,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Request() req,
+  ) {
+    return this.productService.create(body, files, req.user);
   }
 
   @Put(':id')
@@ -113,8 +119,21 @@ export class ProductController {
     @Param('id') id: string,
     @Body() body: any,
     @UploadedFiles() files: Express.Multer.File[],
+    @Request() req,
   ) {
-    return this.productService.update(id, body, files);
+    return this.productService.update(id, body, files, req.user);
+  }
+
+  @Patch(':id/stock')
+  @ApiBearerAuth()
+  @Permissions(Permission.INVENTORY_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiParam({ name: 'id', required: true })
+  updateStock(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductStockDto,
+  ) {
+    return this.productService.updateStock(id, dto.stock, dto as Record<string, unknown>);
   }
 
   @Get()

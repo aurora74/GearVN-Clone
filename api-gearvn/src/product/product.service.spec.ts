@@ -138,3 +138,223 @@ describe('ProductService moderation', () => {
     expect(result[0].replies[0]).not.toHaveProperty('moderationReason');
   });
 });
+
+const makeUpdateBody = (overrides: Record<string, unknown> = {}) => ({
+  name: 'Bo mach chu test',
+  slug: 'bo-mach-chu-test',
+  category: 'mainboard',
+  price: 9000000,
+  stock: 10,
+  attributes: '{}',
+  oldImages: JSON.stringify(['https://cdn.test/product.png']),
+  ...overrides,
+});
+
+describe('ProductService promotion event assignment', () => {
+  let productModel: { findById: jest.Mock; findByIdAndUpdate: jest.Mock };
+  let service: ProductService;
+
+  beforeEach(() => {
+    productModel = {
+      findById: jest.fn(),
+      findByIdAndUpdate: jest.fn(),
+    };
+
+    service = new ProductService(
+      productModel as any,
+      { uploadImage: jest.fn() } as any,
+      {
+        assertModerationReason: jest.fn(),
+        recordModerationAudit: jest.fn(),
+      } as any,
+    );
+  });
+
+  it('rejects moving a product from one event to another event', async () => {
+    productModel.findById.mockResolvedValue({
+      _id: 'product-1',
+      event: 'deal-tuan-nay',
+    });
+
+    await expect(
+      service.update(
+        'product-1',
+        makeUpdateBody({ event: 'flash-sale', discountPrice: 5400000 }),
+        [],
+        { role: UserRole.MANAGER },
+      ),
+    ).rejects.toThrow('already attached to event "deal-tuan-nay"');
+
+    expect(productModel.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('allows updating sale values for a product already in the same event', async () => {
+    const updatedProduct = { _id: 'product-1', event: 'flash-sale' };
+    productModel.findById.mockResolvedValue(updatedProduct);
+    productModel.findByIdAndUpdate.mockResolvedValue(updatedProduct);
+
+    await expect(
+      service.update(
+        'product-1',
+        makeUpdateBody({
+          event: 'flash-sale',
+          discountPrice: 5400000,
+          discountPercent: 40,
+        }),
+        [],
+        { role: UserRole.MANAGER },
+      ),
+    ).resolves.toEqual(updatedProduct);
+
+    expect(productModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      'product-1',
+      expect.objectContaining({
+        event: 'flash-sale',
+        discountPrice: 5400000,
+        discountPercent: 40,
+        images: ['https://cdn.test/product.png'],
+      }),
+      { new: true, runValidators: true },
+    );
+  });
+
+  it('rejects stock updates from Product & Marketing Staff', async () => {
+    productModel.findById.mockResolvedValue({ _id: 'product-1' });
+
+    await expect(
+      service.update('product-1', makeUpdateBody({ stock: 12 }), [], {
+        role: UserRole.PRODUCT_MARKETING_STAFF,
+      }),
+    ).rejects.toThrow('Inventory fields require INVENTORY_MANAGE');
+
+    expect(productModel.findById).not.toHaveBeenCalled();
+    expect(productModel.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('allows Manager stock updates through the explicit allowlist', async () => {
+    const updatedProduct = { _id: 'product-1', stock: 12 };
+    productModel.findById.mockResolvedValue({ _id: 'product-1' });
+    productModel.findByIdAndUpdate.mockResolvedValue(updatedProduct);
+
+    await expect(
+      service.update('product-1', makeUpdateBody({ stock: 12 }), [], {
+        role: UserRole.MANAGER,
+      }),
+    ).resolves.toEqual(updatedProduct);
+
+    expect(productModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      'product-1',
+      expect.objectContaining({ stock: 12 }),
+      { new: true, runValidators: true },
+    );
+  });
+});
+
+describe('ProductService stock-only updates', () => {
+  let productModel: { findByIdAndUpdate: jest.Mock };
+  let service: ProductService;
+
+  beforeEach(() => {
+    productModel = { findByIdAndUpdate: jest.fn() };
+
+    service = new ProductService(
+      productModel as any,
+      { uploadImage: jest.fn() } as any,
+      {
+        assertModerationReason: jest.fn(),
+        recordModerationAudit: jest.fn(),
+      } as any,
+    );
+  });
+
+  it('updates only stock without requiring an inventory reason', async () => {
+    const updatedProduct = {
+      _id: 'product-1',
+      name: 'Laptop van phong',
+      price: 12000000,
+      stock: 18,
+    };
+    productModel.findByIdAndUpdate.mockResolvedValue(updatedProduct);
+
+    await expect(service.updateStock('product-1', 18, { stock: 18 })).resolves.toEqual(
+      updatedProduct,
+    );
+
+    expect(productModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      'product-1',
+      { stock: 18 },
+      { new: true, runValidators: true },
+    );
+  });
+
+  it('rejects negative and non-integer stock values', async () => {
+    await expect(service.updateStock('product-1', -1, { stock: -1 })).rejects.toThrow(
+      'Invalid stock value',
+    );
+    await expect(service.updateStock('product-1', 1.5, { stock: 1.5 })).rejects.toThrow(
+      'Invalid stock value',
+    );
+
+    expect(productModel.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects catalog fields through stock update', async () => {
+    await expect(
+      service.updateStock('product-1', 18, {
+        stock: 18,
+        price: 1000,
+        description: 'tamper',
+        images: ['https://cdn.test/tamper.png'],
+        attributes: { brand: 'tamper' },
+        event: 'flash-sale',
+        isPublished: false,
+      }),
+    ).rejects.toThrow('Unknown stock fields are not allowed');
+
+    expect(productModel.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('ProductService create stock boundary', () => {
+  const file = { buffer: Buffer.from('image') } as Express.Multer.File;
+  const createBody = makeUpdateBody();
+  let productModel: any;
+  let service: ProductService;
+
+  beforeEach(() => {
+    productModel = jest.fn().mockImplementation((data) => ({
+      ...data,
+      save: jest.fn().mockResolvedValue(data),
+    }));
+
+    service = new ProductService(
+      productModel,
+      { uploadImage: jest.fn().mockResolvedValue({ secure_url: 'https://cdn.test/new.png' }) } as any,
+      {
+        assertModerationReason: jest.fn(),
+        recordModerationAudit: jest.fn(),
+      } as any,
+    );
+  });
+
+  it('rejects stock on create for Product & Marketing Staff', async () => {
+    await expect(
+      service.create(createBody, [file], { role: UserRole.PRODUCT_MARKETING_STAFF }),
+    ).rejects.toThrow('Inventory fields require INVENTORY_MANAGE');
+
+    expect(productModel).not.toHaveBeenCalled();
+  });
+
+  it('allows Manager stock on create', async () => {
+    await service.create(createBody, [file], { role: UserRole.MANAGER });
+
+    expect(productModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: createBody.name,
+        stock: createBody.stock,
+        images: ['https://cdn.test/new.png'],
+      }),
+    );
+  });
+});

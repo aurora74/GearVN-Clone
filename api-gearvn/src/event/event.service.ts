@@ -5,18 +5,29 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { toCamelCase } from './helper/to-camel-case';
 import { Event, EventDocument } from './event.schema';
 import { CreateEventDto } from './dto/create-event.dto';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { AuditService } from '../audit/audit.service';
+import { OwnershipActor } from '../auth/policy/ownership';
+import { getFlashSaleStatus } from './helper/flash-sale-status';
+
+export interface EventRequestContext {
+  ip?: string;
+  userAgent?: string;
+}
 
 @Injectable()
 export class EventService {
   constructor(
-    @InjectModel(Event.name) private eventModel: Model<EventDocument>,
-    private cloudinaryService: CloudinaryService,
+    @InjectModel(Event.name) private readonly eventModel: Model<EventDocument>,
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly auditService: AuditService,
   ) {}
 
   async create(
     dto: CreateEventDto,
     files: { frame?: Express.Multer.File[]; image?: Express.Multer.File[] },
+    actor?: OwnershipActor,
+    requestContext: EventRequestContext = {},
   ) {
     if (!files.frame?.[0]) {
       throw new BadRequestException('Please upload an event frame');
@@ -44,13 +55,24 @@ export class EventService {
       isEnabled: dto.isEnabled ?? true,
     });
 
-    return newEvent.save();
+    const savedEvent = await newEvent.save();
+    await this.recordFlashSaleAudit({
+      action: 'FLASH_SALE_CREATED',
+      event: savedEvent,
+      actor,
+      requestContext,
+      reason: dto.reason,
+    });
+
+    return this.serializeEvent(savedEvent);
   }
 
   async update(
     id: string,
     dto: Partial<CreateEventDto>,
     files?: { frame?: Express.Multer.File[]; image?: Express.Multer.File[] },
+    actor?: OwnershipActor,
+    requestContext: EventRequestContext = {},
   ) {
     const event = await this.eventModel.findById(id);
     if (!event) {
@@ -77,7 +99,16 @@ export class EventService {
     event.endsAt = dto.endsAt ? new Date(dto.endsAt) : event.endsAt;
     event.isEnabled = dto.isEnabled ?? event.isEnabled;
 
-    return event.save();
+    const savedEvent = await event.save({ validateModifiedOnly: true });
+    await this.recordFlashSaleAudit({
+      action: 'FLASH_SALE_UPDATED',
+      event: savedEvent,
+      actor,
+      requestContext,
+      reason: dto.reason,
+    });
+
+    return this.serializeEvent(savedEvent);
   }
 
   async findAll({
@@ -130,20 +161,159 @@ export class EventService {
       limit,
       total,
       totalPages: Math.ceil(total / limit),
-      data,
+      data: data.map((event) => this.serializeEvent(event)),
     };
   }
 
-  async remove(id: string) {
+  serializeEvent(event: any, now = new Date()) {
+    const serialized =
+      typeof event?.toObject === 'function' ? event.toObject() : { ...event };
+
+    return {
+      ...serialized,
+      status: getFlashSaleStatus(event, now),
+    };
+  }
+
+  async findActiveFlashSaleByTag(tag: string, now = new Date()) {
+    const event = await this.eventModel
+      .findOne({
+        tag: toCamelCase(tag),
+        isEnabled: true,
+        isArchived: { $ne: true },
+        startsAt: { $lte: now },
+        endsAt: { $gt: now },
+      })
+      .exec();
+
+    return event ? this.serializeEvent(event, now) : null;
+  }
+
+  async setEnabled(
+    id: string,
+    isEnabled: boolean,
+    actor?: OwnershipActor,
+    requestContext: EventRequestContext = {},
+    reason?: string,
+    now = new Date(),
+  ) {
     const event = await this.eventModel.findById(id);
     if (!event) {
       throw new BadRequestException('Event not found');
     }
 
-    await this.eventModel.deleteOne({ _id: id });
+    event.isEnabled = isEnabled;
+    event.disabledAt = isEnabled ? undefined : now;
+
+    const savedEvent = await event.save({ validateModifiedOnly: true });
+    await this.recordFlashSaleAudit({
+      action: isEnabled ? 'FLASH_SALE_ENABLED' : 'FLASH_SALE_DISABLED',
+      event: savedEvent,
+      actor,
+      requestContext,
+      reason,
+    });
+
+    return this.serializeEvent(savedEvent, now);
+  }
+
+  async endNow(
+    id: string,
+    actor?: OwnershipActor,
+    requestContext: EventRequestContext = {},
+    reason?: string,
+    now = new Date(),
+  ) {
+    const event = await this.eventModel.findById(id);
+    if (!event) {
+      throw new BadRequestException('Event not found');
+    }
+
+    event.endsAt = now;
+
+    const savedEvent = await event.save({ validateModifiedOnly: true });
+    await this.recordFlashSaleAudit({
+      action: 'FLASH_SALE_ENDED',
+      event: savedEvent,
+      actor,
+      requestContext,
+      reason,
+    });
+
+    return this.serializeEvent(savedEvent, now);
+  }
+
+  async archive(
+    id: string,
+    actor?: OwnershipActor,
+    requestContext: EventRequestContext = {},
+    reason?: string,
+    now = new Date(),
+  ) {
+    const event = await this.eventModel.findById(id);
+    if (!event) {
+      throw new BadRequestException('Event not found');
+    }
+
+    event.isArchived = true;
+    event.archivedAt = now;
+    event.isEnabled = false;
+    event.disabledAt = event.disabledAt ?? now;
+
+    const savedEvent = await event.save({ validateModifiedOnly: true });
+    await this.recordFlashSaleAudit({
+      action: 'FLASH_SALE_ARCHIVED',
+      event: savedEvent,
+      actor,
+      requestContext,
+      reason,
+    });
+
+    return this.serializeEvent(savedEvent, now);
+  }
+
+  async remove(
+    id: string,
+    actor?: OwnershipActor,
+    requestContext: EventRequestContext = {},
+    reason?: string,
+  ) {
+    await this.archive(id, actor, requestContext, reason);
 
     return {
-      message: 'Event deleted successfully',
+      message: 'Event archived successfully',
     };
+  }
+
+  private async recordFlashSaleAudit({
+    action,
+    event,
+    actor,
+    requestContext,
+    reason,
+  }: {
+    action: string;
+    event: any;
+    actor?: OwnershipActor;
+    requestContext: EventRequestContext;
+    reason?: string;
+  }) {
+    await this.auditService.record({
+      actorId: String(actor?.id ?? actor?._id ?? ''),
+      actorRole: actor?.role,
+      action,
+      targetType: 'flash-sale',
+      targetId: String(event?._id ?? ''),
+      reason: reason?.trim() || undefined,
+      metadata: {
+        tag: event?.tag,
+        startsAt: event?.startsAt,
+        endsAt: event?.endsAt,
+        isEnabled: event?.isEnabled,
+        disabledAt: event?.disabledAt,
+      },
+      ip: requestContext.ip,
+      userAgent: requestContext.userAgent,
+    });
   }
 }

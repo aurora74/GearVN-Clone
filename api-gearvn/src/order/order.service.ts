@@ -16,13 +16,30 @@ import {
 import { Order, OrderDocument } from './order.schema';
 
 import { CreateOrderDto } from './dto/create-order.dto';
+import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
 import { OrderStatus } from './enums/order-status';
 import { PaymentStatus } from './enums/payment-status';
 import { ProductService } from 'src/product/product.service';
+import { EventService } from 'src/event/event.service';
+import { VoucherService } from 'src/voucher/voucher.service';
+import { isPromotionEligibleProduct } from '../product/helper/promotion-product-eligibility';
 import { ORDER_STATUS, PAYMENT_STATUS } from 'src/config.global';
 
 const ORDER_CANCEL_NOT_ALLOWED = 'ORDER_CANCEL_NOT_ALLOWED';
+const ORDER_STATUS_TRANSITION_NOT_ALLOWED = 'ORDER_STATUS_TRANSITION_NOT_ALLOWED';
+const ORDER_CANCELLATION_REASON_REQUIRED = 'ORDER_CANCELLATION_REASON_REQUIRED';
+
+const VALID_STAFF_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  [OrderStatus.PROCESSING]: [
+    OrderStatus.SHIPPING,
+    OrderStatus.COMPLETED,
+    OrderStatus.CANCELLED,
+  ],
+  [OrderStatus.SHIPPING]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+  [OrderStatus.COMPLETED]: [],
+  [OrderStatus.CANCELLED]: [],
+};
 
 type InventoryTransitionTarget = 'RESERVED' | 'COMMITTED' | 'RELEASED';
 type InventoryStatusValue = 'NONE' | 'RESERVED' | 'COMMITTED' | 'RELEASED';
@@ -34,6 +51,8 @@ export class OrderService {
     private readonly orderModel: Model<OrderDocument>,
     private readonly productService: ProductService,
     private readonly auditService: AuditService,
+    private readonly eventService: EventService,
+    private readonly voucherService: VoucherService,
   ) {}
 
   async create(dto: CreateOrderDto, userId: string) {
@@ -76,10 +95,35 @@ export class OrderService {
       .toString()
       .padStart(4, '0')}`;
 
-    const { items, totalAmount, promotionAdjustments } =
-      await this.buildValidatedOrderItems(dto.items);
+    const {
+      items,
+      subtotalAmount,
+      productDiscountAmount,
+      promotionAdjustments,
+    } = await this.buildValidatedOrderItems(dto.items);
+
+    const voucherCode = dto.voucherCode?.trim();
+    const voucherReservation = voucherCode
+      ? await this.voucherService.reserveForOrder(voucherCode, subtotalAmount)
+      : null;
+    const voucherDiscountAmount = voucherReservation?.discountAmount ?? 0;
+    const totalAmount = Math.max(0, subtotalAmount - voucherDiscountAmount);
+
+    if (voucherReservation) {
+      promotionAdjustments.push({
+        type: 'voucher',
+        voucherId: voucherReservation.voucherId,
+        voucherCode: voucherReservation.code,
+        code: voucherReservation.code,
+        amount: voucherReservation.discountAmount,
+        description: `Voucher ${voucherReservation.code}`,
+      });
+    }
 
     if (totalAmount <= 0) {
+      if (voucherReservation?.reservedUsage) {
+        await this.voucherService.restoreReservation(voucherReservation.voucherId);
+      }
       throw this.createCheckoutError(
         'CHECKOUT_TOTAL_CHANGED',
         'Order total changed. Please review your cart and checkout again.',
@@ -94,26 +138,32 @@ export class OrderService {
       phone,
       address,
       fullName,
+      subtotalAmount,
+      productDiscountAmount,
+      voucherDiscountAmount,
+      promotionAdjustments,
+      ...(voucherReservation && { voucherSnapshot: voucherReservation }),
       totalAmount,
       paymentMethod: dto.paymentMethod,
       orderStatus: ORDER_STATUS.PROCESSING,
       paymentStatus: PAYMENT_STATUS.PENDING,
-      // Placeholder seam for Phase 4 promotions without trusting client pricing.
-      ...((promotionAdjustments.length > 0 && {
-        promotionAdjustments,
-      }) as Record<string, unknown>),
     };
 
-    const createdOrder = await new this.orderModel(orderData).save();
-
+    let createdOrder: any;
     try {
+      createdOrder = await new this.orderModel(orderData).save();
       await this.applyInventoryTransition(
         String(createdOrder._id),
         'RESERVED',
         'order:create',
       );
     } catch (error) {
-      await this.orderModel.findByIdAndDelete(createdOrder._id);
+      if (createdOrder?._id) {
+        await this.orderModel.findByIdAndDelete(createdOrder._id);
+      }
+      if (voucherReservation?.reservedUsage) {
+        await this.voucherService.restoreReservation(voucherReservation.voucherId);
+      }
       throw error;
     }
 
@@ -126,6 +176,7 @@ export class OrderService {
       | 'CHECKOUT_ITEM_NOT_FOUND'
       | 'CHECKOUT_ITEM_UNAVAILABLE'
       | 'CHECKOUT_STOCK_CHANGED'
+      | 'CHECKOUT_PRICE_CHANGED'
       | 'CHECKOUT_TOTAL_CHANGED'
       | 'CHECKOUT_ADDRESS_INVALID',
     description: string,
@@ -179,19 +230,19 @@ export class OrderService {
       const snapshotProduct = this.buildSnapshotProduct(plainItem);
       const mergedProduct = populatedProduct
         ? {
-            ...snapshotProduct,
             ...populatedProduct,
+            ...snapshotProduct,
             _id: populatedProduct._id ?? snapshotProduct._id,
-            slug: populatedProduct.slug ?? snapshotProduct.slug,
-            name: populatedProduct.name ?? snapshotProduct.name,
-            images:
-              Array.isArray(populatedProduct.images) &&
-              populatedProduct.images.length > 0
+            slug: snapshotProduct.slug ?? populatedProduct.slug,
+            name: snapshotProduct.name ?? populatedProduct.name,
+            images: snapshotProduct.images.length > 0
+              ? snapshotProduct.images
+              : Array.isArray(populatedProduct.images)
                 ? populatedProduct.images
-                : snapshotProduct.images,
-            price: populatedProduct.price ?? snapshotProduct.price,
+                : [],
+            price: snapshotProduct.price ?? populatedProduct.price,
             discountPrice:
-              populatedProduct.discountPrice ?? snapshotProduct.discountPrice,
+              snapshotProduct.discountPrice ?? populatedProduct.discountPrice,
           }
         : snapshotProduct;
 
@@ -230,6 +281,28 @@ export class OrderService {
     });
   }
 
+  private async restoreVoucherReservationIfEligible(
+    order: Pick<Order, 'orderStatus' | 'paymentStatus' | 'voucherSnapshot'>,
+    orderId: string,
+  ) {
+    const voucherSnapshot = order.voucherSnapshot;
+
+    if (
+      !voucherSnapshot?.reservedUsage ||
+      voucherSnapshot.restoredAt ||
+      order.orderStatus === ORDER_STATUS.COMPLETED ||
+      order.paymentStatus === PAYMENT_STATUS.PAID
+    ) {
+      return;
+    }
+
+    await this.voucherService.restoreReservation(voucherSnapshot.voucherId);
+    await this.orderModel.findByIdAndUpdate(
+      orderId,
+      { $set: { 'voucherSnapshot.restoredAt': new Date() } },
+      { new: true },
+    );
+  }
   private async buildValidatedOrderItems(items: CreateOrderDto['items']) {
     if (!Array.isArray(items) || items.length === 0) {
       throw this.createCheckoutError(
@@ -268,7 +341,21 @@ export class OrderService {
       unitPrice: number;
       finalPrice: number;
       lineTotal: number;
+      eventTag?: string;
+      eventName?: string;
+      originalPrice?: number;
+      promotionStatus?: string;
     }>;
+    const promotionAdjustments: Array<{
+      type: 'flash_sale' | 'voucher';
+      code?: string;
+      eventTag?: string;
+      eventName?: string;
+      voucherId?: string;
+      voucherCode?: string;
+      amount: number;
+      description?: string;
+    }> = [];
 
     for (const item of items) {
       const productId = String(item.productId ?? '').trim();
@@ -333,7 +420,25 @@ export class OrderService {
       }
 
       const unitPrice = Number(product.price ?? 0);
-      const finalPrice = Number(product.discountPrice ?? unitPrice);
+      const discountPrice = Number(product.discountPrice ?? unitPrice);
+      const promotionEligible = isPromotionEligibleProduct(product);
+      let activeEvent: Record<string, any> | null = null;
+
+      if (product.event) {
+        activeEvent = await this.eventService.findActiveFlashSaleByTag(product.event);
+      }
+
+      let finalPrice = unitPrice;
+      let promotionStatus = product.event ? 'inactive' : 'none';
+      const eventTag = activeEvent?.tag ?? product.event;
+      const eventName = activeEvent?.name;
+
+      if (activeEvent && promotionEligible) {
+        finalPrice = discountPrice;
+        promotionStatus = activeEvent.status ?? 'active';
+      } else if (activeEvent && !promotionEligible) {
+        promotionStatus = 'ineligible';
+      }
 
       if (
         !Number.isFinite(unitPrice) ||
@@ -348,7 +453,31 @@ export class OrderService {
         );
       }
 
+      if (
+        item.clientFinalPrice !== undefined &&
+        Number(item.clientFinalPrice) !== finalPrice
+      ) {
+        throw this.createCheckoutError(
+          'CHECKOUT_PRICE_CHANGED',
+          'Promotion pricing changed. Please review your cart.',
+          {
+            items: [
+              {
+                productId,
+                previousFinalPrice: Number(item.clientFinalPrice),
+                currentFinalPrice: finalPrice,
+                promotionStatus,
+                promotionEligible,
+                eventTag,
+                eventName,
+              },
+            ],
+          },
+        );
+      }
+
       const lineTotal = finalPrice * quantity;
+      const productDiscount = Math.max(0, unitPrice - finalPrice) * quantity;
 
       validatedItems.push({
         productId,
@@ -359,23 +488,37 @@ export class OrderService {
         unitPrice,
         finalPrice,
         lineTotal,
+        eventTag,
+        eventName,
+        originalPrice: unitPrice,
+        promotionStatus,
       });
+
+      if (productDiscount > 0) {
+        promotionAdjustments.push({
+          type: 'flash_sale',
+          eventTag,
+          eventName,
+          amount: productDiscount,
+          description: eventName
+            ? `Flash sale ${eventName}`
+            : 'Flash sale discount',
+        });
+      }
     }
 
-    const totalAmount = validatedItems.reduce(
+    const subtotalAmount = validatedItems.reduce(
       (sum, item) => sum + item.lineTotal,
       0,
     );
-
-    const promotionAdjustments: Array<{
-      code: string;
-      amount: number;
-      reason: string;
-    }> = [];
+    const productDiscountAmount = promotionAdjustments
+      .filter((adjustment) => adjustment.type === 'flash_sale')
+      .reduce((sum, adjustment) => sum + adjustment.amount, 0);
 
     return {
       items: validatedItems,
-      totalAmount,
+      subtotalAmount,
+      productDiscountAmount,
       promotionAdjustments,
     };
   }
@@ -819,10 +962,19 @@ export class OrderService {
     if (paymentMethod) query.paymentMethod = { $in: paymentMethod.split(',') };
 
     if (search) {
-      if (Types.ObjectId.isValid(search) && search.length === 24) {
-        query._id = new Types.ObjectId(search);
-      } else {
-        query.orderCode = { $regex: search, $options: 'i' };
+      const normalizedSearch = search.trim().slice(0, 100);
+      if (Types.ObjectId.isValid(normalizedSearch) && normalizedSearch.length === 24) {
+        query._id = new Types.ObjectId(normalizedSearch);
+      } else if (normalizedSearch) {
+        const escapedSearch = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const searchRegex = { $regex: escapedSearch, $options: 'i' };
+        query.$or = [
+          { orderCode: searchRegex },
+          { fullName: searchRegex },
+          { phone: searchRegex },
+          { address: searchRegex },
+          { note: searchRegex },
+        ];
       }
     }
 
@@ -857,12 +1009,16 @@ export class OrderService {
       .limit(limit)
       .exec();
 
+    const snapshotSafeOrders = data.map((order) =>
+      this.toSnapshotSafeOrder(order as unknown as Record<string, any>),
+    );
+
     return {
       page,
       limit,
       total,
       totalPages: Math.ceil(total / limit),
-      data,
+      data: snapshotSafeOrders,
     };
   }
 
@@ -910,33 +1066,94 @@ export class OrderService {
     return this.toSnapshotSafeOrder(order as unknown as Record<string, any>);
   }
 
-  async updateStatus(id: string, status: OrderStatus) {
-    if (status === OrderStatus.COMPLETED) {
+  async updateStatus(
+    id: string,
+    dto: UpdateOrderStatusDto,
+    actor: OwnershipActor | null = null,
+  ) {
+    const orderBeforeUpdate = await this.orderModel.findById(id);
+
+    if (!orderBeforeUpdate) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+
+    const currentStatus = orderBeforeUpdate.orderStatus as OrderStatus;
+    const targetStatus = dto.orderStatus;
+    const allowedTargets = VALID_STAFF_TRANSITIONS[currentStatus] ?? [];
+
+    if (!allowedTargets.includes(targetStatus)) {
+      throw new BadRequestException(ORDER_STATUS_TRANSITION_NOT_ALLOWED);
+    }
+
+    const cancellationReason = dto.cancellationReason?.trim();
+    if (targetStatus === OrderStatus.CANCELLED && !cancellationReason) {
+      throw new BadRequestException(ORDER_CANCELLATION_REASON_REQUIRED);
+    }
+
+    if (targetStatus === OrderStatus.COMPLETED) {
       await this.applyInventoryTransition(id, 'COMMITTED', 'order:updateStatus');
     }
 
-    if (status === OrderStatus.CANCELLED) {
+    if (targetStatus === OrderStatus.CANCELLED) {
       await this.applyInventoryTransition(id, 'RELEASED', 'order:updateStatus');
     }
 
-    const updateData: Partial<Order> = { orderStatus: status };
+    const changedAt = new Date();
+    const actorId = String(actor?.id ?? actor?._id ?? '');
+    const actorRole = actor?.role ? String(actor.role) : undefined;
+    const statusHistoryEntry = {
+      fromStatus: currentStatus,
+      toStatus: targetStatus,
+      changedBy: actorId || undefined,
+      changedByRole: actorRole,
+      reason: cancellationReason,
+      changedAt,
+    };
+    const orderEvent = {
+      type: 'ORDER_STATUS_CHANGED',
+      message: `Order status changed from ${currentStatus} to ${targetStatus}`,
+      actorId: actorId || undefined,
+      actorRole,
+      metadata: {
+        fromStatus: currentStatus,
+        toStatus: targetStatus,
+        ...(cancellationReason && { reason: cancellationReason }),
+      },
+      createdAt: changedAt,
+    };
 
-    if (status === OrderStatus.COMPLETED) {
+    const updateData: Record<string, unknown> = { orderStatus: targetStatus };
+
+    if (targetStatus === OrderStatus.COMPLETED) {
       updateData.paymentStatus = PaymentStatus.PAID;
     }
 
-    if (status === OrderStatus.CANCELLED) {
+    if (targetStatus === OrderStatus.CANCELLED) {
       updateData.paymentStatus = PaymentStatus.CANCELLED;
+      updateData.cancellationReason = cancellationReason;
+      updateData.cancelledBy = actorId || undefined;
+      updateData.cancelledByRole = actorRole;
+      updateData.cancelledAt = changedAt;
     }
 
     const updatedOrder = await this.orderModel.findByIdAndUpdate(
       id,
-      updateData,
+      {
+        $set: updateData,
+        $push: {
+          statusHistory: statusHistoryEntry,
+          orderEvents: orderEvent,
+        },
+      },
       { new: true },
     );
 
     if (!updatedOrder) {
       throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+
+    if (targetStatus === OrderStatus.CANCELLED) {
+      await this.restoreVoucherReservationIfEligible(orderBeforeUpdate, id);
     }
 
     return updatedOrder;
@@ -977,6 +1194,7 @@ export class OrderService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
+    await this.restoreVoucherReservationIfEligible(order, id);
     await this.auditService.record({
       actorId: String(actor?.id ?? actor?._id ?? ''),
       actorRole: actor?.role,
