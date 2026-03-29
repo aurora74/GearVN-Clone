@@ -5,9 +5,11 @@ import { VoucherDiscountType } from './enums/voucher-discount-type';
 import { VoucherService } from './voucher.service';
 
 const createVoucherModel = () => ({
+  find: jest.fn(),
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
   findByIdAndUpdate: jest.fn(),
+  countDocuments: jest.fn(),
   aggregate: jest.fn(),
 });
 
@@ -46,6 +48,30 @@ describe('VoucherService', () => {
   beforeEach(() => {
     voucherModel = createVoucherModel();
     service = new VoucherService(voucherModel as any, { record: jest.fn() } as any);
+  });
+
+  it('adds derived status to admin voucher list rows', async () => {
+    const voucher = {
+      ...makeVoucher({ startsAt: new Date('2026-06-01T00:00:00.000Z') }),
+      toObject() {
+        return { ...this };
+      },
+    };
+    const query = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([voucher]),
+    };
+    voucherModel.find.mockReturnValue(query);
+    voucherModel.countDocuments.mockResolvedValue(1);
+
+    const result = await service.findAll({ page: 1, limit: 20 });
+
+    expect(result.data[0]).toMatchObject({
+      code: 'SAVE10',
+      status: 'scheduled',
+    });
   });
 
   it('normalizes voucher codes before lookup', async () => {

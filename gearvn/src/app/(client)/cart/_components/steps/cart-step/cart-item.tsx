@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Minus, Plus, Trash2 } from "lucide-react";
 
 import { formatPrice } from "@/utils/format/format-price";
 import { CartItemType } from "@/types/order";
@@ -66,6 +66,25 @@ export const CartItem = ({
               </p>
             )}
           </div>
+
+          {item.flashSaleEventName && (
+            <p className="text-sm text-muted-foreground">
+              Flash sale: {item.flashSaleEventName}
+            </p>
+          )}
+
+          {item.promotionWarning && (
+            <p className="mt-2 flex items-start gap-2 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>{item.promotionWarning}</span>
+            </p>
+          )}
+
+          {item.voucherWarning && (
+            <p className="mt-2 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              {item.voucherWarning}
+            </p>
+          )}
 
           {item.availabilityWarning && (
             <p className="mt-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">

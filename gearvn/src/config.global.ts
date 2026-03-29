@@ -69,3 +69,15 @@ export const SUPPORT_TICKET_SOURCE = {
   PRODUCT_QNA: "product_qna",
   CHAT: "chat",
 } as const;
+
+export const PROMOTION_STATUS = {
+  SCHEDULED: "scheduled",
+  ACTIVE: "active",
+  ENDED: "ended",
+  DISABLED: "disabled",
+} as const;
+
+export const VOUCHER_DISCOUNT_TYPE = {
+  PERCENTAGE: "percentage",
+  FIXED_AMOUNT: "fixed_amount",
+} as const;

@@ -56,6 +56,7 @@ export class BlogService {
 
     if (publicOnly) {
       filter.$or = [{ isPublished: true }, { isPublished: { $exists: false } }];
+      filter.isArchived = { $ne: true };
     }
 
     if (search) {
@@ -123,6 +124,7 @@ export class BlogService {
     const filter: any = {
       _id: { $ne: id },
       $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
+      isArchived: { $ne: true },
     };
 
     if ((blog as any).category) {
@@ -178,12 +180,15 @@ export class BlogService {
   }
 
   async findBySlug(slug: string, options: { publicOnly?: boolean } = {}): Promise<Blog> {
-    const blog = await this.blogModel.findOne({ slug });
+    const blog = await this.blogModel.findOne({ slug, isArchived: { $ne: true } });
     if (!blog) {
       throw new BadRequestException(`Blog with slug "${slug}" not found`);
     }
 
-    if (options.publicOnly !== false && blog.isPublished === false) {
+    if (
+      options.publicOnly !== false &&
+      (blog.isPublished === false || blog.isArchived === true)
+    ) {
       throw new BadRequestException(`Blog with slug "${slug}" not found`);
     }
 
@@ -220,10 +225,21 @@ export class BlogService {
     return blog.save();
   }
 
-  async remove(id: string) {
-    const blog = await this.blogModel.findByIdAndDelete(id);
+  async archive(id: string) {
+    const blog = await this.blogModel.findById(id);
     if (!blog) throw new NotFoundException('Blog not found');
 
-    return { message: 'Deleted successfully', id: blog._id };
+    blog.isArchived = true;
+    blog.archivedAt = new Date();
+    blog.isPublished = false;
+    blog.unpublishedAt = blog.unpublishedAt ?? new Date();
+
+    return blog.save();
+  }
+
+  async remove(id: string) {
+    const blog = await this.archive(id);
+
+    return { message: 'Archived successfully', id: blog._id };
   }
 }
