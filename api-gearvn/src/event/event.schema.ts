@@ -28,6 +28,12 @@ export class Event {
 
   @Prop({ type: Date })
   disabledAt?: Date;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  isArchived: boolean;
+
+  @Prop({ type: Date })
+  archivedAt?: Date;
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);

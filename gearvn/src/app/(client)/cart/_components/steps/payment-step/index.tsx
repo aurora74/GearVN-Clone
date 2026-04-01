@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 
 import { Loader } from "lucide-react";
 
@@ -18,13 +18,16 @@ import { useCreatePayment } from "@/react-query/mutation/payment";
 import { ShippingInfo } from "./shipping-info";
 import { OrderPricing } from "./order-pricing";
 import { PaymentOptions } from "./payment-options";
-
+import { VoucherBox } from "./voucher-box";
 import { Button } from "@/components/ui/button";
 
 type CheckoutItemError = {
   productId?: string;
   requestedQuantity?: number;
   availableStock?: number;
+  currentFinalPrice?: number;
+  discountPercent?: number;
+  promotionEligible?: boolean;
 };
 
 type CheckoutErrorDetail = {
@@ -61,18 +64,83 @@ const buildAvailabilityWarnings = (
   }, {});
 };
 
+const buildPromotionWarnings = (
+  items: CheckoutItemError[] | undefined
+): Record<
+  string,
+  {
+    message: string;
+    currentFinalPrice?: number;
+    discountPercent?: number;
+    promotionEligible?: boolean;
+  }
+> => {
+  if (!Array.isArray(items)) {
+    return {};
+  }
+
+  return items.reduce<Record<string, {
+    message: string;
+    currentFinalPrice?: number;
+    discountPercent?: number;
+    promotionEligible?: boolean;
+  }>>((warnings, item) => {
+    if (!item.productId) {
+      return warnings;
+    }
+
+    warnings[item.productId] = {
+      message: item.promotionEligible === false
+        ? "Khuyến mãi không còn áp dụng cho sản phẩm này. Vui lòng xem lại đơn hàng."
+        : "Giá khuyến mãi đã thay đổi. Vui lòng xem lại đơn hàng trước khi thanh toán.",
+      currentFinalPrice: item.currentFinalPrice,
+      discountPercent: item.discountPercent,
+      promotionEligible: item.promotionEligible,
+    };
+
+    return warnings;
+  }, {});
+};
+
 export const PaymentStep = () => {
-  const { order } = useOrderStore();
+  const {
+    order,
+    voucherCode,
+    voucherDiscountAmount = 0,
+    voucherAppliedSubtotal,
+    clearVoucher,
+  } = useOrderStore();
   const { setStep } = useCheckoutStepStore();
   const {
     items,
     clearCart,
     setAvailabilityWarnings,
     clearAvailabilityWarnings,
+    setPromotionWarnings,
+    clearPromotionWarnings,
   } = useCartStore();
 
-  const totalPrice = useTotalPrice(items);
+  const productSubtotal = useMemo(
+    () => items.reduce((total, item) => total + item.finalPrice * item.quantity, 0),
+    [items]
+  );
+  const originalSubtotal = useMemo(
+    () => items.reduce((total, item) => total + item.price * item.quantity, 0),
+    [items]
+  );
+  const productDiscountAmount = Math.max(0, originalSubtotal - productSubtotal);
+  const totalPrice = useTotalPrice(items, voucherDiscountAmount);
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHOD.COD);
+
+  useEffect(() => {
+    if (
+      voucherCode &&
+      voucherAppliedSubtotal !== undefined &&
+      voucherAppliedSubtotal !== productSubtotal
+    ) {
+      clearVoucher();
+    }
+  }, [voucherCode, voucherAppliedSubtotal, productSubtotal, clearVoucher]);
 
   const { mutate: createPayment } = useCreatePayment({
     onSuccess: (data) => {
@@ -85,6 +153,8 @@ export const PaymentStep = () => {
   const { mutate: createOrder, isPending } = useCreateOrder(
     (createdOrder) => {
       clearAvailabilityWarnings();
+      clearPromotionWarnings();
+      clearVoucher();
 
       switch (paymentMethod) {
         case PAYMENT_METHOD.COD: {
@@ -107,17 +177,26 @@ export const PaymentStep = () => {
       }
     },
     (error: CheckoutError) => {
-      if (error?.detail?.code !== "CHECKOUT_STOCK_CHANGED") {
+      if (error?.detail?.code === "CHECKOUT_STOCK_CHANGED") {
+        const warnings = buildAvailabilityWarnings(error.detail.items);
+        if (Object.keys(warnings).length === 0) {
+          return;
+        }
+
+        setAvailabilityWarnings(warnings);
+        setStep("cart");
         return;
       }
 
-      const warnings = buildAvailabilityWarnings(error.detail.items);
-      if (Object.keys(warnings).length === 0) {
-        return;
-      }
+      if (error?.detail?.code === "CHECKOUT_PRICE_CHANGED") {
+        const warnings = buildPromotionWarnings(error.detail.items);
+        if (Object.keys(warnings).length === 0) {
+          return;
+        }
 
-      setAvailabilityWarnings(warnings);
-      setStep("cart");
+        setPromotionWarnings(warnings);
+        setStep("cart");
+      }
     },
   );
 
@@ -125,13 +204,34 @@ export const PaymentStep = () => {
     if (!order || !order.items.length || totalPrice <= 0) return;
 
     clearAvailabilityWarnings();
+    clearPromotionWarnings();
 
     const checkoutDraft = Object.fromEntries(
       Object.entries(order).filter(([key]) => key !== "totalAmount"),
     ) as Omit<typeof order, "totalAmount">;
 
-    createOrder({ ...checkoutDraft, paymentMethod });
-  }, [order, paymentMethod, totalPrice, createOrder, clearAvailabilityWarnings]);
+    createOrder({
+      ...checkoutDraft,
+      voucherCode,
+      items: checkoutDraft.items.map((item) => {
+        const cartItem = items.find((cartItem) => cartItem.id === item.productId);
+        return {
+          ...item,
+          clientFinalPrice: cartItem?.finalPrice,
+        };
+      }),
+      paymentMethod,
+    });
+  }, [
+    order,
+    voucherCode,
+    items,
+    paymentMethod,
+    totalPrice,
+    createOrder,
+    clearAvailabilityWarnings,
+    clearPromotionWarnings,
+  ]);
 
   return (
     <div className="space-y-6 pt-3">
@@ -143,7 +243,14 @@ export const PaymentStep = () => {
         setPaymentMethod={setPaymentMethod}
       />
 
-      <OrderPricing totalPrice={totalPrice} />
+      <VoucherBox subtotal={productSubtotal} />
+
+      <OrderPricing
+        subtotal={originalSubtotal}
+        productDiscountAmount={productDiscountAmount}
+        voucherDiscountAmount={voucherDiscountAmount}
+        totalPrice={totalPrice}
+      />
 
       <Button
         disabled={isPending}

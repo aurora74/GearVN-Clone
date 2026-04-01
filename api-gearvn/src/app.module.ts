@@ -20,6 +20,8 @@ import { SupportTicketModule } from './support-ticket/support-ticket.module';
 import { ProductQuestionModule } from './product-question/product-question.module';
 import { BlogCommentModule } from './blog-comment/blog-comment.module';
 import { ModerationModule } from './moderation/moderation.module';
+import { VoucherModule } from './voucher/voucher.module';
+import { PromotionModule } from './promotion/promotion.module';
 @Module({
   imports: [
     ChatModule,
@@ -38,6 +40,8 @@ import { ModerationModule } from './moderation/moderation.module';
     ProductQuestionModule,
     BlogCommentModule,
     ModerationModule,
+    VoucherModule,
+    PromotionModule,
     ConfigModule.forRoot({
       isGlobal: true,
       expandVariables: true,
