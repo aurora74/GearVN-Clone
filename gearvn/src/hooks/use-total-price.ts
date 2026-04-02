@@ -2,11 +2,15 @@ import { useMemo } from "react";
 
 import { CartItemType } from "@/types/order";
 
-export const useTotalPrice = (items: CartItemType[]) => {
+export const useTotalPrice = (
+  items: CartItemType[],
+  voucherDiscountAmount = 0
+) => {
   return useMemo(() => {
-    return items.reduce((total, { price, discountPercent = 0, quantity }) => {
-      const finalPrice = price * (1 - discountPercent / 100);
+    const productTotal = items.reduce((total, { finalPrice, quantity }) => {
       return total + finalPrice * quantity;
     }, 0);
-  }, [items]);
+
+    return Math.max(0, productTotal - voucherDiscountAmount);
+  }, [items, voucherDiscountAmount]);
 };

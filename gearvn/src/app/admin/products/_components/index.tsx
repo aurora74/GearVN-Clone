@@ -9,6 +9,8 @@ import { useProducts } from "@/react-query/query/product";
 import { columns } from "./columns";
 import { DataTable } from "./data-table";
 
+const VISIBILITY_FILTER_OPTIONS = ["all", "active", "unpublished", "archived"] as const;
+
 export const ProductsPage = () => {
   const [page] = useQueryState("page", {
     parse: (v) => Number(v ?? 0),
@@ -34,6 +36,7 @@ export const ProductsPage = () => {
           ? attributes
           : undefined,
       search: search || undefined,
+      visibility: VISIBILITY_FILTER_OPTIONS[0],
     }),
     [page, sortBy, category, attributes, search]
   );

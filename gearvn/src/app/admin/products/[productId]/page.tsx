@@ -8,10 +8,13 @@ import { Loader } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+import { USER_ROLE } from "@/config.global";
+import { useMe } from "@/react-query/query/user";
 import { useProduct } from "@/react-query/query/product";
 import { useUpdateProduct } from "@/react-query/mutation/product";
 
 import { ProductFormFields } from "../_components/product-form-fields";
+import { ProductStockForm } from "../_components/product-stock-form";
 import { FormType, productSchema } from "../_components/product-schema";
 
 const EditProductPage = () => {
@@ -21,6 +24,11 @@ const EditProductPage = () => {
   const params = useParams<{ productId: string }>();
   const productId = params.productId;
 
+  const { data: currentUser } = useMe();
+  const isSalesOperationsStaff = currentUser?.role === USER_ROLE.SALES_OPERATIONS_STAFF;
+  const canManageStock =
+    currentUser?.role === USER_ROLE.MANAGER || isSalesOperationsStaff;
+  const canManageCatalog = currentUser?.role !== USER_ROLE.SALES_OPERATIONS_STAFF;
   const { data: product, isPending: isPendingProduct } = useProduct(productId);
 
   const form = useForm<FormType>({
@@ -75,7 +83,8 @@ const EditProductPage = () => {
   });
 
   const handleEdit = (data: FormType) => {
-    updateProduct({ id: product?._id || "", ...data });
+    const { stock: _stock, ...catalogData } = data;
+    updateProduct({ id: product?._id || "", ...catalogData });
   };
 
   return (
@@ -86,13 +95,33 @@ const EditProductPage = () => {
           <Loader className="size-7 text-primary animate-spin" />
           <p>Đang tải...</p>
         </div>
+      ) : isSalesOperationsStaff && product ? (
+        <div className="px-4 pb-4">
+          <ProductStockForm
+            product={product}
+            onSuccess={() => router.replace("/admin/products?workflow=stock")}
+          />
+        </div>
       ) : (
-        <ProductFormFields
-          isEdit
-          form={form}
-          onSubmit={handleEdit}
-          isPending={isPending}
-        />
+        <>
+          {canManageCatalog && (
+            <ProductFormFields
+              isEdit
+              form={form}
+              onSubmit={handleEdit}
+              isPending={isPending}
+              canManageStock={false}
+            />
+          )}
+          {canManageStock && product && (
+            <div className="border-t px-4 pb-4 pt-4">
+              <div className="mb-3 text-sm font-semibold text-muted-foreground uppercase">
+                Tồn kho
+              </div>
+              <ProductStockForm product={product} />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

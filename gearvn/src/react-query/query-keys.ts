@@ -2,6 +2,7 @@ import { UseBlogsParams } from "@/types/blog";
 import { UseOrdersParams } from "@/types/order";
 import { UseProductsParams, UseRelatedProductsParams } from "@/types/product";
 import { SupportTicketListParams } from "@/types/engagement";
+import { PublicVoucherParams, UseVouchersParams } from "@/types/voucher";
 
 export const queryKeys = {
   user: {
@@ -66,6 +67,9 @@ export const queryKeys = {
       productId,
       params,
     ],
+  },
+  products: {
+    all: ["products"],
   },
 
   blog: {
@@ -167,6 +171,23 @@ export const queryKeys = {
     detail: (id: string) => ["events", "detail", id],
   },
 
+  voucher: {
+    root: ["vouchers"],
+    list: ({ page = 1, limit = 20, search = "" }: UseVouchersParams = {}) => [
+      "vouchers",
+      "list",
+      page,
+      limit,
+      search,
+    ],
+    public: (params: PublicVoucherParams = {}) => ["vouchers", "public", params],
+    detail: (id: string) => ["vouchers", "detail", id],
+  },
+
+  promotion: {
+    root: ["promotions"],
+    summary: ["promotions", "summary"],
+  },
   chat: {
     root: ["chats"],
 

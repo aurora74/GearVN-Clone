@@ -3,10 +3,10 @@ import {
   Users,
   Layers,
   Receipt,
-  Calendar,
   Settings,
   Newspaper,
   MessageSquare,
+  TicketPercent,
   LayoutDashboard,
 } from "lucide-react";
 
@@ -77,6 +77,12 @@ export const SIDEBAR_GROUPED_ITEMS = [
         icon: Receipt,
         allowedRoles: SALES_OPERATIONS_ROLES,
       },
+      {
+        title: "Tồn kho",
+        url: "/admin/products?workflow=stock",
+        icon: Box,
+        allowedRoles: SALES_OPERATIONS_ROLES,
+      },
     ],
   },
   {
@@ -90,9 +96,9 @@ export const SIDEBAR_GROUPED_ITEMS = [
         allowedRoles: PRODUCT_MARKETING_ROLES,
       },
       {
-        title: "Su kien",
-        url: "/admin/events",
-        icon: Calendar,
+        title: "Khuyen mai",
+        url: "/admin/promotions",
+        icon: TicketPercent,
         allowedRoles: PRODUCT_MARKETING_ROLES,
       },
     ],

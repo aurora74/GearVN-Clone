@@ -1,10 +1,16 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
+import type { NextResponse } from "next/server";
 
 import type { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { validateCsrfRequest } from "@/utils/api/csrf";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+
+const noStore = (response: NextResponse) => {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+};
 
 const decodeTokenPayload = (payload: string) => {
   const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
@@ -83,18 +89,18 @@ export const POST = async (req: NextRequest) => {
       body: formData,
     });
 
-    return successResponse({
+    return noStore(successResponse({
       status: 201,
       message: "Tạo sự kiện thành công",
       description: "Sự kiện đã được lưu vào hệ thống.",
       result,
-    });
+    }));
   } catch (err: any) {
     return errorResponse({
       status: err.status || 500,
       message: "Đã có lỗi xảy ra",
       description: "Vui lòng thử lại sau.",
-      detail: err.detail,
+      detail: err.detail ?? err.details?.detail ?? err.details,
     });
   }
 };

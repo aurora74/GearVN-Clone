@@ -28,6 +28,12 @@ export class Blog {
 
   @Prop({ type: Date })
   unpublishedAt?: Date;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  isArchived: boolean;
+
+  @Prop({ type: Date })
+  archivedAt?: Date;
 }
 
 export const BlogSchema = SchemaFactory.createForClass(Blog);
