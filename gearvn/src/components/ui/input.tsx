@@ -11,6 +11,13 @@ function Input({
 }: React.ComponentProps<"input"> & { type?: string }) {
   const [show, setShow] = React.useState(false);
   const isPassword = type === "password";
+  const isFile = type === "file";
+  const inputProps = { ...props };
+
+  if (isFile) {
+    delete inputProps.value;
+    delete inputProps.defaultValue;
+  }
 
   return (
     <div className="w-full relative">
@@ -25,7 +32,7 @@ function Input({
           isPassword ? "pr-10" : "",
           className
         )}
-        {...props}
+        {...inputProps}
       />
       {isPassword && (
         <button

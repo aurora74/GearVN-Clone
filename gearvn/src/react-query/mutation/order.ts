@@ -21,6 +21,14 @@ type OrderMutationError = {
   };
 };
 
+const normalizeOrderError = (data: OrderMutationError): OrderMutationError => {
+  if (data.detail?.code === "CHECKOUT_PRICE_CHANGED") {
+    return { ...data, detail: data.detail };
+  }
+
+  return data;
+};
+
 export const useCreateOrder = (
   onSuccessCallback?: (data: Order) => void,
   onErrorCallback?: (error: OrderMutationError) => void,
@@ -34,6 +42,7 @@ export const useCreateOrder = (
         phone: payload.phone,
         address: payload.address,
         note: payload.note,
+        voucherCode: payload.voucherCode,
         items: payload.items,
         paymentMethod: payload.paymentMethod,
       };
@@ -45,7 +54,7 @@ export const useCreateOrder = (
       });
 
       const data = await response.json();
-      if (!response.ok) throw data;
+      if (!response.ok) throw normalizeOrderError(data);
 
       return data;
     },
@@ -70,11 +79,15 @@ export const useUpdateOrderStatus = (onSuccessCallback?: () => void) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ orderId, status }: UpdateOrderStatusPayload) => {
+    mutationFn: async ({
+      orderId,
+      status,
+      cancellationReason,
+    }: UpdateOrderStatusPayload) => {
       const response = await fetch(`/api/orders/status/${orderId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
-        body: JSON.stringify({ orderStatus: status }),
+        body: JSON.stringify({ orderStatus: status, cancellationReason }),
       });
 
       const data = await response.json();

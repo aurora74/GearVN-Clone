@@ -54,6 +54,16 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
+  React.useEffect(() => {
+    return () => {
+      window.setTimeout(() => {
+        if (!document.querySelector('[data-slot="dialog-content"]')) {
+          document.body.style.pointerEvents = "";
+        }
+      }, 0);
+    };
+  }, []);
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
