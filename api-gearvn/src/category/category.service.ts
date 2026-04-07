@@ -11,14 +11,62 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 
 import { Category } from './category.schema';
 import { toCamelCase } from './helper/to-camel-case';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { Product, ProductDocument } from '../product/product.schema';
 
 @Injectable()
 export class CategoryService {
   constructor(
     @InjectModel(Category.name) private categoryModel: Model<Category>,
+    @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     private cloudinaryService: CloudinaryService,
   ) {}
+
+  private async hasActiveProductsForCategory(categoryName: string) {
+    return Boolean(
+      await this.productModel.exists({
+        category: categoryName,
+        isArchived: { $ne: true },
+      }),
+    );
+  }
+
+  private async assertNoActiveProductsForCategory(categoryName: string) {
+    if (await this.hasActiveProductsForCategory(categoryName)) {
+      throw new BadRequestException('CATEGORY_HAS_DEPENDENT_PRODUCTS');
+    }
+  }
+
+  private async assertSafeFieldChanges(
+    categoryName: string,
+    currentFields: any[] = [],
+    nextFields: any[] = [],
+  ) {
+    const currentByName = new Map(
+      currentFields.map((field) => [toCamelCase(field.name), field]),
+    );
+    const nextByName = new Map(
+      nextFields.map((field) => [toCamelCase(field.name), field]),
+    );
+
+    for (const [fieldName, currentField] of currentByName) {
+      const nextField = nextByName.get(fieldName);
+      const removed = !nextField;
+      const typeChanged = nextField && nextField.type !== currentField.type;
+
+      if (!removed && !typeChanged) continue;
+
+      const productHasAttribute = await this.productModel.exists({
+        category: categoryName,
+        isArchived: { $ne: true },
+        [`attributes.${fieldName}`]: { $exists: true },
+      });
+
+      if (productHasAttribute) {
+        throw new BadRequestException('CATEGORY_FIELD_HAS_DEPENDENT_PRODUCTS');
+      }
+    }
+  }
 
   async create(dto: CreateCategoryDto, file?: Express.Multer.File) {
     let fields: any[] = [];
@@ -159,9 +207,27 @@ export class CategoryService {
       imageUrl = uploaded.secure_url;
     }
 
+    const currentCategory = await this.categoryModel.findById(id);
+    if (!currentCategory) {
+      throw new NotFoundException(`Category ${id} not found`);
+    }
+
+    const nextName = dto.name ? toCamelCase(dto.name) : undefined;
+    if (nextName && nextName !== currentCategory.name) {
+      await this.assertNoActiveProductsForCategory(currentCategory.name);
+    }
+
+    if (normalizedFields) {
+      await this.assertSafeFieldChanges(
+        currentCategory.name,
+        currentCategory.fields,
+        normalizedFields,
+      );
+    }
+
     const normalizedDto: any = {
       ...dto,
-      name: dto.name ? toCamelCase(dto.name) : undefined,
+      name: nextName,
       fields: normalizedFields ?? dto.fields,
       ...(imageUrl ? { image: imageUrl } : {}),
     };
@@ -181,12 +247,40 @@ export class CategoryService {
     return updated;
   }
 
-  async remove(id: string) {
-    const deleted = await this.categoryModel.findByIdAndDelete(id);
-    if (!deleted) {
+  async setPublished(id: string, isPublished: boolean) {
+    const category = await this.categoryModel.findById(id);
+    if (!category) {
       throw new NotFoundException(`Category ${id} not found`);
     }
 
-    return deleted;
+    category.isPublished = isPublished;
+    if (isPublished) {
+      category.publishedAt = category.publishedAt ?? new Date();
+      category.unpublishedAt = undefined;
+    } else {
+      category.unpublishedAt = new Date();
+    }
+
+    return category.save();
+  }
+
+  async archive(id: string) {
+    const category = await this.categoryModel.findById(id);
+    if (!category) {
+      throw new NotFoundException(`Category ${id} not found`);
+    }
+
+    await this.assertNoActiveProductsForCategory(category.name);
+
+    category.isArchived = true;
+    category.archivedAt = new Date();
+    category.isPublished = false;
+    category.unpublishedAt = category.unpublishedAt ?? new Date();
+
+    return category.save();
+  }
+
+  async remove(id: string) {
+    return this.archive(id);
   }
 }

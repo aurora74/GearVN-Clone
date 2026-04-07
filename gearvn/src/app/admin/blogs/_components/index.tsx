@@ -9,6 +9,8 @@ import { useBlogs } from "@/react-query/query/blog";
 import { columns } from "./columns";
 import { DataTable } from "./data-table";
 
+const VISIBILITY_FILTER_OPTIONS = ["all", "active", "unpublished", "archived"] as const;
+
 export const BlogsPage = () => {
   const [page] = useQueryState("page", {
     parse: (v) => Number(v ?? 0),
@@ -24,6 +26,7 @@ export const BlogsPage = () => {
       sortBy: sortBy || "-createdAt",
       search: search || undefined,
       includeUnpublished: true,
+      visibility: VISIBILITY_FILTER_OPTIONS[0],
     }),
     [page, sortBy, search]
   );

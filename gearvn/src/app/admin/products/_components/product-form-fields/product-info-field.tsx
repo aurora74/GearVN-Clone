@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 
 type ProductInfoFieldProps = {
   isPending: boolean;
+  canManageStock: boolean;
   data?: CategoryType[];
   form: UseFormReturn<FormType>;
 };
@@ -38,6 +39,7 @@ export const ProductInfoField = ({
   data,
   form,
   isPending,
+  canManageStock,
 }: ProductInfoFieldProps) => {
   const { data: events } = useEvents();
 
@@ -201,28 +203,34 @@ export const ProductInfoField = ({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="stock"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Số lượng <span className="text-red-500">*</span>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  disabled={isPending}
-                  placeholder="Nhập số lượng"
-                  value={formatNumber(field.value)}
-                  onChange={(e) => handleStockChange(field, e.target.value)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {canManageStock && (
+          <div className="md:col-span-2 lg:col-span-3 border-t pt-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <FormField
+                control={form.control}
+                name="stock"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Số lượng <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        disabled={isPending}
+                        placeholder="Nhập số lượng"
+                        value={formatNumber(field.value)}
+                        onChange={(e) => handleStockChange(field, e.target.value)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
+        )}
 
         <FormField
           control={form.control}

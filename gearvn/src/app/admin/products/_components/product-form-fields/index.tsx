@@ -24,6 +24,7 @@ import { SimpleEditor } from "@/components/global/admin/simple-editor";
 type ProductFormFieldsProps = {
   isEdit?: boolean;
   isPending: boolean;
+  canManageStock: boolean;
   form: UseFormReturn<FormType>;
   onSubmit: (values: FormType) => void;
 };
@@ -32,6 +33,7 @@ export const ProductFormFields = ({
   form,
   onSubmit,
   isPending,
+  canManageStock,
   isEdit = false,
 }: ProductFormFieldsProps) => {
   const { data: categories, isPending: isPendingCategory } = useCategories();
@@ -63,6 +65,7 @@ export const ProductFormFields = ({
               <ProductInfoField
                 form={form}
                 isPending={isPending}
+                canManageStock={canManageStock}
                 data={categories.data}
               />
 
@@ -103,7 +106,7 @@ export const ProductFormFields = ({
               </Button>
               <Button type="submit" disabled={isPending}>
                 {isPending && <Loader className="size-4 animate-spin" />}
-                {isEdit ? "Cập nhật sản phẩm" : "Tạo sản phẩm"}
+                {isEdit ? "Lưu thay đổi vận hành" : "Tạo sản phẩm"}
               </Button>
             </div>
           </>

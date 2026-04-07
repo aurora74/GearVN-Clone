@@ -87,6 +87,7 @@ describe('BlogService', () => {
       { isPublished: true },
       { isPublished: { $exists: false } },
     ]);
+    expect(filter.isArchived).toEqual({ $ne: true });
     expect(blogModel.countDocuments).toHaveBeenCalledWith(filter);
   });
 
@@ -98,6 +99,27 @@ describe('BlogService', () => {
     );
   });
 
+  it('archives posts without deleting them', async () => {
+    const blog = {
+      _id: new Types.ObjectId(),
+      isPublished: true,
+      isArchived: false,
+      archivedAt: undefined,
+      unpublishedAt: undefined,
+      save: jest.fn().mockImplementation(function (this: any) {
+        return Promise.resolve(this);
+      }),
+    };
+    blogModel.findById.mockResolvedValue(blog);
+
+    const result = await service.archive(blog._id.toString());
+
+    expect(result.isArchived).toBe(true);
+    expect(result.isPublished).toBe(false);
+    expect(result.archivedAt).toBeInstanceOf(Date);
+    expect(result.unpublishedAt).toBeInstanceOf(Date);
+    expect(blog.save).toHaveBeenCalled();
+  });
   it('throws when publishing a missing blog', async () => {
     blogModel.findById.mockResolvedValue(null);
 

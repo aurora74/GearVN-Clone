@@ -101,7 +101,10 @@ export const ActionsCell = ({ blog }: { blog: BlogType }) => {
             className="group"
           >
             <Trash2 className="size-4 group-hover:text-red-500" />
-            <span className="group-hover:text-red-500">Xóa</span>
+            <span className="group-hover:text-red-500">Lưu trữ nội dung</span>
+            <span className="sr-only">
+              Bản ghi sẽ bị ẩn khỏi storefront nhưng vẫn được giữ để đối soát.
+            </span>
           </DropdownMenuItem>
         </ModalDeleteBlog>
       </DropdownMenuContent>
