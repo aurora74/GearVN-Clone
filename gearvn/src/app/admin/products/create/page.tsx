@@ -7,6 +7,8 @@ import slugify from "slugify";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+import { USER_ROLE } from "@/config.global";
+import { useMe } from "@/react-query/query/user";
 import { useCreateProduct } from "@/react-query/mutation/product";
 
 import { ProductFormFields } from "../_components/product-form-fields";
@@ -14,6 +16,8 @@ import { FormType, productSchema } from "../_components/product-schema";
 
 const CreateProductPage = () => {
   const router = useRouter();
+  const { data: currentUser } = useMe();
+  const canManageStock = currentUser?.role === USER_ROLE.MANAGER;
 
   const defaultValues = useMemo<FormType>(
     () => ({
@@ -50,7 +54,13 @@ const CreateProductPage = () => {
   });
 
   const handleCreate = (data: FormType) => {
-    createProduct(data);
+    if (canManageStock) {
+      createProduct(data);
+      return;
+    }
+
+    const { stock: _stock, ...catalogData } = data;
+    createProduct(catalogData as FormType);
   };
 
   return (
@@ -60,6 +70,7 @@ const CreateProductPage = () => {
         form={form}
         isPending={isPending}
         onSubmit={handleCreate}
+        canManageStock={canManageStock}
       />
     </div>
   );
