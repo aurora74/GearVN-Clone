@@ -15,6 +15,11 @@ export type CategoryType = {
   createdAt: string;
   updatedAt: string;
   fields: CategoryFields[];
+  isPublished?: boolean;
+  publishedAt?: string;
+  unpublishedAt?: string;
+  isArchived?: boolean;
+  archivedAt?: string;
 };
 
 export type UseCategoriesParams = {
@@ -23,6 +28,7 @@ export type UseCategoriesParams = {
   search?: string;
   sortBy?: string;
   fields?: string;
+  visibility?: "all" | "active" | "unpublished" | "archived";
 };
 
 export type CreateCategoryPayload = {

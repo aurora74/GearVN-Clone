@@ -69,11 +69,13 @@ export async function PUT(
       result,
     });
   } catch (err: any) {
+    const backendError = err.details ?? err.detail;
+
     return errorResponse({
       status: err.status || 500,
-      message: "Đã có lỗi xảy ra",
-      description: "Vui lòng thử lại sau.",
-      detail: err.detail,
+      message: backendError?.message || "Đã có lỗi xảy ra",
+      description: backendError?.description || "Vui lòng thử lại sau.",
+      detail: backendError,
     });
   }
 }

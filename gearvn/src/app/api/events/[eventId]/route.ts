@@ -1,10 +1,24 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
+import type { NextResponse } from "next/server";
 
 import type { TokenPayload } from "@/types/auth";
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
 import { validateCsrfRequest } from "@/utils/api/csrf";
 import { successResponse, errorResponse } from "@/utils/api/api-response";
+
+const noStore = (response: NextResponse) => {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+};
+
+const readJsonBody = async (req: NextRequest) => {
+  try {
+    return await req.json();
+  } catch {
+    return undefined;
+  }
+};
 
 const decodeTokenPayload = (payload: string) => {
   const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
@@ -64,17 +78,17 @@ export const PUT = async (
       body: formData,
     });
 
-    return successResponse({
+    return noStore(successResponse({
       message: "Cập nhật sự kiện thành công",
       description: "Sự kiện đã được cập nhật.",
       result,
-    });
+    }));
   } catch (err: any) {
     return errorResponse({
       status: err.status || 500,
       message: "Đã có lỗi xảy ra",
       description: "Vui lòng thử lại sau.",
-      detail: err.detail,
+      detail: err.detail ?? err.details?.detail ?? err.details,
     });
   }
 };
@@ -105,21 +119,24 @@ export const DELETE = async (
       return csrfError;
     }
 
+    const body = await readJsonBody(req);
+
     await fetchFromApi(`/events/${eventId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${accessToken}` },
+      body,
     });
 
-    return successResponse({
+    return noStore(successResponse({
       message: "Xóa sự kiện thành công",
       description: "Sự kiện đã được xóa khỏi hệ thống.",
-    });
+    }));
   } catch (err: any) {
     return errorResponse({
       status: err.status || 500,
       message: "Đã có lỗi xảy ra",
       description: "Vui lòng thử lại sau.",
-      detail: err.detail,
+      detail: err.detail ?? err.details?.detail ?? err.details,
     });
   }
 };

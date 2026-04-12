@@ -90,9 +90,9 @@ export const POST = async (req: NextRequest) => {
   } catch (err: any) {
     return errorResponse({
       status: err.status || 500,
-      message: "Đã có lỗi xảy ra",
-      description: "Vui lòng thử lại sau.",
-      detail: err.detail,
+      message: err.details?.message || "Đã có lỗi xảy ra",
+      description: err.details?.description || "Vui lòng thử lại sau.",
+      detail: err.detail ?? err.details?.detail,
     });
   }
 };

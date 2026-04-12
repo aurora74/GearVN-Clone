@@ -8,6 +8,8 @@ export type BlogType = {
   isPublished?: boolean;
   publishedAt?: Date | string;
   unpublishedAt?: Date | string;
+  isArchived?: boolean;
+  archivedAt?: Date | string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -19,6 +21,7 @@ export type UseBlogsParams = {
   sortBy?: string;
   fields?: string;
   includeUnpublished?: boolean;
+  visibility?: "all" | "active" | "unpublished" | "archived";
 };
 
 export type CreateBlogPayload = {

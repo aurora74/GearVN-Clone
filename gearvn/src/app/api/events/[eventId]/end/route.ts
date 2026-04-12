@@ -1,9 +1,15 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
+import type { NextResponse } from "next/server";
 
 import { fetchFromApi } from "@/utils/api/fetch-from-api";
-import { successResponse, errorResponse } from "@/utils/api/api-response";
 import { validateCsrfRequest } from "@/utils/api/csrf";
+import { successResponse, errorResponse } from "@/utils/api/api-response";
+
+const noStore = (response: NextResponse) => {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+};
 
 const getSessionId = (accessToken: string) => {
   try {
@@ -20,13 +26,20 @@ const getSessionId = (accessToken: string) => {
   }
 };
 
-export const PUT = async (
+const readJsonBody = async (req: NextRequest) => {
+  try {
+    return await req.json();
+  } catch {
+    return {};
+  }
+};
+
+export const PATCH = async (
   req: NextRequest,
-  { params }: { params: Promise<{ orderId: string }> }
+  { params }: { params: Promise<{ eventId: string }> }
 ) => {
   try {
-    const orderId = (await params).orderId;
-
+    const eventId = (await params).eventId;
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("accessToken")?.value;
 
@@ -43,29 +56,25 @@ export const PUT = async (
     const csrfError = validateCsrfRequest(req, cookieStore, sessionId);
     if (csrfError) return csrfError;
 
-    const body = await req.json();
-    const requestBody = {
-      orderStatus: body.orderStatus,
-      cancellationReason: body.cancellationReason,
-    };
+    const body = await readJsonBody(req);
 
-    const result = await fetchFromApi(`/orders/status/${orderId}`, {
-      method: "PUT",
+    const result = await fetchFromApi(`/events/${eventId}/end`, {
+      method: "PATCH",
       headers: { Authorization: `Bearer ${accessToken}` },
-      body: requestBody,
+      body,
     });
 
-    return successResponse({
-      message: "Cập nhật trạng thái thành công",
-      description: `Đơn hàng đã chuyển sang trạng thái ${requestBody.orderStatus}`,
+    return noStore(successResponse({
+      message: "Kết thúc sự kiện thành công",
+      description: "Sự kiện đã được kết thúc.",
       result,
-    });
+    }));
   } catch (err: any) {
     return errorResponse({
       status: err.status || 500,
       message: "Đã có lỗi xảy ra",
       description: "Vui lòng thử lại sau.",
-      detail: err.detail,
+      detail: err.detail ?? err.details?.detail ?? err.details,
     });
   }
 };

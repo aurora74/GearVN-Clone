@@ -4,6 +4,13 @@ import { persist } from "zustand/middleware";
 import { CartItemType } from "@/types/order";
 import { encryptedStorage } from "@/utils/encrypted-storage";
 
+type PromotionWarning = {
+  message: string;
+  currentFinalPrice?: number;
+  discountPercent?: number;
+  promotionEligible?: boolean;
+};
+
 type CartState = {
   // --- State ---
   items: CartItemType[];
@@ -21,6 +28,8 @@ type CartState = {
 
   setAvailabilityWarnings: (warnings: Record<string, string>) => void;
   clearAvailabilityWarnings: () => void;
+  setPromotionWarnings: (warnings: Record<string, PromotionWarning>) => void;
+  clearPromotionWarnings: () => void;
   clearJustAdded: () => void;
 };
 
@@ -41,8 +50,11 @@ export const useCartStore = create<CartState>()(
               i.id === item.id
                 ? {
                     ...i,
+                    ...item,
                     quantity: i.quantity + item.quantity,
                     availabilityWarning: undefined,
+                    promotionWarning: undefined,
+                    voucherWarning: undefined,
                   }
                 : i
             ),
@@ -50,7 +62,15 @@ export const useCartStore = create<CartState>()(
           });
         } else {
           set({
-            items: [...get().items, { ...item, availabilityWarning: undefined }],
+            items: [
+              ...get().items,
+              {
+                ...item,
+                availabilityWarning: undefined,
+                promotionWarning: undefined,
+                voucherWarning: undefined,
+              },
+            ],
             justAddedItem: false,
           });
         }
@@ -71,7 +91,15 @@ export const useCartStore = create<CartState>()(
         } else {
           set({
             items: get().items.map((i) =>
-              i.id === id ? { ...i, quantity, availabilityWarning: undefined } : i
+              i.id === id
+                ? {
+                    ...i,
+                    quantity,
+                    availabilityWarning: undefined,
+                    promotionWarning: undefined,
+                    voucherWarning: undefined,
+                  }
+                : i
             ),
           });
         }
@@ -101,6 +129,35 @@ export const useCartStore = create<CartState>()(
           items: get().items.map((item) => ({
             ...item,
             availabilityWarning: undefined,
+          })),
+        });
+      },
+
+      setPromotionWarnings: (warnings) => {
+        set({
+          items: get().items.map((item) => {
+            const warning = warnings[item.id];
+            if (!warning) {
+              return { ...item, promotionWarning: undefined };
+            }
+
+            return {
+              ...item,
+              finalPrice: warning.currentFinalPrice ?? item.finalPrice,
+              clientFinalPrice: warning.currentFinalPrice ?? item.clientFinalPrice,
+              discountPercent: warning.discountPercent ?? item.discountPercent,
+              promotionWarning: warning.message,
+            };
+          }),
+        });
+      },
+
+      clearPromotionWarnings: () => {
+        set({
+          items: get().items.map((item) => ({
+            ...item,
+            promotionWarning: undefined,
+            voucherWarning: undefined,
           })),
         });
       },
