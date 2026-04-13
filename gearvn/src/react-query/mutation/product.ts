@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   CommentPayload,
@@ -7,11 +7,23 @@ import {
   UpdateProductPayload,
   UseEditCommentParams,
   UseDeleteCommentParams,
+  UpdateProductStockPayload,
 } from "@/types/product";
 import { queryKeys } from "@/react-query/query-keys";
 import { getCsrfHeaders } from "@/utils/api/csrf";
 import { toastError, toastSuccess } from "@/components/ui/toaster";
 
+const invalidateProductPromotionCaches = (
+  queryClient: QueryClient,
+  productId?: string
+) => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.product.root });
+  queryClient.invalidateQueries({ queryKey: queryKeys.promotion.summary });
+
+  if (productId) {
+    queryClient.invalidateQueries({ queryKey: queryKeys.product.detail(productId) });
+  }
+};
 export const useCreateProduct = (onSuccessCallback?: () => void) => {
   const queryClient = useQueryClient();
 
@@ -58,7 +70,7 @@ export const useCreateProduct = (onSuccessCallback?: () => void) => {
 
     onSuccess: (data) => {
       toastSuccess(data.message, data.description);
-      queryClient.invalidateQueries({ queryKey: queryKeys.product.root });
+      invalidateProductPromotionCaches(queryClient, data?.result?._id);
       onSuccessCallback?.();
     },
 
@@ -91,15 +103,15 @@ export const useUpdateProduct = (onSuccessCallback?: () => void) => {
       formData.append("slug", data.slug);
       formData.append("category", data.category);
       formData.append("price", data.price.toString());
-      formData.append("stock", data.stock.toString());
+      if (data.stock !== undefined) formData.append("stock", data.stock.toString());
       formData.append("oldImages", JSON.stringify(oldImages));
       formData.append("attributes", JSON.stringify(data.attributes));
 
-      if (data.event) formData.append("event", data.event);
+      if (data.event !== undefined) formData.append("event", data.event);
       if (data.discountPrice !== undefined)
-        formData.append("discountPrice", data.discountPrice.toString());
+        formData.append("discountPrice", String(data.discountPrice ?? ""));
       if (data.discountPercent !== undefined)
-        formData.append("discountPercent", data.discountPercent.toString());
+        formData.append("discountPercent", String(data.discountPercent ?? ""));
       if (data.description) formData.append("description", data.description);
 
       const res = await fetch(`/api/products/${data.id}`, {
@@ -114,9 +126,39 @@ export const useUpdateProduct = (onSuccessCallback?: () => void) => {
       return response;
     },
 
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       toastSuccess(data.message, data.description);
-      queryClient.invalidateQueries({ queryKey: queryKeys.product.root });
+      invalidateProductPromotionCaches(queryClient, variables.id);
+      onSuccessCallback?.();
+    },
+
+    onError: (err: any) => {
+      toastError(err?.message, err?.description);
+    },
+  });
+};
+
+export const useUpdateProductStock = (onSuccessCallback?: () => void) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ productId, stock }: UpdateProductStockPayload) => {
+      const res = await fetch(`/api/products/${productId}/stock`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ stock }),
+      });
+
+      const response = await res.json();
+      if (!res.ok) throw response;
+
+      return response;
+    },
+
+    onSuccess: (data, variables) => {
+      toastSuccess("Cập nhật tồn kho", data.description);
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.product.detail(variables.productId) });
       onSuccessCallback?.();
     },
 
@@ -142,9 +184,9 @@ export const useDeleteProduct = (onSuccessCallback?: () => void) => {
       return response;
     },
 
-    onSuccess: (data) => {
+    onSuccess: (data, productId) => {
       toastSuccess(data.message, data.description);
-      queryClient.invalidateQueries({ queryKey: queryKeys.product.root });
+      invalidateProductPromotionCaches(queryClient, productId);
       onSuccessCallback?.();
     },
 

@@ -21,6 +21,52 @@ export type OrderItemSnapshot = {
   unitPrice: number;
   finalPrice: number;
   lineTotal: number;
+  eventTag?: string;
+  eventName?: string;
+  originalPrice?: number;
+  promotionStatus?: string;
+};
+
+export type OrderPromotionAdjustment = {
+  type: "flash_sale" | "voucher" | string;
+  code?: string;
+  eventTag?: string;
+  eventName?: string;
+  voucherId?: string;
+  voucherCode?: string;
+  amount: number;
+  description?: string;
+};
+
+export type OrderVoucherSnapshot = {
+  voucherId: string;
+  code: string;
+  discountType?: string;
+  discountValue?: number;
+  minimumOrderValue?: number;
+  maximumDiscountAmount?: number;
+  discountAmount?: number;
+  reservedUsage?: boolean;
+  reservedAt?: string | Date;
+  restoredAt?: string | Date;
+};
+
+export type OrderStatusHistory = {
+  fromStatus: OrderStatus;
+  toStatus: OrderStatus;
+  changedBy?: string;
+  changedByRole?: string;
+  reason?: string;
+  changedAt: string | Date;
+};
+
+export type OrderEvent = {
+  type: string;
+  message: string;
+  actorId?: string;
+  actorRole?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string | Date;
 };
 
 export type Order = {
@@ -31,11 +77,28 @@ export type Order = {
   address: string;
   note?: string;
   items: OrderItemSnapshot[];
+  subtotalAmount?: number;
+  productDiscountAmount?: number;
+  voucherDiscountAmount?: number;
+  promotionAdjustments?: OrderPromotionAdjustment[];
+  voucherSnapshot?: OrderVoucherSnapshot;
   totalAmount: number;
   orderCode: string;
   orderStatus: OrderStatus;
   paymentStatus: PaymentStatusType;
   paymentMethod: PaymentMethod;
+  paymentProvider?: string;
+  paymentReference?: string;
+  paymentResponseCode?: string;
+  paymentAmount?: number;
+  paymentSignatureValid?: boolean;
+  paymentReconciledAt?: string | Date;
+  statusHistory?: OrderStatusHistory[];
+  orderEvents?: OrderEvent[];
+  cancellationReason?: string;
+  cancelledBy?: string;
+  cancelledByRole?: string;
+  cancelledAt?: string | Date;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -45,6 +108,7 @@ export type OrderItemWithProduct = OrderItemSnapshot;
 export type OrderItemWithId = {
   productId: string;
   quantity: number;
+  clientFinalPrice?: number;
 };
 
 export type UseOrdersParams = {
@@ -68,6 +132,7 @@ export type CreateOrderPayload = {
   phone: string;
   address: string;
   note?: string;
+  voucherCode?: string;
   paymentMethod: PaymentMethod;
   items: OrderItemWithId[];
 };
@@ -77,6 +142,7 @@ export type CreateOrderDraft = Omit<CreateOrderPayload, "paymentMethod">;
 export type UpdateOrderStatusPayload = {
   orderId: string;
   status: string;
+  cancellationReason?: string;
 };
 
 export type CartItemType = {
@@ -88,6 +154,11 @@ export type CartItemType = {
   quantity: number;
   finalPrice: number;
   discountPercent?: number;
+  flashSaleEventName?: string;
+  flashSaleEndsAt?: string;
+  clientFinalPrice?: number;
+  promotionWarning?: string;
+  voucherWarning?: string;
   availabilityWarning?: string;
 };
 

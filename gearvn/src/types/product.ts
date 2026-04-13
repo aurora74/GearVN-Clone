@@ -45,6 +45,17 @@ export type ProductType = {
   updatedAt: string;
   stock: number;
   soldQuantity: number;
+  promotionEligible?: boolean;
+  isPublished?: boolean;
+  publishedAt?: string;
+  unpublishedAt?: string;
+  isArchived?: boolean;
+  archivedAt?: string;
+  published?: boolean;
+  isActive?: boolean;
+  available?: boolean;
+  isAvailable?: boolean;
+  status?: string;
 };
 
 export type CreateProductPayload = {
@@ -66,14 +77,19 @@ export type UpdateProductPayload = {
   name: string;
   slug: string;
   price: number;
-  stock: number;
+  stock?: number;
   event?: string;
   category: string;
   description?: string;
-  discountPrice?: number;
-  discountPercent?: number;
+  discountPrice?: number | null;
+  discountPercent?: number | null;
   images: (string | File)[];
   attributes?: Record<string, any>;
+};
+
+export type UpdateProductStockPayload = {
+  productId: string;
+  stock: number;
 };
 
 export type UseProductsParams = {
@@ -85,6 +101,7 @@ export type UseProductsParams = {
   category?: string;
   event?: string;
   attributes?: Record<string, string[]>;
+  visibility?: "all" | "active" | "unpublished" | "archived";
 };
 
 export type UseRelatedProductsParams = {
