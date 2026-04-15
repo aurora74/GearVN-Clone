@@ -135,6 +135,35 @@ export class EventController {
     });
   }
 
+  @Get('manage')
+  @ApiBearerAuth()
+  @Permissions(Permission.PROMOTION_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'fields', required: false, type: String })
+  @ApiQuery({ name: 'visibility', required: false, type: String })
+  findAllManaged(
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('fields') fields?: string,
+    @Query('visibility') visibility?: 'all' | 'active' | 'unpublished' | 'archived',
+  ) {
+    return this.eventService.findAll({
+      page,
+      limit,
+      search,
+      sortBy,
+      fields,
+      publicOnly: false,
+      visibility: visibility ?? 'active',
+    });
+  }
+
   @Delete(':id')
   @ApiBearerAuth()
   @Permissions(Permission.PROMOTION_MANAGE)

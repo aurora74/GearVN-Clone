@@ -20,6 +20,7 @@ import { ColumnsVisibilityDropdown } from "../../_components/columns-visibility-
 type ActionsBarProps<TData> = {
   data: TData[];
   table: TableType<TData>;
+  canManageCatalog: boolean;
   isPendingFields: boolean;
   selectedCategory: string;
   fields?: CategoryFields[];
@@ -40,6 +41,7 @@ export const ActionsBar = <TData,>({
   setFilters,
   categories,
   tableColumns,
+  canManageCatalog,
   isPendingFields,
   setFiltersParam,
   selectedCategory,
@@ -49,11 +51,13 @@ export const ActionsBar = <TData,>({
   return (
     <div className="w-fit flex items-center justify-between sm:justify-end gap-2">
       <div className="hidden sm:flex gap-2">
-        <Button asChild>
-          <Link href="/admin/products/create">
-            <Plus /> Thêm sản phẩm
-          </Link>
-        </Button>
+        {canManageCatalog && (
+          <Button asChild>
+            <Link href="/admin/products/create">
+              <Plus /> Thêm sản phẩm
+            </Link>
+          </Button>
+        )}
 
         <FilterProducts
           filters={filters}
@@ -85,11 +89,13 @@ export const ActionsBar = <TData,>({
           </PopoverTrigger>
 
           <PopoverContent align="end" className="w-72 p-3 space-y-3">
-            <Button asChild className="w-full justify-center sm:justify-start">
-              <Link href="/admin/products/create">
-                <Plus className="mr-2 h-4 w-4" /> Thêm sản phẩm
-              </Link>
-            </Button>
+            {canManageCatalog && (
+              <Button asChild className="w-full justify-center sm:justify-start">
+                <Link href="/admin/products/create">
+                  <Plus className="mr-2 h-4 w-4" /> Thêm sản phẩm
+                </Link>
+              </Button>
+            )}
 
             <FilterProducts
               filters={filters}

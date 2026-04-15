@@ -8,6 +8,8 @@ import {
 } from "@tanstack/react-table";
 import { useQueryState } from "nuqs";
 
+import { USER_ROLE } from "@/config.global";
+import { useMe } from "@/react-query/query/user";
 import { useCategories, useCategoryByName } from "@/react-query/query/category";
 
 import {
@@ -38,7 +40,11 @@ export const DataTable = <TData, TValue>({
   isPending,
   pageCount,
 }: DataTableProps<TData, TValue>) => {
+  const { data: currentUser } = useMe();
   const { data: categories } = useCategories();
+  const canManageCatalog =
+    currentUser?.role === USER_ROLE.MANAGER ||
+    currentUser?.role === USER_ROLE.PRODUCT_MARKETING_STAFF;
 
   const [page, setPage] = useQueryState("page", {
     shallow: false,
@@ -130,6 +136,7 @@ export const DataTable = <TData, TValue>({
           setFilters={setFilters}
           categories={categories}
           tableColumns={tableColumns}
+          canManageCatalog={canManageCatalog}
           isPendingFields={isPendingFields}
           setFiltersParam={setFiltersParam}
           selectedCategory={selectedCategory}

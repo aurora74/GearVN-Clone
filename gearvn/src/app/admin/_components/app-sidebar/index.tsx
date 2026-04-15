@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { SIDEBAR_GROUPED_ITEMS } from "@/constants/admin/sidebar-grouped-items";
 import { useMe } from "@/react-query/query/user";
@@ -24,8 +24,39 @@ import type { UserRole } from "@/types/user";
 const isAllowedForRole = (allowedRoles: readonly UserRole[], role: UserRole) =>
   allowedRoles.includes(role);
 
+type SearchParamsLike = {
+  get: (name: string) => string | null;
+};
+
+const isActiveSidebarUrl = (
+  itemUrl: string,
+  pathname: string,
+  searchParams: SearchParamsLike
+) => {
+  const parsedUrl = new URL(itemUrl, "http://localhost");
+  const pathMatches =
+    pathname === parsedUrl.pathname || pathname.startsWith(`${parsedUrl.pathname}/`);
+
+  if (!pathMatches) return false;
+
+  const itemSearchEntries = Array.from(parsedUrl.searchParams.entries());
+
+  if (itemSearchEntries.length > 0) {
+    return itemSearchEntries.every(
+      ([key, value]) => searchParams.get(key) === value
+    );
+  }
+
+  if (parsedUrl.pathname === "/admin/products" && searchParams.get("workflow")) {
+    return false;
+  }
+
+  return true;
+};
+
 export const AppSidebar = (props: React.ComponentProps<typeof Sidebar>) => {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data: user } = useMe();
   const currentRole = user?.role;
 
@@ -36,7 +67,7 @@ export const AppSidebar = (props: React.ComponentProps<typeof Sidebar>) => {
           .filter((item) => isAllowedForRole(item.allowedRoles, currentRole))
           .map((item) => ({
             ...item,
-            isActive: pathname === item.url || pathname.startsWith(item.url + "/"),
+            isActive: isActiveSidebarUrl(item.url, pathname, searchParams),
           })),
       }))
         .filter((group) => {

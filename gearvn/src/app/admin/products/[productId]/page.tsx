@@ -83,7 +83,8 @@ const EditProductPage = () => {
   });
 
   const handleEdit = (data: FormType) => {
-    const { stock: _stock, ...catalogData } = data;
+    const catalogData = { ...data };
+    delete (catalogData as Partial<FormType>).stock;
     updateProduct({ id: product?._id || "", ...catalogData });
   };
 

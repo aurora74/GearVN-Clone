@@ -143,13 +143,13 @@ export const OrderDetailsCell = ({ order }: { order: Order }) => {
               {order.items.map((item, idx) => {
                 const productId = item.productId._id;
                 const productImage =
-                  item.productImage || item.productId.images?.[0] || "/placeholder.jpg";
+                  item.productImage || item.productId.images?.[0] || "/avatar-default.jpg";
                 const productName = item.productName || item.productId.name;
 
                 return (
                   <Link
                     key={`${productId}-${idx}`}
-                    href={`/admin/products/${btoa(productId)}`}
+                    href={`/admin/products/${productId}`}
                     className="flex gap-3 pb-3 border-b last:border-none"
                   >
                     <Image

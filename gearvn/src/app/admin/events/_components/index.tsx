@@ -9,7 +9,7 @@ import { useEvents } from "@/react-query/query/event";
 import { columns } from "./columns";
 import { DataTable } from "./data-table";
 
-const VISIBILITY_FILTER_OPTIONS = ["all", "active", "unpublished", "archived"] as const;
+const DEFAULT_VISIBILITY_FILTER = "active" as const;
 
 export const EventsPage = () => {
   const [page] = useQueryState("page", {
@@ -25,7 +25,7 @@ export const EventsPage = () => {
       limit: 20,
       sortBy: sortBy || "-createdAt",
       search: search || undefined,
-      visibility: VISIBILITY_FILTER_OPTIONS[0],
+      visibility: DEFAULT_VISIBILITY_FILTER,
     }),
     [page, sortBy, search]
   );
