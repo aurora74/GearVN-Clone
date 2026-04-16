@@ -29,6 +29,7 @@ import { ORDER_STATUS, PAYMENT_STATUS } from 'src/config.global';
 const ORDER_CANCEL_NOT_ALLOWED = 'ORDER_CANCEL_NOT_ALLOWED';
 const ORDER_STATUS_TRANSITION_NOT_ALLOWED = 'ORDER_STATUS_TRANSITION_NOT_ALLOWED';
 const ORDER_CANCELLATION_REASON_REQUIRED = 'ORDER_CANCELLATION_REASON_REQUIRED';
+const MAX_ORDER_CODE_GENERATION_ATTEMPTS = 5;
 
 const VALID_STAFF_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PROCESSING]: [
@@ -82,19 +83,6 @@ export class OrderService {
       );
     }
 
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    const countToday = await this.orderModel.countDocuments({
-      createdAt: {
-        $gte: new Date(today.setHours(0, 0, 0, 0)),
-        $lt: new Date(today.setHours(23, 59, 59, 999)),
-      },
-    });
-
-    const orderCode = `DH${dateStr}-${(countToday + 1)
-      .toString()
-      .padStart(4, '0')}`;
-
     const {
       items,
       subtotalAmount,
@@ -132,7 +120,6 @@ export class OrderService {
 
     const orderData: Partial<Order> = {
       userId,
-      orderCode,
       note,
       items,
       phone,
@@ -151,7 +138,7 @@ export class OrderService {
 
     let createdOrder: any;
     try {
-      createdOrder = await new this.orderModel(orderData).save();
+      createdOrder = await this.saveOrderWithUniqueCode(orderData);
       await this.applyInventoryTransition(
         String(createdOrder._id),
         'RESERVED',
@@ -169,6 +156,78 @@ export class OrderService {
 
     const hydratedOrder = await this.orderModel.findById(createdOrder._id);
     return hydratedOrder ?? createdOrder;
+  }
+
+  private async saveOrderWithUniqueCode(orderData: Partial<Order>) {
+    const attemptedOrderCodes = new Set<string>();
+
+    for (let attempt = 0; attempt < MAX_ORDER_CODE_GENERATION_ATTEMPTS; attempt += 1) {
+      const orderCode = await this.generateUniqueOrderCode(new Date(), attemptedOrderCodes);
+      attemptedOrderCodes.add(orderCode);
+
+      try {
+        return await new this.orderModel({ ...orderData, orderCode }).save();
+      } catch (error) {
+        if (this.isDuplicateOrderCodeError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new ConflictException({
+      message: 'Order code generation conflict',
+      description: 'Unable to reserve a unique order code. Please try again.',
+      detail: { code: 'ORDER_CODE_CONFLICT' },
+    });
+  }
+
+  private async generateUniqueOrderCode(
+    issuedAt: Date,
+    attemptedOrderCodes: Set<string>,
+  ) {
+    const dateStr = issuedAt.toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix = `DH${dateStr}-`;
+    const latestOrder = (await this.orderModel
+      .findOne({ orderCode: { $regex: `^${prefix}\\d+$` } })
+      .sort({ orderCode: -1 })
+      .select('orderCode')
+      .lean()
+      .exec()) as { orderCode?: string } | null;
+
+    const latestSequence = this.parseOrderCodeSequence(latestOrder?.orderCode);
+    let nextSequence = latestSequence + 1;
+    let orderCode = this.formatOrderCode(prefix, nextSequence);
+
+    while (attemptedOrderCodes.has(orderCode)) {
+      nextSequence += 1;
+      orderCode = this.formatOrderCode(prefix, nextSequence);
+    }
+
+    return orderCode;
+  }
+
+  private parseOrderCodeSequence(orderCode?: string) {
+    const match = orderCode?.match(/-(\d+)$/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  private formatOrderCode(prefix: string, sequence: number) {
+    return `${prefix}${sequence.toString().padStart(4, '0')}`;
+  }
+
+  private isDuplicateOrderCodeError(error: unknown) {
+    const mongoError = error as {
+      code?: number;
+      keyPattern?: Record<string, unknown>;
+      keyValue?: Record<string, unknown>;
+    };
+
+    return (
+      mongoError?.code === 11000 &&
+      (mongoError.keyPattern?.orderCode === 1 || mongoError.keyValue?.orderCode)
+    );
   }
 
   private createCheckoutError(
@@ -1090,13 +1149,6 @@ export class OrderService {
       throw new BadRequestException(ORDER_CANCELLATION_REASON_REQUIRED);
     }
 
-    if (targetStatus === OrderStatus.COMPLETED) {
-      await this.applyInventoryTransition(id, 'COMMITTED', 'order:updateStatus');
-    }
-
-    if (targetStatus === OrderStatus.CANCELLED) {
-      await this.applyInventoryTransition(id, 'RELEASED', 'order:updateStatus');
-    }
 
     const changedAt = new Date();
     const actorId = String(actor?.id ?? actor?._id ?? '');
@@ -1136,8 +1188,8 @@ export class OrderService {
       updateData.cancelledAt = changedAt;
     }
 
-    const updatedOrder = await this.orderModel.findByIdAndUpdate(
-      id,
+    const updatedOrder = await this.orderModel.findOneAndUpdate(
+      { _id: id, orderStatus: currentStatus },
       {
         $set: updateData,
         $push: {
@@ -1149,11 +1201,49 @@ export class OrderService {
     );
 
     if (!updatedOrder) {
-      throw new NotFoundException(`Order with ID ${id} not found`);
+      throw new BadRequestException(ORDER_STATUS_TRANSITION_NOT_ALLOWED);
     }
 
-    if (targetStatus === OrderStatus.CANCELLED) {
-      await this.restoreVoucherReservationIfEligible(orderBeforeUpdate, id);
+    try {
+      if (targetStatus === OrderStatus.COMPLETED) {
+        await this.applyInventoryTransition(id, 'COMMITTED', 'order:updateStatus');
+      }
+
+      if (targetStatus === OrderStatus.CANCELLED) {
+        await this.applyInventoryTransition(id, 'RELEASED', 'order:updateStatus');
+        await this.restoreVoucherReservationIfEligible(orderBeforeUpdate, id);
+      }
+    } catch (error) {
+      const rollbackSet: Record<string, unknown> = {
+        orderStatus: currentStatus,
+        paymentStatus: orderBeforeUpdate.paymentStatus,
+      };
+      const rollbackUnset: Record<string, number> = {};
+
+      [
+        'cancellationReason',
+        'cancelledBy',
+        'cancelledByRole',
+        'cancelledAt',
+      ].forEach((field) => {
+        const value = (orderBeforeUpdate as unknown as Record<string, unknown>)[field];
+        if (value === undefined || value === null) {
+          rollbackUnset[field] = 1;
+        } else {
+          rollbackSet[field] = value;
+        }
+      });
+
+      await this.orderModel.findByIdAndUpdate(id, {
+        $set: rollbackSet,
+        ...(Object.keys(rollbackUnset).length ? { $unset: rollbackUnset } : {}),
+        $pull: {
+          statusHistory: { changedAt },
+          orderEvents: { type: 'ORDER_STATUS_CHANGED', createdAt: changedAt },
+        },
+      });
+
+      throw error;
     }
 
     return updatedOrder;

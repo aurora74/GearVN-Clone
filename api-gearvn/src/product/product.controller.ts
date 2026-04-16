@@ -25,7 +25,10 @@ import { memoryStorage } from 'multer';
 import { FilesInterceptor } from '@nestjs/platform-express';
 
 import { ProductService } from './product.service';
-import { Permissions } from 'src/auth/decorators/permissions.decorator';
+import {
+  AnyPermissions,
+  Permissions,
+} from 'src/auth/decorators/permissions.decorator';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { Permission } from 'src/auth/policy/permissions';
@@ -129,11 +132,12 @@ export class ProductController {
   @Permissions(Permission.INVENTORY_MANAGE)
   @UseGuards(JwtGuard, PermissionsGuard)
   @ApiParam({ name: 'id', required: true })
-  updateStock(
-    @Param('id') id: string,
-    @Body() dto: UpdateProductStockDto,
-  ) {
-    return this.productService.updateStock(id, dto.stock, dto as Record<string, unknown>);
+  updateStock(@Param('id') id: string, @Body() dto: UpdateProductStockDto) {
+    return this.productService.updateStock(
+      id,
+      dto.stock,
+      dto as unknown as Record<string, unknown>,
+    );
   }
 
   @Get()
@@ -173,6 +177,45 @@ export class ProductController {
     });
   }
 
+  @Get('manage')
+  @ApiBearerAuth()
+  @AnyPermissions(Permission.CATALOG_MANAGE, Permission.INVENTORY_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'event', required: false, type: String })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'fields', required: false, type: String })
+  @ApiQuery({ name: 'category', required: false, type: String })
+  @ApiQuery({ name: 'attributes', required: false, type: String })
+  @ApiQuery({ name: 'visibility', required: false, type: String })
+  async findAllManaged(
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+    @Query('event') event?: string,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('fields') fields?: string,
+    @Query('category') category?: string,
+    @Query('attributes') attributesRaw?: string,
+    @Query('visibility')
+    visibility?: 'all' | 'active' | 'unpublished' | 'archived',
+  ) {
+    return this.productService.findAll({
+      page: Number(page),
+      limit: Number(limit),
+      search,
+      sortBy,
+      fields,
+      category,
+      event,
+      attributesRaw,
+      publicOnly: false,
+      visibility: visibility ?? 'active',
+    });
+  }
+
   @Get('related/:id')
   @ApiParam({ name: 'id', required: true })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -201,6 +244,15 @@ export class ProductController {
   @ApiParam({ name: 'slug', required: true })
   findBySlug(@Param('slug') slug: string) {
     return this.productService.findBySlug(slug);
+  }
+
+  @Get('manage/:id')
+  @ApiBearerAuth()
+  @AnyPermissions(Permission.CATALOG_MANAGE, Permission.INVENTORY_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiParam({ name: 'id', required: true })
+  findManagedOne(@Param('id') id: string) {
+    return this.productService.findManagedOne(id);
   }
 
   @Get(':id')
@@ -348,7 +400,12 @@ export class ProductController {
     @Body() body: { action: 'hide' | 'delete'; reason: string },
     @Request() req,
   ) {
-    return this.productService.moderateComment(productId, commentId, req.user, body);
+    return this.productService.moderateComment(
+      productId,
+      commentId,
+      req.user,
+      body,
+    );
   }
 
   @Post('comment/:productId/:commentId/replies/:replyId/moderate')
@@ -362,7 +419,13 @@ export class ProductController {
     @Body() body: { action: 'hide' | 'delete'; reason: string },
     @Request() req,
   ) {
-    return this.productService.moderateReply(productId, commentId, replyId, req.user, body);
+    return this.productService.moderateReply(
+      productId,
+      commentId,
+      replyId,
+      req.user,
+      body,
+    );
   }
 
   @Delete('comment/:productId/:commentId')

@@ -119,6 +119,12 @@ describe('OrderService checkout validation', () => {
       }),
     }));
 
+    orderModel.findOne = jest.fn().mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(null),
+    });
     orderModel.countDocuments = jest.fn().mockResolvedValue(0);
     orderModel.findById = jest.fn().mockResolvedValue(null);
     orderModel.findByIdAndUpdate = jest.fn();
@@ -225,6 +231,33 @@ describe('OrderService checkout validation', () => {
     );
   });
 
+  it('retries with the next order code when MongoDB reports an orderCode duplicate', async () => {
+    let saveAttempts = 0;
+    orderModel.mockImplementation((data) => ({
+      save: jest.fn().mockImplementation(async () => {
+        saveAttempts += 1;
+
+        if (saveAttempts === 1) {
+          throw { code: 11000, keyPattern: { orderCode: 1 }, keyValue: { orderCode: data.orderCode } };
+        }
+
+        return { _id: 'order-id', ...data };
+      }),
+    }));
+    productService.findOne.mockResolvedValue(buildProduct());
+    mockReservationFlow();
+
+    await service.create(buildCheckoutDto(), 'customer-1');
+
+    expect(orderModel).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ orderCode: expect.stringMatching(/-0001$/) }),
+    );
+    expect(orderModel).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ orderCode: expect.stringMatching(/-0002$/) }),
+    );
+  });
   it('does not apply an active promo price to an ineligible product', async () => {
     productService.findOne.mockResolvedValue(buildProduct({ isPublished: false }));
     mockReservationFlow();
@@ -578,7 +611,7 @@ describe('OrderService checkout validation', () => {
       paymentStatus: 'PENDING',
       items: [],
     });
-    orderModel.findByIdAndUpdate.mockResolvedValue({ _id: 'order-id' });
+    orderModel.findOneAndUpdate.mockResolvedValue({ _id: 'order-id' });
 
     await service.updateStatus(
       'order-id',
@@ -586,8 +619,8 @@ describe('OrderService checkout validation', () => {
       { id: 'staff-1', role: 'SALES_OPERATIONS_STAFF' } as any,
     );
 
-    expect(orderModel.findByIdAndUpdate).toHaveBeenCalledWith(
-      'order-id',
+    expect(orderModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'order-id', orderStatus: OrderStatus.PROCESSING },
       expect.objectContaining({
         $set: { orderStatus: OrderStatus.SHIPPING },
         $push: expect.objectContaining({
@@ -617,14 +650,13 @@ describe('OrderService checkout validation', () => {
       voucherSnapshot: { voucherId: 'voucher-1', reservedUsage: true },
       items: [],
     });
-    orderModel.findOneAndUpdate.mockResolvedValueOnce({
-      _id: 'order-id',
-      inventoryStatus: 'RESERVED',
-      items: [],
-    });
-    orderModel.findByIdAndUpdate
+    orderModel.findOneAndUpdate
       .mockResolvedValueOnce({ _id: 'order-id', orderStatus: OrderStatus.CANCELLED })
-      .mockResolvedValueOnce({ _id: 'order-id' });
+      .mockResolvedValueOnce({
+        _id: 'order-id',
+        inventoryStatus: 'RESERVED',
+        items: [],
+      });
 
     await service.updateStatus(
       'order-id',
@@ -632,9 +664,9 @@ describe('OrderService checkout validation', () => {
       { id: 'staff-1', role: 'SALES_OPERATIONS_STAFF' } as any,
     );
 
-    expect(orderModel.findByIdAndUpdate).toHaveBeenNthCalledWith(
+    expect(orderModel.findOneAndUpdate).toHaveBeenNthCalledWith(
       1,
-      'order-id',
+      { _id: 'order-id', orderStatus: OrderStatus.PROCESSING },
       expect.objectContaining({
         $set: expect.objectContaining({
           orderStatus: OrderStatus.CANCELLED,
@@ -663,22 +695,21 @@ describe('OrderService checkout validation', () => {
       inventoryStatus: 'RESERVED',
       items: [{ productId: 'product-1', quantity: 1 }],
     });
-    orderModel.findOneAndUpdate.mockResolvedValueOnce({
-      _id: 'order-id',
-      inventoryStatus: 'RESERVED',
-      inventoryReservedAt: new Date('2026-05-02T00:00:00Z'),
-      items: [{ productId: 'product-1', quantity: 1 }],
-    });
-    orderModel.findByIdAndUpdate.mockResolvedValue({
-      _id: 'order-id',
-      orderStatus: OrderStatus.COMPLETED,
-    });
+    orderModel.findOneAndUpdate
+      .mockResolvedValueOnce({ _id: 'order-id', orderStatus: OrderStatus.COMPLETED })
+      .mockResolvedValueOnce({
+        _id: 'order-id',
+        inventoryStatus: 'RESERVED',
+        inventoryReservedAt: new Date('2026-05-02T00:00:00Z'),
+        items: [{ productId: 'product-1', quantity: 1 }],
+      });
 
     await service.updateStatus('order-id', { orderStatus: OrderStatus.COMPLETED });
 
     expect(productService.increaseSoldQuantity).toHaveBeenCalledWith('product-1', 1);
-    expect(orderModel.findByIdAndUpdate).toHaveBeenLastCalledWith(
-      'order-id',
+    expect(orderModel.findOneAndUpdate).toHaveBeenNthCalledWith(
+      1,
+      { _id: 'order-id', orderStatus: OrderStatus.SHIPPING },
       expect.objectContaining({
         $set: expect.objectContaining({
           orderStatus: OrderStatus.COMPLETED,

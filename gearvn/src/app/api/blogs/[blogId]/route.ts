@@ -97,10 +97,16 @@ export const PUT = async (
       body: formData,
     });
 
+    const cleanupAwareResult = {
+      ...result,
+      cleanupWarning: result?.cleanupWarning,
+      cleanupFailedAssets: result?.cleanupFailedAssets,
+    };
+
     return successResponse({
       message: "Cập nhật thành công",
       description: "Bài viết đã được cập nhật.",
-      result,
+      result: cleanupAwareResult,
     });
   } catch (err: any) {
     return errorResponse({

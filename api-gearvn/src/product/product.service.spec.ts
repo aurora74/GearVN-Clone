@@ -358,3 +358,75 @@ describe('ProductService create stock boundary', () => {
     );
   });
 });
+
+describe('ProductService media cleanup', () => {
+  let productModel: { findById: jest.Mock; findByIdAndUpdate: jest.Mock };
+  let cloudinaryService: { uploadImage: jest.Mock; deleteImage: jest.Mock };
+  let service: ProductService;
+
+  beforeEach(() => {
+    productModel = {
+      findById: jest.fn(),
+      findByIdAndUpdate: jest.fn(),
+    };
+    cloudinaryService = {
+      uploadImage: jest.fn(),
+      deleteImage: jest.fn().mockResolvedValue({ result: 'ok' }),
+    };
+    service = new ProductService(
+      productModel as any,
+      cloudinaryService as any,
+      {
+        assertModerationReason: jest.fn(),
+        recordModerationAudit: jest.fn(),
+      } as any,
+    );
+  });
+
+  it('deletes removed images after product update persistence', async () => {
+    const existingProduct = {
+      _id: 'product-1',
+      images: ['https://cdn.test/keep.png', 'https://cdn.test/remove.png'],
+    };
+    const updatedProduct = { _id: 'product-1', images: ['https://cdn.test/keep.png'] };
+    productModel.findById.mockResolvedValue(existingProduct);
+    productModel.findByIdAndUpdate.mockResolvedValue(updatedProduct);
+
+    await expect(
+      service.update(
+        'product-1',
+        makeUpdateBody({ oldImages: JSON.stringify(['https://cdn.test/keep.png']) }),
+        [],
+        { role: UserRole.MANAGER },
+      ),
+    ).resolves.toEqual(updatedProduct);
+
+    expect(productModel.findByIdAndUpdate).toHaveBeenCalled();
+    expect(cloudinaryService.deleteImage).toHaveBeenCalledWith('https://cdn.test/remove.png');
+  });
+
+  it('returns a cleanup warning without rejecting when removed image deletion fails', async () => {
+    const existingProduct = {
+      _id: 'product-1',
+      images: ['https://cdn.test/remove.png'],
+    };
+    const updatedProduct = { _id: 'product-1', images: [] };
+    productModel.findById.mockResolvedValue(existingProduct);
+    productModel.findByIdAndUpdate.mockResolvedValue(updatedProduct);
+    cloudinaryService.deleteImage.mockRejectedValue(new Error('cloudinary down'));
+
+    await expect(
+      service.update(
+        'product-1',
+        makeUpdateBody({ oldImages: JSON.stringify([]) }),
+        [],
+        { role: UserRole.MANAGER },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        cleanupWarning: true,
+        cleanupFailedAssets: ['https://cdn.test/remove.png'],
+      }),
+    );
+  });
+});

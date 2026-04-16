@@ -25,6 +25,7 @@ export interface ProductModerationDto {
 }
 
 type ProductMutationActor = { role?: string } | undefined;
+type CleanupWarning = { cleanupWarning?: true; cleanupFailedAssets?: string[] };
 
 const CATALOG_CREATE_FIELDS = [
   'name',
@@ -98,6 +99,36 @@ export class ProductService {
       if (body[field] !== undefined) acc[field] = body[field];
       return acc;
     }, {} as Record<string, any>);
+  }
+
+  private async cleanupRemovedImages(urls: string[]): Promise<CleanupWarning> {
+    const uniqueUrls = [...new Set(urls.filter(Boolean))];
+    if (!uniqueUrls.length) return {};
+
+    const failedAssets: string[] = [];
+    await Promise.all(
+      uniqueUrls.map(async (url) => {
+        try {
+          await this.cloudinaryService.deleteImage(url);
+        } catch (error) {
+          failedAssets.push(url);
+          console.warn('Failed to delete replaced product image', { url, error });
+        }
+      }),
+    );
+
+    return failedAssets.length
+      ? { cleanupWarning: true, cleanupFailedAssets: failedAssets }
+      : {};
+  }
+
+  private withCleanupWarning<T>(record: T, cleanup: CleanupWarning): T & CleanupWarning {
+    if (!cleanup.cleanupWarning) return record as T & CleanupWarning;
+    const base =
+      record && typeof (record as any).toObject === 'function'
+        ? (record as any).toObject()
+        : record;
+    return { ...(base as any), ...cleanup };
   }
 
   private getActorId(actor: ModerationActor) {
@@ -196,7 +227,12 @@ export class ProductService {
     }
 
     const product = new this.productModel(productData);
-    return product.save();
+    try {
+      return await product.save();
+    } catch (error) {
+      await this.cleanupRemovedImages(uploadedImages.map((img) => img.secure_url));
+      throw error;
+    }
   }
 
   async update(
@@ -266,16 +302,28 @@ export class ProductService {
       updateData.stock = body.stock;
     }
 
-    const updated = await this.productModel.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    });
+    let updated: ProductDocument | null;
+    try {
+      updated = await this.productModel.findByIdAndUpdate(id, updateData, {
+        new: true,
+        runValidators: true,
+      });
+    } catch (error) {
+      await this.cleanupRemovedImages(newImages.map((img) => img.secure_url));
+      throw error;
+    }
 
     if (!updated) {
+      await this.cleanupRemovedImages(newImages.map((img) => img.secure_url));
       throw new BadRequestException(`Product with id "${id}" not found`);
     }
 
-    return updated;
+    const removedImages = (existingProduct.images ?? []).filter(
+      (url: string) => !updatedImages.includes(url),
+    );
+    const cleanup = await this.cleanupRemovedImages(removedImages);
+
+    return this.withCleanupWarning(updated, cleanup);
   }
 
   async updateStock(id: string, stock: number, body: Record<string, unknown> = { stock }) {
@@ -307,6 +355,8 @@ export class ProductService {
     event?: string;
     category?: string;
     attributesRaw?: string;
+    publicOnly?: boolean;
+    visibility?: 'all' | 'active' | 'unpublished' | 'archived';
   }) {
     const {
       page,
@@ -317,6 +367,8 @@ export class ProductService {
       category,
       event,
       attributesRaw,
+      publicOnly = true,
+      visibility = 'active',
     } = params;
     const skip = (page - 1) * limit;
 
@@ -332,7 +384,21 @@ export class ProductService {
       }
     }
 
-    const filter: any = {};
+    const filter: any = publicOnly
+      ? { isPublished: { $ne: false }, isArchived: { $ne: true } }
+      : {};
+
+    if (!publicOnly) {
+      if (visibility === 'active') {
+        filter.isPublished = { $ne: false };
+        filter.isArchived = { $ne: true };
+      } else if (visibility === 'unpublished') {
+        filter.isPublished = false;
+        filter.isArchived = { $ne: true };
+      } else if (visibility === 'archived') {
+        filter.isArchived = true;
+      }
+    }
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -448,6 +514,25 @@ export class ProductService {
   }
 
   async findOne(id: string) {
+    const product = await this.productModel
+      .findOne({ _id: id, isPublished: { $ne: false }, isArchived: { $ne: true } })
+      .populate({
+        path: 'comments.userId',
+        select: 'fullName email avatarUrl createdAt',
+      })
+      .populate({
+        path: 'comments.replies.userId',
+        select: 'fullName email avatarUrl createdAt',
+      });
+
+    if (!product) {
+      throw new BadRequestException(`Product with id "${id}" not found`);
+    }
+
+    return product;
+  }
+
+  async findManagedOne(id: string) {
     const product = await this.productModel
       .findById(id)
       .populate({
