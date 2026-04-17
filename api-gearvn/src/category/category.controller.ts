@@ -22,7 +22,10 @@ import {
 import { memoryStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 
-import { Permissions } from 'src/auth/decorators/permissions.decorator';
+import {
+  AnyPermissions,
+  Permissions,
+} from 'src/auth/decorators/permissions.decorator';
 import { JwtGuard } from 'src/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { Permission } from 'src/auth/policy/permissions';
@@ -85,6 +88,36 @@ export class CategoryController {
       search,
       sortBy,
       fields,
+    });
+  }
+
+  @Get('manage')
+  @ApiBearerAuth()
+  @AnyPermissions(Permission.CATALOG_MANAGE, Permission.INVENTORY_MANAGE)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'fields', required: false, type: String })
+  @ApiQuery({ name: 'visibility', required: false, type: String })
+  findAllManaged(
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('fields') fields?: string,
+    @Query('visibility')
+    visibility?: 'all' | 'active' | 'unpublished' | 'archived',
+  ) {
+    return this.categoryService.findAll({
+      page,
+      limit,
+      search,
+      sortBy,
+      fields,
+      publicOnly: false,
+      visibility: visibility ?? 'active',
     });
   }
 

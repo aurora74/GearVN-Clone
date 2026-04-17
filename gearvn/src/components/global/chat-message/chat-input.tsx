@@ -48,6 +48,8 @@ export const ChatInput = ({
   const [text, setText] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const uploadedCount = attachments.filter((attachment) => attachment.url).length;
+  const isUploading = attachments.some((attachment) => attachment.uploading);
 
   const sendMessage = () => {
     if (!user) {
@@ -55,16 +57,18 @@ export const ChatInput = ({
       return;
     }
 
-    if ((!text.trim() && attachments.length === 0) || !socketRef.current)
-      return;
-
+    const messageText = text.trim();
     const messageAttachments = attachments
       .map((att) => att.url)
       .filter(Boolean) as string[];
+
+    if ((!messageText && messageAttachments.length === 0) || isUploading || !socketRef.current)
+      return;
+
     const createdAt = new Date().toISOString();
 
     socketRef.current.emit("send-message", {
-      text,
+      text: messageText,
       roomId,
       isRead: false,
       userId: user._id,
@@ -74,12 +78,13 @@ export const ChatInput = ({
     });
 
     onOptimisticMessage?.({
-      text,
+      text: messageText,
       attachments: messageAttachments,
       createdAt,
     });
 
     setText("");
+    attachments.forEach((attachment) => URL.revokeObjectURL(attachment.preview));
     setAttachments([]);
     socketRef.current.emit("typing", {
       roomId,
@@ -141,18 +146,21 @@ export const ChatInput = ({
       setUploadError(
         "Không thể gửi nội dung. Kiểm tra lại nội dung hoặc ảnh đính kèm rồi thử lại."
       );
-      setAttachments((prev) =>
-        prev.map((att) =>
-          selectedFiles.includes(att.file) ? { ...att, uploading: false } : att
-        )
-      );
+      setAttachments((prev) => {
+        prev.forEach((att) => {
+          if (selectedFiles.includes(att.file)) URL.revokeObjectURL(att.preview);
+        });
+        return prev.filter((att) => !selectedFiles.includes(att.file));
+      });
     }
   };
 
   const removeAttachment = (index: number) => {
-    setAttachments((prevAttachments) =>
-      prevAttachments.filter((_, i) => i !== index)
-    );
+    setAttachments((prevAttachments) => {
+      const removed = prevAttachments[index];
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return prevAttachments.filter((_, i) => i !== index);
+    });
   };
 
   return (
@@ -223,15 +231,12 @@ export const ChatInput = ({
 
         <Button
           onClick={sendMessage}
-          disabled={
-            (!text.trim() && attachments.length === 0) ||
-            attachments.some((a) => a.uploading)
-          }
+          disabled={(!text.trim() && uploadedCount === 0) || isUploading}
           className={cn(
             "text-white bg-primary hover:bg-primary/80",
-            (!text.trim() && attachments.length === 0) ||
-              (attachments.some((a) => a.uploading) &&
-                "opacity-50 cursor-not-allowed")
+            (!text.trim() && uploadedCount === 0) || isUploading
+              ? "opacity-50 cursor-not-allowed"
+              : undefined
           )}
         >
           <Send size={16} />

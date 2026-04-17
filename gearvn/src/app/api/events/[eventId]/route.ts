@@ -78,10 +78,16 @@ export const PUT = async (
       body: formData,
     });
 
+    const cleanupAwareResult = {
+      ...result,
+      cleanupWarning: result?.cleanupWarning,
+      cleanupFailedAssets: result?.cleanupFailedAssets,
+    };
+
     return noStore(successResponse({
       message: "Cập nhật sự kiện thành công",
       description: "Sự kiện đã được cập nhật.",
-      result,
+      result: cleanupAwareResult,
     }));
   } catch (err: any) {
     return errorResponse({

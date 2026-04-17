@@ -14,8 +14,20 @@ export async function GET(
 ) {
   try {
     const productId = (await params).productId;
+    const cookieStore = await cookies();
+    const accessToken = cookieStore.get("accessToken")?.value;
+    const decoded = accessToken ? (decode(accessToken) as TokenPayload | null) : null;
+    const canUseManageRead = Boolean(accessToken && decoded?.role !== "CUSTOMER");
+    const path = canUseManageRead
+      ? `/products/manage/${productId}`
+      : `/products/${productId}`;
 
-    const result = await fetchFromApi(`/products/${productId}`);
+    const result = await fetchFromApi(
+      path,
+      canUseManageRead && accessToken
+        ? { headers: { Authorization: `Bearer ${accessToken}` } }
+        : undefined
+    );
 
     return successResponse({
       message: "Lấy sản phẩm thành công",
@@ -63,10 +75,16 @@ export async function PUT(
       body: formData,
     });
 
+    const cleanupAwareResult = {
+      ...result,
+      cleanupWarning: result?.cleanupWarning,
+      cleanupFailedAssets: result?.cleanupFailedAssets,
+    };
+
     return successResponse({
       message: "Cập nhật sản phẩm thành công",
       description: "Sản phẩm đã được cập nhật.",
-      result,
+      result: cleanupAwareResult,
     });
   } catch (err: any) {
     const backendError = err.details ?? err.detail;

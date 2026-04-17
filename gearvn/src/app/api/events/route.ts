@@ -40,10 +40,21 @@ export const GET = async (req: NextRequest) => {
   try {
     const { searchParams } = new URL(req.url);
     const queryString = searchParams.toString();
+    const cookieStore = await cookies();
+    const accessToken = cookieStore.get("accessToken")?.value;
+    const payload = accessToken?.split(".")[1];
+    const decoded = payload ? decodeTokenPayload(payload) : null;
+    const canUseManageRead = Boolean(accessToken && decoded?.role !== "CUSTOMER");
+    const path = canUseManageRead ? "/events/manage" : "/events";
 
     const result = await fetchFromApi(
-      `/events${queryString ? `?${queryString}` : ""}`,
-      { method: "GET" }
+      `${path}${queryString ? `?${queryString}` : ""}`,
+      {
+        method: "GET",
+        ...(canUseManageRead && accessToken
+          ? { headers: { Authorization: `Bearer ${accessToken}` } }
+          : {}),
+      }
     );
 
     return successResponse({

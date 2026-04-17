@@ -5,6 +5,8 @@ import { CreateCategoryPayload, UpdateCategoryPayload } from "@/types/category";
 import { getCsrfHeaders } from "@/utils/api/csrf";
 import { toastError, toastSuccess } from "@/components/ui/toaster";
 
+const CLEANUP_WARNING_MESSAGE = "Đã lưu thay đổi. Một số tệp cũ chưa được xóa, vui lòng thử lại sau.";
+
 export const useCreateCategory = (onSuccessCallback?: () => void) => {
   const queryClient = useQueryClient();
 
@@ -62,7 +64,11 @@ export const useUpdateCategory = (onSuccessCallback?: () => void) => {
     },
 
     onSuccess: (data) => {
-      toastSuccess(data.message, data.description);
+      if (data?.result?.cleanupWarning === true) {
+        toastError(CLEANUP_WARNING_MESSAGE);
+      } else {
+        toastSuccess(data.message, data.description);
+      }
       queryClient.invalidateQueries({
         queryKey: queryKeys.category?.root ?? [],
       });

@@ -49,6 +49,7 @@ export const queryKeys = {
       sortBy = "",
       attributes = {},
       event = "",
+      visibility,
     }: UseProductsParams) => [
       "products",
       "list",
@@ -59,6 +60,7 @@ export const queryKeys = {
       sortBy,
       attributes,
       event,
+      visibility ?? "",
     ],
     detail: (id: string) => ["products", "detail", id],
     related: (productId: string, params?: UseRelatedProductsParams) => [
@@ -80,6 +82,7 @@ export const queryKeys = {
       search = "",
       sortBy = "",
       includeUnpublished = false,
+      visibility,
     }: UseBlogsParams) => [
       "blogs",
       "list",
@@ -88,6 +91,7 @@ export const queryKeys = {
       search,
       sortBy,
       includeUnpublished,
+      visibility ?? "",
     ],
     detail: (slug: string) => ["blogs", "detail", slug],
     related: (blogId: string) => ["blogs", "related", blogId],
@@ -139,12 +143,14 @@ export const queryKeys = {
       limit = 20,
       search = "",
       sortBy = "",
+      visibility = "",
     }: {
       page?: number;
       limit?: number;
       search?: string;
       sortBy?: string;
-    }) => ["categories", "list", page, limit, search, sortBy],
+      visibility?: string;
+    }) => ["categories", "list", page, limit, search, sortBy, visibility],
     detail: (id: string) => ["categories", "detail", id],
     slug: (slug: string) => ["categories", "slug", slug],
     byName: (name: string) => ["categories", "byName", name],
@@ -162,12 +168,16 @@ export const queryKeys = {
       limit = 20,
       search = "",
       sortBy = "",
+      tag = "",
+      visibility = "",
     }: {
       page?: number;
       limit?: number;
       search?: string;
       sortBy?: string;
-    }) => ["events", "list", page, limit, search, sortBy],
+      tag?: string;
+      visibility?: string;
+    }) => ["events", "list", page, limit, search, sortBy, tag, visibility],
     detail: (id: string) => ["events", "detail", id],
   },
 
