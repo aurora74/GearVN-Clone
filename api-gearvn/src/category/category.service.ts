@@ -14,6 +14,8 @@ import { toCamelCase } from './helper/to-camel-case';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { Product, ProductDocument } from '../product/product.schema';
 
+type CleanupWarning = { cleanupWarning?: true; cleanupFailedAssets?: string[] };
+
 @Injectable()
 export class CategoryService {
   constructor(
@@ -68,6 +70,27 @@ export class CategoryService {
     }
   }
 
+  private async cleanupReplacedImage(url?: string): Promise<CleanupWarning> {
+    if (!url) return {};
+
+    try {
+      await this.cloudinaryService.deleteImage(url);
+      return {};
+    } catch (error) {
+      console.warn('Failed to delete replaced category image', { url, error });
+      return { cleanupWarning: true, cleanupFailedAssets: [url] };
+    }
+  }
+
+  private withCleanupWarning<T>(record: T, cleanup: CleanupWarning): T & CleanupWarning {
+    if (!cleanup.cleanupWarning) return record as T & CleanupWarning;
+    const base =
+      record && typeof (record as any).toObject === 'function'
+        ? (record as any).toObject()
+        : record;
+    return { ...(base as any), ...cleanup };
+  }
+
   async create(dto: CreateCategoryDto, file?: Express.Multer.File) {
     let fields: any[] = [];
 
@@ -81,6 +104,9 @@ export class CategoryService {
       fields = dto.fields;
     }
 
+    if (!Array.isArray(fields)) {
+      throw new BadRequestException('Invalid fields format');
+    }
     const normalizedFields = fields.map((field) => {
       let options = field.options;
 
@@ -108,7 +134,14 @@ export class CategoryService {
       image: imageUrl,
     };
 
-    return this.categoryModel.create(normalizedDto);
+    try {
+      return await this.categoryModel.create(normalizedDto);
+    } catch (error) {
+      if (imageUrl) {
+        await this.cleanupReplacedImage(imageUrl);
+      }
+      throw error;
+    }
   }
 
   async findAll(query: {
@@ -117,11 +150,27 @@ export class CategoryService {
     search?: string;
     sortBy?: string;
     fields?: string;
+    publicOnly?: boolean;
+    visibility?: 'all' | 'active' | 'unpublished' | 'archived';
   }) {
-    const { page, limit, search, sortBy, fields } = query;
+    const { page, limit, search, sortBy, fields, publicOnly = true, visibility = 'active' } = query;
     const skip = (page - 1) * limit;
 
-    const filter: any = {};
+    const filter: any = publicOnly
+      ? { isPublished: { $ne: false }, isArchived: { $ne: true } }
+      : {};
+
+    if (!publicOnly) {
+      if (visibility === 'active') {
+        filter.isPublished = { $ne: false };
+        filter.isArchived = { $ne: true };
+      } else if (visibility === 'unpublished') {
+        filter.isPublished = false;
+        filter.isArchived = { $ne: true };
+      } else if (visibility === 'archived') {
+        filter.isArchived = true;
+      }
+    }
     if (search) {
       filter.$or = [{ label: { $regex: search, $options: 'i' } }];
     }
@@ -189,6 +238,10 @@ export class CategoryService {
       }
     }
 
+    if (fields !== undefined && !Array.isArray(fields)) {
+      throw new BadRequestException('Invalid fields format');
+    }
+
     const normalizedFields = fields?.map((field) => {
       let options = field.options;
       if (field.type === 'number' && options) {
@@ -209,6 +262,9 @@ export class CategoryService {
 
     const currentCategory = await this.categoryModel.findById(id);
     if (!currentCategory) {
+      if (imageUrl) {
+        await this.cleanupReplacedImage(imageUrl);
+      }
       throw new NotFoundException(`Category ${id} not found`);
     }
 
@@ -232,19 +288,34 @@ export class CategoryService {
       ...(imageUrl ? { image: imageUrl } : {}),
     };
 
-    const updated = await this.categoryModel.findByIdAndUpdate(
-      id,
-      normalizedDto,
-      {
-        new: true,
-      },
-    );
+    let updated: Category | null;
+    try {
+      updated = await this.categoryModel.findByIdAndUpdate(
+        id,
+        normalizedDto,
+        {
+          new: true,
+        },
+      );
+    } catch (error) {
+      if (imageUrl) {
+        await this.cleanupReplacedImage(imageUrl);
+      }
+      throw error;
+    }
 
     if (!updated) {
+      if (imageUrl) {
+        await this.cleanupReplacedImage(imageUrl);
+      }
       throw new NotFoundException(`Category ${id} not found`);
     }
 
-    return updated;
+    const cleanup = imageUrl && currentCategory.image !== imageUrl
+      ? await this.cleanupReplacedImage(currentCategory.image)
+      : {};
+
+    return this.withCleanupWarning(updated, cleanup);
   }
 
   async setPublished(id: string, isPublished: boolean) {

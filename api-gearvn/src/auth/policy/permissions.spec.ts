@@ -2,6 +2,7 @@ import { UserRole } from '../enums/user-role.enum';
 import {
   Permission,
   ROLE_PERMISSIONS,
+  roleHasAnyPermission,
   roleHasEveryPermission,
   roleHasPermission,
 } from './permissions';
@@ -110,6 +111,21 @@ describe('permission policy', () => {
     ).toBe(true);
     expect(
       roleHasPermission(UserRole.CUSTOMER, Permission.DASHBOARD_VIEW),
+    ).toBe(false);
+  });
+
+  it('allows alternate permission checks without granting broader role permissions', () => {
+    expect(
+      roleHasAnyPermission(UserRole.SALES_OPERATIONS_STAFF, [
+        Permission.CATALOG_MANAGE,
+        Permission.INVENTORY_MANAGE,
+      ]),
+    ).toBe(true);
+    expect(
+      roleHasEveryPermission(UserRole.SALES_OPERATIONS_STAFF, [
+        Permission.CATALOG_MANAGE,
+        Permission.INVENTORY_MANAGE,
+      ]),
     ).toBe(false);
   });
 });

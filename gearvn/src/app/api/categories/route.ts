@@ -12,10 +12,20 @@ export const GET = async (req: NextRequest) => {
   try {
     const { searchParams } = new URL(req.url);
     const queryString = searchParams.toString();
+    const cookieStore = await cookies();
+    const accessToken = cookieStore.get("accessToken")?.value;
+    const decoded = accessToken ? (decode(accessToken) as TokenPayload | null) : null;
+    const canUseManageRead = Boolean(accessToken && decoded?.role !== "CUSTOMER");
+    const path = canUseManageRead ? "/categories/manage" : "/categories";
 
     const result = await fetchFromApi(
-      `/categories${queryString ? `?${queryString}` : ""}`,
-      { method: "GET" }
+      `${path}${queryString ? `?${queryString}` : ""}`,
+      {
+        method: "GET",
+        ...(canUseManageRead && accessToken
+          ? { headers: { Authorization: `Bearer ${accessToken}` } }
+          : {}),
+      }
     );
 
     return successResponse({

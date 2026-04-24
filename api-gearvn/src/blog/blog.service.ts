@@ -12,12 +12,40 @@ import { UpdateBlogDto } from './dto/update-blog.dto';
 import { Blog, BlogDocument } from './blog.schema';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
+type CleanupWarning = { cleanupWarning?: true; cleanupFailedAssets?: string[] };
+
 @Injectable()
 export class BlogService {
   constructor(
     @InjectModel(Blog.name) private blogModel: Model<BlogDocument>,
     private cloudinaryService: CloudinaryService,
   ) {}
+
+  private async cleanupReplacedThumbnail(
+    url?: string,
+  ): Promise<CleanupWarning> {
+    if (!url) return {};
+
+    try {
+      await this.cloudinaryService.deleteImage(url);
+      return {};
+    } catch (error) {
+      console.warn('Failed to delete replaced blog thumbnail', { url, error });
+      return { cleanupWarning: true, cleanupFailedAssets: [url] };
+    }
+  }
+
+  private withCleanupWarning<T>(
+    record: T,
+    cleanup: CleanupWarning,
+  ): T & CleanupWarning {
+    if (!cleanup.cleanupWarning) return record as T & CleanupWarning;
+    const base =
+      record && typeof (record as any).toObject === 'function'
+        ? (record as any).toObject()
+        : record;
+    return { ...(base as any), ...cleanup };
+  }
 
   async create(dto: CreateBlogDto, file: Express.Multer.File): Promise<Blog> {
     const uploaded = await this.cloudinaryService.uploadImage(file);
@@ -33,7 +61,12 @@ export class BlogService {
       unpublishedAt: undefined,
     });
 
-    return blog.save();
+    try {
+      return await blog.save();
+    } catch (error) {
+      await this.cleanupReplacedThumbnail(uploaded.secure_url);
+      throw error;
+    }
   }
 
   async findAll({
@@ -43,6 +76,7 @@ export class BlogService {
     sortBy,
     fields,
     publicOnly = true,
+    visibility = 'active',
   }: {
     page: number;
     limit: number;
@@ -50,6 +84,7 @@ export class BlogService {
     sortBy?: string;
     fields?: string;
     publicOnly?: boolean;
+    visibility?: 'all' | 'active' | 'unpublished' | 'archived';
   }) {
     const filter: any = {};
     const skip = (page - 1) * limit;
@@ -57,6 +92,16 @@ export class BlogService {
     if (publicOnly) {
       filter.$or = [{ isPublished: true }, { isPublished: { $exists: false } }];
       filter.isArchived = { $ne: true };
+    } else if (visibility === 'all') {
+      filter.isArchived = { $ne: true };
+    } else if (visibility === 'active') {
+      filter.$or = [{ isPublished: true }, { isPublished: { $exists: false } }];
+      filter.isArchived = { $ne: true };
+    } else if (visibility === 'unpublished') {
+      filter.isPublished = false;
+      filter.isArchived = { $ne: true };
+    } else if (visibility === 'archived') {
+      filter.isArchived = true;
     }
 
     if (search) {
@@ -132,10 +177,13 @@ export class BlogService {
     }
 
     if (search) {
-      filter.$or = [
+      const visibilityFilter = filter.$or;
+      const searchFilter = [
         { title: { $regex: search, $options: 'i' } },
         { summary: { $regex: search, $options: 'i' } },
       ];
+      filter.$and = [{ $or: visibilityFilter }, { $or: searchFilter }];
+      delete filter.$or;
     }
 
     let mongooseQuery: Query<BlogDocument[], BlogDocument> =
@@ -179,8 +227,14 @@ export class BlogService {
     return blog;
   }
 
-  async findBySlug(slug: string, options: { publicOnly?: boolean } = {}): Promise<Blog> {
-    const blog = await this.blogModel.findOne({ slug, isArchived: { $ne: true } });
+  async findBySlug(
+    slug: string,
+    options: { publicOnly?: boolean } = {},
+  ): Promise<Blog> {
+    const blog = await this.blogModel.findOne({
+      slug,
+      isArchived: { $ne: true },
+    });
     if (!blog) {
       throw new BadRequestException(`Blog with slug "${slug}" not found`);
     }
@@ -215,6 +269,7 @@ export class BlogService {
     const blog = await this.blogModel.findById(id);
     if (!blog) throw new NotFoundException('Blog not found');
 
+    const previousThumbnail = blog.thumbnail;
     Object.assign(blog, dto);
 
     if (file) {
@@ -222,7 +277,13 @@ export class BlogService {
       blog.thumbnail = uploaded.secure_url;
     }
 
-    return blog.save();
+    const saved = await blog.save();
+    const cleanup =
+      file && previousThumbnail !== blog.thumbnail
+        ? await this.cleanupReplacedThumbnail(previousThumbnail)
+        : {};
+
+    return this.withCleanupWarning(saved, cleanup);
   }
 
   async archive(id: string) {

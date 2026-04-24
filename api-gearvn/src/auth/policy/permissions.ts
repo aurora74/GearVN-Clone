@@ -67,3 +67,9 @@ export const roleHasEveryPermission = (
   permissions: Permission[],
 ): boolean =>
   permissions.every((permission) => roleHasPermission(role, permission));
+
+export const roleHasAnyPermission = (
+  role: UserRole,
+  permissions: Permission[],
+): boolean =>
+  permissions.some((permission) => roleHasPermission(role, permission));

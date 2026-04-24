@@ -6,6 +6,8 @@ import { getCsrfHeaders } from "@/utils/api/csrf";
 
 import { toastError, toastSuccess } from "@/components/ui/toaster";
 
+const CLEANUP_WARNING_MESSAGE = "Đã lưu thay đổi. Một số tệp cũ chưa được xóa, vui lòng thử lại sau.";
+
 const invalidateEventPromotionCaches = (
   queryClient: QueryClient,
   eventId?: string
@@ -98,7 +100,11 @@ export const useUpdateEvent = (onSuccessCallback?: () => void) => {
     },
 
     onSuccess: (data, variables) => {
-      toastSuccess(data.message, data.description);
+      if (data?.result?.cleanupWarning === true) {
+        toastError(CLEANUP_WARNING_MESSAGE);
+      } else {
+        toastSuccess(data.message, data.description);
+      }
       invalidateEventPromotionCaches(queryClient, variables.id);
       onSuccessCallback?.();
     },
