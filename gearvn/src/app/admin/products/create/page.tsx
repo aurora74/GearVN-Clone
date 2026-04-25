@@ -59,8 +59,9 @@ const CreateProductPage = () => {
       return;
     }
 
-    const { stock: _stock, ...catalogData } = data;
-    createProduct(catalogData as FormType);
+    const catalogData = { ...data };
+    delete (catalogData as Partial<FormType>).stock;
+    createProduct(catalogData);
   };
 
   return (

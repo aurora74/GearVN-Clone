@@ -10,6 +10,8 @@ import { AuditService } from '../audit/audit.service';
 import { OwnershipActor } from '../auth/policy/ownership';
 import { getFlashSaleStatus } from './helper/flash-sale-status';
 
+type CleanupWarning = { cleanupWarning?: true; cleanupFailedAssets?: string[] };
+
 export interface EventRequestContext {
   ip?: string;
   userAgent?: string;
@@ -22,6 +24,27 @@ export class EventService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly auditService: AuditService,
   ) {}
+
+  private async cleanupReplacedImages(urls: Array<string | undefined>): Promise<CleanupWarning> {
+    const uniqueUrls = [...new Set(urls.filter(Boolean))] as string[];
+    if (!uniqueUrls.length) return {};
+
+    const failedAssets: string[] = [];
+    await Promise.all(
+      uniqueUrls.map(async (url) => {
+        try {
+          await this.cloudinaryService.deleteImage(url);
+        } catch (error) {
+          failedAssets.push(url);
+          console.warn('Failed to delete replaced event image', { url, error });
+        }
+      }),
+    );
+
+    return failedAssets.length
+      ? { cleanupWarning: true, cleanupFailedAssets: failedAssets }
+      : {};
+  }
 
   async create(
     dto: CreateEventDto,
@@ -55,14 +78,20 @@ export class EventService {
       isEnabled: dto.isEnabled ?? true,
     });
 
-    const savedEvent = await newEvent.save();
-    await this.recordFlashSaleAudit({
-      action: 'FLASH_SALE_CREATED',
-      event: savedEvent,
-      actor,
-      requestContext,
-      reason: dto.reason,
-    });
+    let savedEvent: EventDocument = newEvent;
+    try {
+      savedEvent = await newEvent.save();
+      await this.recordFlashSaleAudit({
+        action: 'FLASH_SALE_CREATED',
+        event: savedEvent,
+        actor,
+        requestContext,
+        reason: dto.reason,
+      });
+    } catch (error) {
+      await this.cleanupReplacedImages([uploadedFrame.secure_url, uploadedImageUrl]);
+      throw error;
+    }
 
     return this.serializeEvent(savedEvent);
   }
@@ -79,11 +108,16 @@ export class EventService {
       throw new BadRequestException('Event not found');
     }
 
+    const previousFrame = event.frame;
+    const previousImage = event.image;
+
+    const uploadedUrls: string[] = [];
     if (files?.frame?.[0]) {
       const uploadedFrame = await this.cloudinaryService.uploadImage(
         files.frame[0],
       );
       event.frame = uploadedFrame.secure_url;
+      uploadedUrls.push(uploadedFrame.secure_url);
     }
 
     if (files?.image?.[0]) {
@@ -91,6 +125,7 @@ export class EventService {
         files.image[0],
       );
       event.image = uploadedImage.secure_url;
+      uploadedUrls.push(uploadedImage.secure_url);
     }
 
     event.name = dto.name ?? event.name;
@@ -99,16 +134,27 @@ export class EventService {
     event.endsAt = dto.endsAt ? new Date(dto.endsAt) : event.endsAt;
     event.isEnabled = dto.isEnabled ?? event.isEnabled;
 
-    const savedEvent = await event.save({ validateModifiedOnly: true });
-    await this.recordFlashSaleAudit({
-      action: 'FLASH_SALE_UPDATED',
-      event: savedEvent,
-      actor,
-      requestContext,
-      reason: dto.reason,
-    });
+    let savedEvent: EventDocument = event;
+    try {
+      savedEvent = await event.save({ validateModifiedOnly: true });
+      await this.recordFlashSaleAudit({
+        action: 'FLASH_SALE_UPDATED',
+        event: savedEvent,
+        actor,
+        requestContext,
+        reason: dto.reason,
+      });
+    } catch (error) {
+      await this.cleanupReplacedImages(uploadedUrls);
+      throw error;
+    }
 
-    return this.serializeEvent(savedEvent);
+    const cleanup = await this.cleanupReplacedImages([
+      files?.frame?.[0] && previousFrame !== savedEvent.frame ? previousFrame : undefined,
+      files?.image?.[0] && previousImage !== savedEvent.image ? previousImage : undefined,
+    ]);
+
+    return { ...this.serializeEvent(savedEvent), ...cleanup };
   }
 
   async findAll({
@@ -117,14 +163,28 @@ export class EventService {
     search,
     sortBy,
     fields,
+    publicOnly = true,
+    visibility = 'active',
   }: {
     page: number;
     limit: number;
     search?: string;
     sortBy?: string;
     fields?: string;
+    publicOnly?: boolean;
+    visibility?: 'all' | 'active' | 'unpublished' | 'archived';
   }) {
-    const filter: any = {};
+    const filter: any = publicOnly
+      ? { isArchived: { $ne: true } }
+      : {};
+
+    if (!publicOnly) {
+      if (visibility === 'active') {
+        filter.isArchived = { $ne: true };
+      } else if (visibility === 'archived') {
+        filter.isArchived = true;
+      }
+    }
     const skip = (page - 1) * limit;
 
     if (search) {

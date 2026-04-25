@@ -105,12 +105,14 @@ export class BlogController {
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'sortBy', required: false, type: String })
   @ApiQuery({ name: 'fields', required: false, type: String })
+  @ApiQuery({ name: 'visibility', required: false, type: String })
   async findAllForManage(
     @Query('page') page = 1,
     @Query('limit') limit = 10,
     @Query('search') search?: string,
     @Query('sortBy') sortBy?: string,
     @Query('fields') fields?: string,
+    @Query('visibility') visibility?: 'all' | 'active' | 'unpublished' | 'archived',
   ) {
     return this.blogService.findAll({
       page,
@@ -119,6 +121,7 @@ export class BlogController {
       sortBy,
       fields,
       publicOnly: false,
+      visibility: visibility ?? 'active',
     });
   }
 

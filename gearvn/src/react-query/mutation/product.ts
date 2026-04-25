@@ -13,6 +13,8 @@ import { queryKeys } from "@/react-query/query-keys";
 import { getCsrfHeaders } from "@/utils/api/csrf";
 import { toastError, toastSuccess } from "@/components/ui/toaster";
 
+const CLEANUP_WARNING_MESSAGE = "Đã lưu thay đổi. Một số tệp cũ chưa được xóa, vui lòng thử lại sau.";
+
 const invalidateProductPromotionCaches = (
   queryClient: QueryClient,
   productId?: string
@@ -39,7 +41,9 @@ export const useCreateProduct = (onSuccessCallback?: () => void) => {
       formData.append("slug", data.slug);
       formData.append("category", data.category);
       formData.append("price", data.price.toString());
-      formData.append("stock", data.stock.toString());
+      if (data.stock !== undefined) {
+        formData.append("stock", data.stock.toString());
+      }
       formData.append("attributes", JSON.stringify(data.attributes));
 
       if (data.event) formData.append("event", data.event);
@@ -127,7 +131,11 @@ export const useUpdateProduct = (onSuccessCallback?: () => void) => {
     },
 
     onSuccess: (data, variables) => {
-      toastSuccess(data.message, data.description);
+      if (data?.result?.cleanupWarning === true) {
+        toastError(CLEANUP_WARNING_MESSAGE);
+      } else {
+        toastSuccess(data.message, data.description);
+      }
       invalidateProductPromotionCaches(queryClient, variables.id);
       onSuccessCallback?.();
     },

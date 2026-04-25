@@ -141,11 +141,15 @@ describe('EventService flash-sale lifecycle', () => {
     const eventModel = {
       findById: jest.fn().mockResolvedValue(event),
     };
-    const cloudinaryService = { uploadImage: jest.fn() };
+    const cloudinaryService = {
+      uploadImage: jest.fn().mockResolvedValue({ secure_url: 'https://cdn.test/new-event.png' }),
+      deleteImage: jest.fn().mockResolvedValue({ result: 'ok' }),
+    };
     const auditService = { record: jest.fn().mockResolvedValue({}) };
 
     return {
       eventModel,
+      cloudinaryService,
       auditService,
       service: new EventService(
         eventModel as any,
@@ -309,6 +313,81 @@ describe('EventService flash-sale lifecycle', () => {
         targetType: 'flash-sale',
         targetId: 'event-id',
         reason: 'Archive campaign',
+      }),
+    );
+  });
+
+  it('deletes replaced frame and image after update persistence', async () => {
+    const event: any = {
+      _id: 'event-id',
+      name: 'Flash sale',
+      tag: 'laptopSale',
+      frame: 'https://cdn.test/frame-old.png',
+      image: 'https://cdn.test/image-old.png',
+      startsAt: new Date('2026-05-02T07:00:00.000Z'),
+      endsAt: new Date('2026-05-02T09:00:00.000Z'),
+      isEnabled: true,
+      save: jest.fn().mockImplementation(function (this: any) {
+        return Promise.resolve(this);
+      }),
+      toObject() {
+        return { ...this };
+      },
+    };
+    const { service, cloudinaryService } = createService(event);
+    cloudinaryService.uploadImage
+      .mockResolvedValueOnce({ secure_url: 'https://cdn.test/frame-new.png' })
+      .mockResolvedValueOnce({ secure_url: 'https://cdn.test/image-new.png' });
+
+    const result = await service.update(
+      'event-id',
+      { name: 'Flash sale moi' },
+      {
+        frame: [{ buffer: Buffer.from('frame') } as Express.Multer.File],
+        image: [{ buffer: Buffer.from('image') } as Express.Multer.File],
+      },
+      actor,
+      requestContext,
+    );
+
+    expect(result.frame).toBe('https://cdn.test/frame-new.png');
+    expect(result.image).toBe('https://cdn.test/image-new.png');
+    expect(cloudinaryService.deleteImage).toHaveBeenCalledWith('https://cdn.test/frame-old.png');
+    expect(cloudinaryService.deleteImage).toHaveBeenCalledWith('https://cdn.test/image-old.png');
+  });
+
+  it('returns a cleanup warning without rejecting when event media deletion fails', async () => {
+    const event: any = {
+      _id: 'event-id',
+      name: 'Flash sale',
+      tag: 'laptopSale',
+      frame: 'https://cdn.test/frame-old.png',
+      startsAt: new Date('2026-05-02T07:00:00.000Z'),
+      endsAt: new Date('2026-05-02T09:00:00.000Z'),
+      isEnabled: true,
+      save: jest.fn().mockImplementation(function (this: any) {
+        return Promise.resolve(this);
+      }),
+      toObject() {
+        return { ...this };
+      },
+    };
+    const { service, cloudinaryService } = createService(event);
+    cloudinaryService.uploadImage.mockResolvedValue({ secure_url: 'https://cdn.test/frame-new.png' });
+    cloudinaryService.deleteImage.mockRejectedValue(new Error('cloudinary down'));
+
+    await expect(
+      service.update(
+        'event-id',
+        { name: 'Flash sale moi' },
+        { frame: [{ buffer: Buffer.from('frame') } as Express.Multer.File] },
+        actor,
+        requestContext,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        cleanupWarning: true,
+        cleanupFailedAssets: ['https://cdn.test/frame-old.png'],
       }),
     );
   });
