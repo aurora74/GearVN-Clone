@@ -73,6 +73,40 @@ describe('ChatService', () => {
     });
   });
 
+  it('persists attachment-only messages with empty text', async () => {
+    const saved = await service.create(
+      {
+        text: '',
+        roomId: 'room-client-customer-1',
+        userId: 'customer-1',
+        attachments: ['https://cdn.example.com/chat-image.png'],
+        isRead: false,
+      },
+      { id: 'customer-1', role: UserRole.CUSTOMER },
+    );
+
+    expect(chatModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '',
+        attachments: ['https://cdn.example.com/chat-image.png'],
+      }),
+    );
+    expect(saved.attachments).toEqual(['https://cdn.example.com/chat-image.png']);
+  });
+
+  it('rejects empty messages without text or attachments', async () => {
+    await expect(
+      service.create(
+        {
+          text: '   ',
+          roomId: 'room-client-customer-1',
+          userId: 'customer-1',
+          attachments: [],
+        },
+        { id: 'customer-1', role: UserRole.CUSTOMER },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
   it('marks active chat tickets processing on CSR room open/read and resolves manually', async () => {
     const actor = { id: 'csr-1', role: UserRole.CSR };
 

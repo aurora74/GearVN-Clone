@@ -5,6 +5,12 @@ import { queryKeys } from "../query-keys";
 import { PaginatedResponse } from "@/types/global";
 import { ProductType, UseProductsParams } from "@/types/product";
 
+const parseResult = async <T>(response: Response): Promise<T> => {
+  const data = await response.json();
+  if (!response.ok) throw data;
+  return data.result;
+};
+
 export const useProducts = (params: UseProductsParams) =>
   useQuery<PaginatedResponse<ProductType>>({
     queryKey: queryKeys.product.list(params),
@@ -20,8 +26,7 @@ export const useProducts = (params: UseProductsParams) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseResult<PaginatedResponse<ProductType>>(response);
     },
   });
 
@@ -62,8 +67,7 @@ export const useProduct = (productId: string) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseResult<ProductType>(response);
     },
 
     enabled: !!productId,

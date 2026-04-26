@@ -9,6 +9,12 @@ import {
 } from "@/types/category";
 import { PaginatedResponse } from "@/types/global";
 
+const parseResult = async <T>(response: Response): Promise<T> => {
+  const data = await response.json();
+  if (!response.ok) throw data;
+  return data.result;
+};
+
 export const useCategories = (
   params: UseCategoriesParams = { page: 1, limit: 20 }
 ) =>
@@ -26,8 +32,7 @@ export const useCategories = (
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseResult<PaginatedResponse<CategoryType>>(response);
     },
   });
 
@@ -40,7 +45,8 @@ export const useCategoryByName = (name: string) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseResult<CategoryFields[]>(response);
     },
+
+    enabled: !!name,
   });

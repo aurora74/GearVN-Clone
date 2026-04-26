@@ -26,8 +26,7 @@ export const useBlogs = (params: UseBlogsParams = { page: 1, limit: 10 }) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseResult<PaginatedResponse<BlogType>>(response);
     },
   });
 

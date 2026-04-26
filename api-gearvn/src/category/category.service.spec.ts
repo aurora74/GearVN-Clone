@@ -27,13 +27,19 @@ const createService = () => {
     exists: jest.fn(),
   };
 
+  const cloudinaryService = {
+    uploadImage: jest.fn().mockResolvedValue({ secure_url: 'https://cdn.test/category-new.png' }),
+    deleteImage: jest.fn().mockResolvedValue({ result: 'ok' }),
+  };
+
   return {
     categoryModel,
     productModel,
+    cloudinaryService,
     service: new CategoryService(
       categoryModel as any,
       productModel as any,
-      { uploadImage: jest.fn() } as any,
+      cloudinaryService as any,
     ),
   };
 };
@@ -94,5 +100,44 @@ describe('CategoryService lifecycle dependency guards', () => {
     await expect(
       service.update('category-id', { name: 'Gaming Laptop' } as any),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('deletes the previous image after update persistence when a category image is replaced', async () => {
+    const { service, categoryModel, productModel, cloudinaryService } = createService();
+    const category = makeCategory({ image: 'https://cdn.test/category-old.png' });
+    const updatedCategory = { ...category, image: 'https://cdn.test/category-new.png' };
+    categoryModel.findById.mockResolvedValue(category);
+    categoryModel.findByIdAndUpdate.mockResolvedValue(updatedCategory);
+    productModel.exists.mockResolvedValue(null);
+
+    await expect(
+      service.update('category-id', { label: 'Laptop gaming' } as any, {
+        buffer: Buffer.from('image'),
+      } as Express.Multer.File),
+    ).resolves.toEqual(updatedCategory);
+
+    expect(categoryModel.findByIdAndUpdate).toHaveBeenCalled();
+    expect(cloudinaryService.deleteImage).toHaveBeenCalledWith('https://cdn.test/category-old.png');
+  });
+
+  it('returns a cleanup warning without rejecting when category image deletion fails', async () => {
+    const { service, categoryModel, productModel, cloudinaryService } = createService();
+    const category = makeCategory({ image: 'https://cdn.test/category-old.png' });
+    const updatedCategory = { ...category, image: 'https://cdn.test/category-new.png' };
+    categoryModel.findById.mockResolvedValue(category);
+    categoryModel.findByIdAndUpdate.mockResolvedValue(updatedCategory);
+    productModel.exists.mockResolvedValue(null);
+    cloudinaryService.deleteImage.mockRejectedValue(new Error('cloudinary down'));
+
+    await expect(
+      service.update('category-id', { label: 'Laptop gaming' } as any, {
+        buffer: Buffer.from('image'),
+      } as Express.Multer.File),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        cleanupWarning: true,
+        cleanupFailedAssets: ['https://cdn.test/category-old.png'],
+      }),
+    );
   });
 });

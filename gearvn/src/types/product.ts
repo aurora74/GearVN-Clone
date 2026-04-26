@@ -62,7 +62,7 @@ export type CreateProductPayload = {
   name: string;
   slug: string;
   price: number;
-  stock: number;
+  stock?: number;
   event?: string;
   category: string;
   description?: string;
