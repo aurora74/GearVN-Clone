@@ -865,9 +865,62 @@ export class ProductService {
     return this.toPublicComments(product.comments);
   }
 
+  async getProductAnalytics({ lowStockThreshold = 5, limit = 5 } = {}) {
+    const baseFilter = { isArchived: false };
+    const activeFilter = { ...baseFilter, isPublished: true };
+    const productFields = '_id name images soldQuantity stock isPublished';
+
+    const [
+      totalProducts,
+      activeProducts,
+      topSellers,
+      lowStockProducts,
+      outOfStockProducts,
+      unpublishedLowStockCount,
+    ] = await Promise.all([
+      this.productModel.countDocuments(baseFilter),
+      this.productModel.countDocuments(activeFilter),
+      this.productModel
+        .find({ ...baseFilter, soldQuantity: { $gt: 0 } })
+        .sort({ soldQuantity: -1 })
+        .limit(limit)
+        .select(productFields)
+        .lean(),
+      this.productModel
+        .find({
+          ...activeFilter,
+          stock: { $gt: 0, $lte: lowStockThreshold },
+        })
+        .sort({ stock: 1 })
+        .limit(limit)
+        .select(productFields)
+        .lean(),
+      this.productModel
+        .find({ ...activeFilter, stock: { $lte: 0 } })
+        .sort({ soldQuantity: -1 })
+        .limit(limit)
+        .select(productFields)
+        .lean(),
+      this.productModel.countDocuments({
+        ...baseFilter,
+        isPublished: false,
+        stock: { $lte: lowStockThreshold },
+      }),
+    ]);
+
+    return {
+      totalProducts,
+      activeProducts,
+      topSellers,
+      lowStockProducts,
+      outOfStockProducts,
+      unpublishedLowStockCount,
+    };
+  }
+
   async getTopSellingProduct() {
     const product = await this.productModel
-      .findOne({ soldQuantity: { $gt: 0 } })
+      .findOne({ isArchived: false, soldQuantity: { $gt: 0 } })
       .sort({ soldQuantity: -1 })
       .select('name images soldQuantity')
       .lean();

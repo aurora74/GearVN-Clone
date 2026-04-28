@@ -859,4 +859,79 @@ describe('OrderService checkout validation', () => {
       }),
     );
   });
+
+  it('keeps processing and shipping order volume out of completed revenue trend totals', async () => {
+    orderModel.aggregate = jest.fn().mockResolvedValue([
+      { date: '2026-05-01', sales: 1000000, orders: 3 },
+    ]);
+
+    await service.getSalesAndOrdersByDate(
+      new Date('2026-05-01T00:00:00.000Z'),
+      new Date('2026-05-03T00:00:00.000Z'),
+    );
+
+    const pipeline = orderModel.aggregate.mock.calls[0][0];
+    expect(JSON.stringify(pipeline)).toContain(OrderStatus.PROCESSING);
+    expect(JSON.stringify(pipeline)).toContain(OrderStatus.SHIPPING);
+    expect(JSON.stringify(pipeline)).toContain(OrderStatus.COMPLETED);
+    expect(JSON.stringify(pipeline)).toContain(
+      `\"$eq\":[\"$orderStatus\",\"${OrderStatus.COMPLETED}\"]`,
+    );
+  });
+
+  it('groups completed revenue by payment method only', async () => {
+    orderModel.aggregate = jest.fn().mockResolvedValue([
+      { paymentMethod: PaymentMethod.COD, revenue: 1000000, orders: 1 },
+    ]);
+
+    const result = await service.getCompletedRevenueByPaymentMethod(
+      new Date('2026-05-01T00:00:00.000Z'),
+      new Date('2026-05-03T00:00:00.000Z'),
+    );
+
+    expect(result).toEqual([
+      { paymentMethod: PaymentMethod.COD, revenue: 1000000, orders: 1 },
+    ]);
+    expect(orderModel.aggregate.mock.calls[0][0][0].$match).toEqual(
+      expect.objectContaining({ orderStatus: OrderStatus.COMPLETED }),
+    );
+  });
+
+  it('returns no order growth when both periods have zero completed orders', async () => {
+    orderModel.countDocuments = jest
+      .fn()
+      .mockReturnValueOnce({ exec: jest.fn().mockResolvedValue(0) })
+      .mockReturnValueOnce({ exec: jest.fn().mockResolvedValue(0) });
+
+    await expect(
+      service.getOrdersGrowth(
+        new Date('2026-05-01T00:00:00.000Z'),
+        new Date('2026-05-03T23:59:59.999Z'),
+        new Date('2026-04-28T00:00:00.000Z'),
+        new Date('2026-04-30T23:59:59.999Z'),
+      ),
+    ).resolves.toBe(0);
+  });
+
+  it('groups top selling products from completed orders in the selected period', async () => {
+    orderModel.aggregate = jest.fn().mockResolvedValue([
+      { _id: 'product-1', name: 'Laptop', images: ['image.png'], soldQuantity: 4 },
+    ]);
+
+    const result = await service.getTopSellingProducts(
+      new Date('2026-05-01T00:00:00.000Z'),
+      new Date('2026-05-03T23:59:59.999Z'),
+      5,
+    );
+
+    expect(result).toEqual([
+      { _id: 'product-1', name: 'Laptop', images: ['image.png'], soldQuantity: 4 },
+    ]);
+    expect(orderModel.aggregate.mock.calls[0][0][0].$match).toEqual(
+      expect.objectContaining({ orderStatus: OrderStatus.COMPLETED }),
+    );
+    expect(JSON.stringify(orderModel.aggregate.mock.calls[0][0])).toContain(
+      'createdAt',
+    );
+  });
 });

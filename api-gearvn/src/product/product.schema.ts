@@ -143,3 +143,6 @@ export class Product {
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
+
+ProductSchema.index({ isArchived: 1, isPublished: 1, stock: 1 });
+ProductSchema.index({ isArchived: 1, soldQuantity: -1 });
