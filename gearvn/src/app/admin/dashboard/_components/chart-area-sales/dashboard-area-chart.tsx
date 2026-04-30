@@ -1,6 +1,4 @@
-import { useMemo } from "react";
-
-import { AreaChart, Area, CartesianGrid, XAxis } from "recharts";
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import { DashboardSummary } from "@/types/dashboard";
 
@@ -19,23 +17,11 @@ const chartConfig: ChartConfig = {
 };
 
 type DashboardAreaChartProps = {
-  timeRangeDays: number;
   data: DashboardSummary;
 };
 
-export const DashboardAreaChart = ({
-  data,
-  timeRangeDays,
-}: DashboardAreaChartProps) => {
-  const filteredData = useMemo(() => {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - timeRangeDays);
-    return (
-      data.salesOrdersTrend?.filter(
-        (item) => new Date(item.date) >= startDate
-      ) ?? []
-    );
-  }, [data.salesOrdersTrend, timeRangeDays]);
+export const DashboardAreaChart = ({ data }: DashboardAreaChartProps) => {
+  const chartData = data.salesOrdersTrend ?? [];
 
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString("vi-VN", {
@@ -48,7 +34,7 @@ export const DashboardAreaChart = ({
       config={chartConfig}
       className="aspect-auto h-[250px] w-full"
     >
-      <AreaChart data={filteredData}>
+      <AreaChart data={chartData}>
         <defs>
           <linearGradient id="fillSales" x1="0" y1="0" x2="0" y2="1">
             <stop
@@ -85,6 +71,8 @@ export const DashboardAreaChart = ({
           axisLine={false}
           tickFormatter={formatDate}
         />
+        <YAxis yAxisId="sales" hide />
+        <YAxis yAxisId="orders" hide orientation="right" />
 
         <ChartTooltip
           cursor={false}
@@ -94,14 +82,14 @@ export const DashboardAreaChart = ({
         />
 
         <Area
-          stackId="a"
+          yAxisId="orders"
           type="natural"
           dataKey="orders"
           fill="url(#fillOrders)"
           stroke="var(--color-orders)"
         />
         <Area
-          stackId="a"
+          yAxisId="sales"
           type="natural"
           dataKey="sales"
           fill="url(#fillSales)"

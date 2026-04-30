@@ -1,3 +1,4 @@
+import { DashboardSummaryParams } from "@/types/dashboard";
 import { UseBlogsParams } from "@/types/blog";
 import { UseOrdersParams } from "@/types/order";
 import { UseProductsParams, UseRelatedProductsParams } from "@/types/product";
@@ -158,7 +159,11 @@ export const queryKeys = {
 
   dashboard: {
     root: ["dashboard"],
-    summary: ["dashboard", "summary"],
+    summary: (params: DashboardSummaryParams = {}) => [
+      "dashboard",
+      "summary",
+      params,
+    ],
   },
 
   event: {
