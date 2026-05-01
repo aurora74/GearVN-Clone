@@ -430,3 +430,74 @@ describe('ProductService media cleanup', () => {
     );
   });
 });
+
+describe('ProductService analytics', () => {
+  const makeFindChain = (result: unknown[]) => ({
+    sort: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(result),
+  });
+
+  let productModel: {
+    countDocuments: jest.Mock;
+    find: jest.Mock;
+  };
+  let service: ProductService;
+
+  beforeEach(() => {
+    productModel = {
+      countDocuments: jest
+        .fn()
+        .mockResolvedValueOnce(5)
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce(1),
+      find: jest
+        .fn()
+        .mockReturnValueOnce(makeFindChain([{ _id: 'top-1', soldQuantity: 8 }]))
+        .mockReturnValueOnce(makeFindChain([{ _id: 'low-1', stock: 5 }]))
+        .mockReturnValueOnce(makeFindChain([{ _id: 'out-1', stock: 0 }])),
+    };
+
+    service = new ProductService(
+      productModel as any,
+      { uploadImage: jest.fn() } as any,
+      {
+        assertModerationReason: jest.fn(),
+        recordModerationAudit: jest.fn(),
+      } as any,
+    );
+  });
+
+  it('excludes archived products from top sellers and stock action lists', async () => {
+    const result = await service.getProductAnalytics({ lowStockThreshold: 5, limit: 5 });
+
+    expect(productModel.find).toHaveBeenNthCalledWith(1, {
+      isArchived: false,
+      soldQuantity: { $gt: 0 },
+    });
+    expect(productModel.find).toHaveBeenNthCalledWith(2, {
+      isArchived: false,
+      isPublished: true,
+      stock: { $gt: 0, $lte: 5 },
+    });
+    expect(productModel.find).toHaveBeenNthCalledWith(3, {
+      isArchived: false,
+      isPublished: true,
+      stock: { $lte: 0 },
+    });
+    expect(productModel.countDocuments).toHaveBeenLastCalledWith({
+      isArchived: false,
+      isPublished: false,
+      stock: { $lte: 5 },
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        topSellers: [{ _id: 'top-1', soldQuantity: 8 }],
+        lowStockProducts: [{ _id: 'low-1', stock: 5 }],
+        outOfStockProducts: [{ _id: 'out-1', stock: 0 }],
+        unpublishedLowStockCount: 1,
+      }),
+    );
+  });
+});

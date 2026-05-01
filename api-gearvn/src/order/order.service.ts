@@ -1306,6 +1306,83 @@ export class OrderService {
     );
   }
 
+  async getCompletedRevenueByPaymentMethod(startDate: Date, endDate: Date) {
+    const result = await this.orderModel.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate },
+          orderStatus: OrderStatus.COMPLETED,
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ['$paymentMethod', 'UNKNOWN'] },
+          revenue: { $sum: '$totalAmount' },
+          orders: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          paymentMethod: '$_id',
+          revenue: 1,
+          orders: 1,
+        },
+      },
+      { $sort: { paymentMethod: 1 } },
+    ]);
+
+    return result;
+  }
+
+  async getOrderPipelineSummary(startDate: Date, endDate: Date) {
+    const [summary] = await this.orderModel.aggregate<{
+      processing: number;
+      shipping: number;
+      paymentPending: number;
+      cancelled: number;
+    }>([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          processing: {
+            $sum: { $cond: [{ $eq: ['$orderStatus', OrderStatus.PROCESSING] }, 1, 0] },
+          },
+          shipping: {
+            $sum: { $cond: [{ $eq: ['$orderStatus', OrderStatus.SHIPPING] }, 1, 0] },
+          },
+          paymentPending: {
+            $sum: { $cond: [{ $eq: ['$paymentStatus', PaymentStatus.PENDING] }, 1, 0] },
+          },
+          cancelled: {
+            $sum: { $cond: [{ $eq: ['$orderStatus', OrderStatus.CANCELLED] }, 1, 0] },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          processing: 1,
+          shipping: 1,
+          paymentPending: 1,
+          cancelled: 1,
+        },
+      },
+    ]);
+
+    return {
+      processing: summary?.processing ?? 0,
+      shipping: summary?.shipping ?? 0,
+      paymentPending: summary?.paymentPending ?? 0,
+      cancelled: summary?.cancelled ?? 0,
+    };
+  }
+
   async getTotalRevenue(startDate: Date, endDate: Date): Promise<number> {
     const result = await this.orderModel.aggregate([
       {
@@ -1360,9 +1437,41 @@ export class OrderService {
     const currentCount = await this.getOrdersCount(currentStart, currentEnd);
     const previousCount = await this.getOrdersCount(previousStart, previousEnd);
 
-    if (previousCount === 0) return 1;
+    if (previousCount === 0) return currentCount > 0 ? 1 : 0;
 
     return (currentCount - previousCount) / previousCount;
+  }
+
+  async getTopSellingProducts(startDate: Date, endDate: Date, limit = 5) {
+    return this.orderModel.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate },
+          orderStatus: OrderStatus.COMPLETED,
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.productId',
+          name: { $first: '$items.productName' },
+          image: { $first: '$items.productImage' },
+          soldQuantity: { $sum: '$items.quantity' },
+        },
+      },
+      { $sort: { soldQuantity: -1 } },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          images: {
+            $cond: [{ $ifNull: ['$image', false] }, ['$image'], []],
+          },
+          soldQuantity: 1,
+        },
+      },
+    ]);
   }
 
   async getSalesAndOrdersByDate(startDate: Date, endDate: Date) {
@@ -1384,7 +1493,15 @@ export class OrderService {
           _id: {
             $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
           },
-          sales: { $sum: '$totalAmount' },
+          sales: {
+            $sum: {
+              $cond: [
+                { $eq: ['$orderStatus', OrderStatus.COMPLETED] },
+                '$totalAmount',
+                0,
+              ],
+            },
+          },
           orders: { $sum: 1 },
         },
       },
