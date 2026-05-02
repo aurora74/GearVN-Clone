@@ -71,7 +71,7 @@ export type OrderEvent = {
 
 export type Order = {
   _id: string;
-  userId: User;
+  userId: User | null;
   fullName: string;
   phone: string;
   address: string;

@@ -281,7 +281,7 @@ export const ChatMessages = ({
               >
                 {isAdmin && !msg.isDeleted && !isEditing && (
                   <span className="ml-auto text-[11px] font-medium text-muted-foreground">
-                    Moderator
+                    Quản trị viên
                   </span>
                 )}
                 {isConfirmDelete ? (

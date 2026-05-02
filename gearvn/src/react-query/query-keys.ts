@@ -51,6 +51,7 @@ export const queryKeys = {
       attributes = {},
       event = "",
       visibility,
+      stockStatus,
     }: UseProductsParams) => [
       "products",
       "list",
@@ -62,6 +63,7 @@ export const queryKeys = {
       attributes,
       event,
       visibility ?? "",
+      stockStatus ?? "",
     ],
     detail: (id: string) => ["products", "detail", id],
     related: (productId: string, params?: UseRelatedProductsParams) => [

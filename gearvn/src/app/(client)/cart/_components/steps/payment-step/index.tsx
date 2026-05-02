@@ -55,11 +55,11 @@ const buildAvailabilityWarnings = (
     const requestedQuantity = Number(item.requestedQuantity ?? 0);
 
     if (Number.isFinite(availableStock) && Number.isFinite(requestedQuantity)) {
-      warnings[item.productId] = `Ton kho thay doi: con ${availableStock}, ban dang chon ${requestedQuantity}.`;
+      warnings[item.productId] = `Tồn kho đã thay đổi: còn ${availableStock}, bạn đang chọn ${requestedQuantity}.`;
       return warnings;
     }
 
-    warnings[item.productId] = "San pham khong con du so luong da chon.";
+    warnings[item.productId] = "Sản phẩm không còn đủ số lượng đã chọn.";
     return warnings;
   }, {});
 };

@@ -12,6 +12,6 @@ export const POST = async (
     req,
     endpoint: `/product-questions/${questionId}/answers`,
     successMessage: "Trả lời câu hỏi thành công",
-    successDescription: "Phản hồi Moderator đã được đăng.",
+    successDescription: "Phản hồi Quản trị viên đã được đăng.",
   });
 };

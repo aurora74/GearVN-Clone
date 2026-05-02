@@ -24,20 +24,26 @@ export const useOrder = (orderId: string) =>
     },
   });
 
-export const useOrderByCode = (orderCode: string) =>
-  useQuery<Order>({
-    queryKey: queryKeys.order.byCode(orderCode),
+export const useOrderByCode = (orderCode: string) => {
+  const normalizedOrderCode = orderCode.trim();
 
-    enabled: !!orderCode,
+  return useQuery<Order>({
+    queryKey: queryKeys.order.byCode(normalizedOrderCode),
+
+    enabled: normalizedOrderCode.length > 0,
 
     queryFn: async () => {
-      const response = await fetch(`/api/orders/code/${orderCode}`, {
-        credentials: "include",
-      });
+      const response = await fetch(
+        `/api/orders/code/${encodeURIComponent(normalizedOrderCode)}`,
+        {
+          credentials: "include",
+        }
+      );
 
       return parseOrderResponse(response);
     },
   });
+};
 
 export const useMyOrders = (params: UseOrdersParams = { page: 1, limit: 10 }) =>
   useQuery<PaginatedResponse<Order>>({

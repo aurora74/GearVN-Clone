@@ -263,7 +263,7 @@ export const ChatBody = ({
                     <p className="text-gray-500 mb-1">
                       {isClient
                         ? formatShortName(user?.fullName || "")
-                        : "Moderator"}
+                        : "Quản trị viên"}
                     </p>
 
                     <div className="relative group">
@@ -464,7 +464,7 @@ export const ChatBody = ({
 
       {isTyping && (
         <p className="absolute left-0 bottom-[70px] sm:bottom-[53px] w-full text-[13px] text-muted-foreground py-1 px-4 bg-white italic mt-2">
-          Moderator đang soạn tin...
+          Quản trị viên đang soạn tin...
         </p>
       )}
 

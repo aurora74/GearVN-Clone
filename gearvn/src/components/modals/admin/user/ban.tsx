@@ -65,13 +65,13 @@ export const ModalBanUser = ({
 
         <div className="space-y-2">
           <label className="text-sm font-semibold" htmlFor={`ban-reason-${user._id}`}>
-            Ly do
+            Lý do
           </label>
           <Textarea
             id={`ban-reason-${user._id}`}
             value={reason}
             disabled={isPending}
-            placeholder="Nhap ly do de ghi nhan vao audit log."
+            placeholder="Nhập lý do để ghi nhận vào audit log."
             onChange={(event) => setReason(event.target.value)}
           />
         </div>

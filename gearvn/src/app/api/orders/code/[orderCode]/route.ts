@@ -7,6 +7,15 @@ import { successResponse, errorResponse } from "@/utils/api/api-response";
 const mapOrderCodeError = (err: any) => {
   const status = err?.status || 500;
 
+  if (status === 401) {
+    return {
+      status,
+      message: "Đăng nhập để tra cứu đơn hàng",
+      description: "Đăng nhập để tra cứu đơn hàng của bạn.",
+      detail: err?.detail,
+    };
+  }
+
   if (status === 403) {
     return {
       status,
@@ -44,7 +53,7 @@ export const GET = async (
     const accessToken = cookieStore.get("accessToken")?.value;
 
     if (!accessToken) {
-      return errorResponse({ status: 401, message: "Missing token" });
+      return errorResponse(mapOrderCodeError({ status: 401 }));
     }
 
     const result = await fetchFromApi(`/orders/code/${orderCode}`, {

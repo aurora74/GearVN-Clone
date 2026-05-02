@@ -2,7 +2,14 @@
 
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Clipboard, Loader, MoreVertical, Pencil, Plus, Ban } from "lucide-react";
+import {
+  Clipboard,
+  Loader,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Ban,
+} from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import z from "zod";
@@ -73,7 +80,7 @@ type StaffRole = (typeof staffRoleOptions)[number]["value"];
 
 const staffRoleValues = staffRoleOptions.map((role) => role.value) as [
   StaffRole,
-  ...StaffRole[]
+  ...StaffRole[],
 ];
 
 const staffRoleLabels: Record<StaffRole, string> = {
@@ -92,17 +99,21 @@ const staffFormSchema = z.object({
   fullName: z
     .string()
     .trim()
-    .min(1, "Vui long nhap ho ten")
-    .regex(/^[\p{L} ]+$/u, "Ho ten chi duoc chua chu cai va khoang cach"),
-  email: z.string().trim().min(1, "Vui long nhap email").email("Email khong hop le"),
+    .min(1, "Vui lòng nhập họ tên")
+    .regex(/^[\p{L} ]+$/u, "Họ tên chỉ được chứa chữ cái và khoảng cách"),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Vui lòng nhập email")
+    .email("Email không hợp lệ"),
   role: z.enum(staffRoleValues),
-  password: z.string().min(6, "Mat khau phai co it nhat 6 ky tu"),
+  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
   phone: z
     .string()
     .trim()
     .optional()
     .refine((val) => !val || /^0\d{9,10}$/.test(val), {
-      message: "So dien thoai khong hop le",
+      message: "Số điện thoại không hợp lệ",
     }),
   address: z.string().trim().optional(),
 });
@@ -129,7 +140,10 @@ const StatusBadge = ({ user }: { user: User }) => {
   const { icon: Icon, label, className } = getAccountStatusUI(user.status);
 
   return (
-    <Badge variant="outline" className="flex items-center gap-1 px-2 whitespace-nowrap">
+    <Badge
+      variant="outline"
+      className="flex items-center gap-1 px-2 whitespace-nowrap"
+    >
       <Icon className={cn("size-4", className)} />
       {label}
     </Badge>
@@ -151,9 +165,9 @@ const StaffFormFields = ({
       name="fullName"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>Ho ten</FormLabel>
+          <FormLabel>Họ Tên</FormLabel>
           <FormControl>
-            <Input {...field} disabled={disabled} placeholder="Nhap ho ten" />
+            <Input {...field} disabled={disabled} placeholder="Nhập họ tên" />
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -166,7 +180,7 @@ const StaffFormFields = ({
         <FormItem>
           <FormLabel>Email</FormLabel>
           <FormControl>
-            <Input {...field} disabled={disabled} placeholder="Nhap email" />
+            <Input {...field} disabled={disabled} placeholder="Nhập email" />
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -177,7 +191,7 @@ const StaffFormFields = ({
       name="role"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>Vai tro</FormLabel>
+          <FormLabel>Vai trò</FormLabel>
           <Select
             value={field.value}
             disabled={disabled}
@@ -185,7 +199,7 @@ const StaffFormFields = ({
           >
             <FormControl>
               <SelectTrigger>
-                <SelectValue placeholder="Chon vai tro" />
+                <SelectValue placeholder="Chọn vai trò" />
               </SelectTrigger>
             </FormControl>
             <SelectContent>
@@ -206,13 +220,13 @@ const StaffFormFields = ({
         name="password"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Mat khau tam thoi</FormLabel>
+            <FormLabel>Mật khẩu tạm thời</FormLabel>
             <FormControl>
               <Input
                 {...field}
                 type="password"
                 disabled={disabled}
-                placeholder="Nhap mat khau tam thoi"
+                placeholder="Nhập mật khẩu tạm thời"
               />
             </FormControl>
             <FormMessage />
@@ -225,9 +239,13 @@ const StaffFormFields = ({
       name="phone"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>So dien thoai</FormLabel>
+          <FormLabel>Số điện thoại</FormLabel>
           <FormControl>
-            <Input {...field} disabled={disabled} placeholder="Nhap so dien thoai" />
+            <Input
+              {...field}
+              disabled={disabled}
+              placeholder="Nhập số điện thoại"
+            />
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -238,9 +256,9 @@ const StaffFormFields = ({
       name="address"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>Dia chi</FormLabel>
+          <FormLabel>Địa chỉ</FormLabel>
           <FormControl>
-            <Input {...field} disabled={disabled} placeholder="Nhap dia chi" />
+            <Input {...field} disabled={disabled} placeholder="Nhập địa chỉ" />
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -283,9 +301,9 @@ const CreateStaffDialog = ({ children }: { children: ReactNode }) => {
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl">Tao nhan su</DialogTitle>
+          <DialogTitle className="text-xl">Tạo nhân sự</DialogTitle>
           <DialogDescription>
-            Tao tai khoan nhan su cho cac vai tro van hanh.
+            Tạo tài khoản nhân sự cho các vai trò vận hành.
           </DialogDescription>
         </DialogHeader>
 
@@ -303,7 +321,7 @@ const CreateStaffDialog = ({ children }: { children: ReactNode }) => {
               </Button>
               <Button type="submit" disabled={isPending}>
                 {isPending && <Loader className="size-4 animate-spin" />}
-                Tao nhan su
+                Tạo nhân sự
               </Button>
             </DialogFooter>
           </form>
@@ -355,12 +373,19 @@ const EditStaffDialog = ({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl">Sua thong tin</DialogTitle>
-          <DialogDescription>Cap nhat thong tin va vai tro nhan su.</DialogDescription>
+          <DialogTitle className="text-xl">Sửa thông tin</DialogTitle>
+          <DialogDescription>
+            {" "}
+            Cập nhật thông tin và vai trò nhân sự.
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <StaffFormFields form={form} disabled={isPending} includePassword={false} />
+            <StaffFormFields
+              form={form}
+              disabled={isPending}
+              includePassword={false}
+            />
             <DialogFooter className="flex justify-end gap-3 mt-4">
               <Button
                 type="button"
@@ -368,11 +393,11 @@ const EditStaffDialog = ({
                 disabled={isPending}
                 onClick={() => setOpen(false)}
               >
-                Huy
+                Hủy
               </Button>
               <Button type="submit" disabled={isPending}>
                 {isPending && <Loader className="size-4 animate-spin" />}
-                Luu thay doi
+                Lưu thay đổi
               </Button>
             </DialogFooter>
           </form>
@@ -407,21 +432,29 @@ const DeactivateStaffDialog = ({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl text-destructive">Vo hieu hoa</DialogTitle>
+          <DialogTitle className="text-xl text-destructive">
+            Vô hiệu hóa
+          </DialogTitle>
           <DialogDescription>
-            Vo hieu hoa tai khoan cua{" "}
-            <span className="font-semibold text-black">{user.fullName || user.email}</span>.
+            Vô hiệu hóa tài khoản của{" "}
+            <span className="font-semibold text-black">
+              {user.fullName || user.email}
+            </span>
+            .
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <label className="text-sm font-semibold" htmlFor={`staff-reason-${user._id}`}>
-            Ly do
+          <label
+            className="text-sm font-semibold"
+            htmlFor={`staff-reason-${user._id}`}
+          >
+            Lý do
           </label>
           <Textarea
             id={`staff-reason-${user._id}`}
             value={reason}
             disabled={isPending}
-            placeholder="Nhap ly do de ghi nhan vao audit log."
+            placeholder="Nhập lý do để ghi nhận vào audit log."
             onChange={(event) => setReason(event.target.value)}
           />
         </div>
@@ -459,7 +492,7 @@ const StaffActions = ({ user }: { user: User }) => {
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(user._id);
-    toastSuccess("Da sao chep ID", "Ma nhan su da duoc luu vao clipboard.");
+    toastSuccess("Đã sao chép ID", "Mã nhân sự đã được lưu vào clipboard.");
     setOpen(false);
   };
 
@@ -481,7 +514,7 @@ const StaffActions = ({ user }: { user: User }) => {
             className="group hover:!bg-blue-500/10"
           >
             <Pencil className="size-4 group-hover:text-blue-500" />
-            <p className="group-hover:text-blue-500">Sua thong tin</p>
+            <p className="group-hover:text-blue-500">Sửa thông tin</p>
           </DropdownMenuItem>
         </EditStaffDialog>
         <DropdownMenuSeparator />
@@ -493,7 +526,7 @@ const StaffActions = ({ user }: { user: User }) => {
               className="group hover:!bg-red-500/10"
             >
               <Ban className="size-4 group-hover:text-red-500" />
-              <p className="group-hover:text-red-500">Vo hieu hoa</p>
+              <p className="group-hover:text-red-500">Vô hiệu hóa</p>
             </DropdownMenuItem>
           </DeactivateStaffDialog>
         )}
@@ -515,13 +548,15 @@ export default function StaffPage() {
     <div className="h-full p-4 space-y-4 border bg-white shadow-sm rounded-md">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold">Nhan su</h1>
-          <p className="text-sm text-muted-foreground">({staff.length} nhan su)</p>
+          <h1 className="text-lg font-semibold">Nhân sự</h1>
+          <p className="text-sm text-muted-foreground">
+            ({staff.length} nhân sự)
+          </p>
         </div>
         <CreateStaffDialog>
           <Button className="w-full sm:w-auto">
             <Plus className="size-4" />
-            Tao nhan su
+            Tạo nhân sự
           </Button>
         </CreateStaffDialog>
       </div>
@@ -530,25 +565,30 @@ export default function StaffPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Ho ten</TableHead>
+              <TableHead>Họ tên</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Vai tro</TableHead>
-              <TableHead>Trang thai</TableHead>
-              <TableHead>Ngay tao</TableHead>
-              <TableHead className="text-right">Thao tac</TableHead>
+              <TableHead>Vai trò</TableHead>
+              <TableHead>Trạng thái</TableHead>
+              <TableHead>Ngày tạo</TableHead>
+              <TableHead className="text-right">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isPending ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  Dang tai nhan su...
+                <TableCell
+                  colSpan={6}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  Đang tải nhân sự...
                 </TableCell>
               </TableRow>
             ) : staff.length ? (
               staff.map((user) => (
                 <TableRow key={user._id}>
-                  <TableCell className="font-medium">{user.fullName || "Chua cap nhat"}</TableCell>
+                  <TableCell className="font-medium">
+                    {user.fullName || "Chưa cập nhật"}
+                  </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <StaffRoleBadge role={user.role} />
@@ -571,9 +611,9 @@ export default function StaffPage() {
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center">
                   <div className="space-y-1">
-                    <p className="font-medium">Chua co nhan su</p>
+                    <p className="font-medium">Chưa có nhân sự</p>
                     <p className="text-sm text-muted-foreground">
-                      Tao nhan su dau tien de phan quyen van hanh.
+                      Tạo nhân sự đầu tiên để phân quyền vận hành.
                     </p>
                   </div>
                 </TableCell>
