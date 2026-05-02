@@ -93,7 +93,7 @@ describe('ProductService moderation', () => {
     expect(product.ratingsCount).toBe(1);
     expect(result[0]).toEqual(
       expect.objectContaining({
-        content: 'Nội dung này đã được ẩn bởi Moderator.',
+        content: 'Nội dung này đã được ẩn bởi Quản trị viên.',
         images: [],
       }),
     );
@@ -131,7 +131,7 @@ describe('ProductService moderation', () => {
     expect(product.ratingsCount).toBe(2);
     expect(result[0].replies[0]).toEqual(
       expect.objectContaining({
-        content: 'Nội dung này đã được ẩn bởi Moderator.',
+        content: 'Nội dung này đã được ẩn bởi Quản trị viên.',
         images: [],
       }),
     );
@@ -139,6 +139,144 @@ describe('ProductService moderation', () => {
   });
 });
 
+describe('ProductService public engagement visibility', () => {
+  let productModel: { findOne: jest.Mock; findById: jest.Mock };
+  let cloudinaryService: { uploadImage: jest.Mock };
+  let service: ProductService;
+
+  beforeEach(() => {
+    productModel = { findOne: jest.fn(), findById: jest.fn() };
+    cloudinaryService = { uploadImage: jest.fn() };
+    service = new ProductService(
+      productModel as any,
+      cloudinaryService as any,
+      {
+        assertModerationReason: jest.fn(),
+        recordModerationAudit: jest.fn(),
+      } as any,
+    );
+  });
+
+  it('requires a visible product before creating public reviews', async () => {
+    const product = createProduct();
+    productModel.findOne.mockResolvedValue(product);
+
+    const result = await service.comment(
+      product._id,
+      'customer-1',
+      { rating: 5, content: 'Rat tot' } as any,
+      [],
+    );
+
+    expect(productModel.findOne).toHaveBeenCalledWith({
+      _id: product._id,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+    });
+    expect(productModel.findById).not.toHaveBeenCalled();
+    expect(product.comments).toHaveLength(3);
+    expect(result).toHaveLength(3);
+  });
+
+  it('normalizes public review rating before persistence', async () => {
+    const product = createProduct();
+    productModel.findOne.mockResolvedValue(product);
+
+    await service.comment(
+      product._id,
+      'customer-4',
+      { rating: '4', content: 'Rat tot' } as any,
+      [],
+    );
+
+    expect(product.comments[product.comments.length - 1].rating).toBe(4);
+  });
+
+  it.each([
+    ['non-finite', 'not-a-number'],
+    ['infinite', 'Infinity'],
+    ['too low', 0],
+    ['too high', 6],
+  ])('rejects %s public review ratings before upload or mutation', async (_, rating) => {
+    const product = createProduct();
+
+    await expect(
+      service.comment(
+        product._id,
+        'customer-1',
+        { rating, content: 'Rat tot' } as any,
+        [{ mimetype: 'image/png', size: 1024, buffer: Buffer.from('x') } as Express.Multer.File],
+      ),
+    ).rejects.toThrow('Rating must be between 1 and 5');
+
+    expect(productModel.findOne).not.toHaveBeenCalled();
+    expect(cloudinaryService.uploadImage).not.toHaveBeenCalled();
+    expect(product.comments).toHaveLength(2);
+  });
+
+  it('uses visible product lookup for public comment mutations', async () => {
+    const scenarios = [
+      {
+        name: 'toggleLikeComment',
+        run: (product: ReturnType<typeof createProduct>) =>
+          service.toggleLikeComment(product._id, 'review-1', 'customer-2'),
+      },
+      {
+        name: 'replyComment',
+        run: (product: ReturnType<typeof createProduct>) =>
+          service.replyComment(product._id, 'review-1', 'customer-2', 'Dong y', []),
+      },
+      {
+        name: 'editComment',
+        run: (product: ReturnType<typeof createProduct>) =>
+          service.editComment(
+            product._id,
+            'reply-1',
+            'customer-2',
+            'Cap nhat',
+            [],
+            JSON.stringify(['https://cdn.test/reply.png']),
+          ),
+      },
+      {
+        name: 'deleteComment',
+        run: (product: ReturnType<typeof createProduct>) =>
+          service.deleteComment(product._id, 'reply-1', 'customer-2'),
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const product = createProduct();
+      productModel.findOne.mockResolvedValueOnce(product);
+
+      await scenario.run(product);
+
+      expect(productModel.findOne).toHaveBeenLastCalledWith({
+        _id: product._id,
+        isPublished: { $ne: false },
+        isArchived: { $ne: true },
+      });
+      expect(product.save).toHaveBeenCalled();
+    }
+
+    expect(productModel.findById).not.toHaveBeenCalled();
+  });
+
+  it('rejects public reviews for hidden products before upload or mutation', async () => {
+    productModel.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.comment(
+        new Types.ObjectId().toString(),
+        'customer-1',
+        { rating: 5, content: 'Rat tot' } as any,
+        [{ mimetype: 'image/png', size: 1024, buffer: Buffer.from('x') } as Express.Multer.File],
+      ),
+    ).rejects.toThrow('Product not found');
+
+    expect(cloudinaryService.uploadImage).not.toHaveBeenCalled();
+  });
+});
 const makeUpdateBody = (overrides: Record<string, unknown> = {}) => ({
   name: 'Bo mach chu test',
   slug: 'bo-mach-chu-test',
@@ -429,6 +567,112 @@ describe('ProductService media cleanup', () => {
       }),
     );
   });
+
+  it('preserves existing images and omits attributes when optional fields are omitted', async () => {
+    const existingProduct = {
+      _id: 'product-1',
+      images: ['https://cdn.test/keep.png'],
+      attributes: { brand: 'GearVN' },
+    };
+    const updatedProduct = {
+      _id: 'product-1',
+      images: ['https://cdn.test/keep.png', 'https://cdn.test/new.png'],
+    };
+    const body = makeUpdateBody() as Record<string, unknown>;
+    delete body.oldImages;
+    delete body.attributes;
+    productModel.findById.mockResolvedValue(existingProduct);
+    productModel.findByIdAndUpdate.mockResolvedValue(updatedProduct);
+    cloudinaryService.uploadImage.mockResolvedValue({
+      secure_url: 'https://cdn.test/new.png',
+    });
+
+    await expect(
+      service.update(
+        'product-1',
+        body,
+        [{ buffer: Buffer.from('image') } as Express.Multer.File],
+        { role: UserRole.MANAGER },
+      ),
+    ).resolves.toEqual(updatedProduct);
+
+    const updateData = productModel.findByIdAndUpdate.mock.calls[0][1];
+    expect(updateData.images).toEqual([
+      'https://cdn.test/keep.png',
+      'https://cdn.test/new.png',
+    ]);
+    expect(updateData).not.toHaveProperty('attributes');
+    expect(cloudinaryService.deleteImage).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProductService managed listing stock filters', () => {
+  const makeListChain = (result: unknown[] = []) => ({
+    lean: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(result),
+  });
+
+  let productModel: {
+    countDocuments: jest.Mock;
+    find: jest.Mock;
+  };
+  let service: ProductService;
+
+  beforeEach(() => {
+    productModel = {
+      countDocuments: jest.fn().mockResolvedValue(0),
+      find: jest.fn().mockReturnValue(makeListChain()),
+    };
+
+    service = new ProductService(
+      productModel as any,
+      { uploadImage: jest.fn() } as any,
+      {
+        assertModerationReason: jest.fn(),
+        recordModerationAudit: jest.fn(),
+      } as any,
+    );
+  });
+
+  it('filters active managed products with zero or negative stock', async () => {
+    await service.findAll({
+      page: 1,
+      limit: 20,
+      publicOnly: false,
+      visibility: 'active',
+      stockStatus: 'zero',
+    });
+
+    const expectedFilter = {
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+      stock: { $lte: 0 },
+    };
+    expect(productModel.find).toHaveBeenCalledWith(expectedFilter);
+    expect(productModel.countDocuments).toHaveBeenCalledWith(expectedFilter);
+  });
+
+  it('filters active managed products with low stock', async () => {
+    await service.findAll({
+      page: 1,
+      limit: 20,
+      publicOnly: false,
+      visibility: 'active',
+      stockStatus: 'low',
+    });
+
+    const expectedFilter = {
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+      stock: { $gt: 0, $lte: 5 },
+    };
+    expect(productModel.find).toHaveBeenCalledWith(expectedFilter);
+    expect(productModel.countDocuments).toHaveBeenCalledWith(expectedFilter);
+  });
 });
 
 describe('ProductService analytics', () => {
@@ -473,21 +717,21 @@ describe('ProductService analytics', () => {
     const result = await service.getProductAnalytics({ lowStockThreshold: 5, limit: 5 });
 
     expect(productModel.find).toHaveBeenNthCalledWith(1, {
-      isArchived: false,
+      isArchived: { $ne: true },
       soldQuantity: { $gt: 0 },
     });
     expect(productModel.find).toHaveBeenNthCalledWith(2, {
-      isArchived: false,
-      isPublished: true,
+      isArchived: { $ne: true },
+      isPublished: { $ne: false },
       stock: { $gt: 0, $lte: 5 },
     });
     expect(productModel.find).toHaveBeenNthCalledWith(3, {
-      isArchived: false,
-      isPublished: true,
+      isArchived: { $ne: true },
+      isPublished: { $ne: false },
       stock: { $lte: 0 },
     });
     expect(productModel.countDocuments).toHaveBeenLastCalledWith({
-      isArchived: false,
+      isArchived: { $ne: true },
       isPublished: false,
       stock: { $lte: 5 },
     });

@@ -67,7 +67,7 @@ export class CategoryController {
     name: 'sortBy',
     required: false,
     type: String,
-    description: 'e.g: name,-createdAt',
+    description: 'e.g: -createdAt,createdAt,name,label',
   })
   @ApiQuery({
     name: 'fields',

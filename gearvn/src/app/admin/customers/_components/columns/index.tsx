@@ -51,29 +51,29 @@ export const columns: ColumnDef<User>[] = [
     ),
     enableSorting: false,
     enableHiding: false,
-    meta: { label: "Chon" },
+    meta: { label: "Chọn" },
   },
 
   {
     accessorKey: "fullName",
-    header: () => <SortableHeader label="Ho ten" sortKey="fullName" />,
+    header: () => <SortableHeader label="Họ tên" sortKey="fullName" />,
     cell: ({ row }) => {
       const fullName = row.original.fullName;
-      return <p className="font-semibold">{fullName || "Chua cap nhat"}</p>;
+      return <p className="font-semibold">{fullName || "Chưa cập nhật"}</p>;
     },
-    meta: { label: "Ho ten" },
+    meta: { label: "Họ tên" },
   },
 
   {
     accessorKey: "email",
     header: "Email",
-    cell: ({ row }) => row.original.email || "Chua cap nhat",
+    cell: ({ row }) => row.original.email || "Chưa cập nhật",
     meta: { label: "Email" },
   },
 
   {
     accessorKey: "role",
-    header: "Vai tro",
+    header: "Vai trò",
     cell: ({ row }) => {
       const role = row.original.role as UserRole | undefined;
       const roleLabel = role ? roleLabels[role] : undefined;
@@ -85,7 +85,7 @@ export const columns: ColumnDef<User>[] = [
             variant="outline"
             className="whitespace-nowrap px-2 text-muted-foreground border-muted-foreground/20"
           >
-            Chua co vai tro
+            Chưa có vai trò
           </Badge>
         );
       }
@@ -99,12 +99,12 @@ export const columns: ColumnDef<User>[] = [
         </Badge>
       );
     },
-    meta: { label: "Vai tro" },
+    meta: { label: "Vai trò" },
   },
 
   {
     accessorKey: "status",
-    header: "Trang thai",
+    header: "Trạng thái",
     cell: ({ row }) => {
       const status = row.original.status;
       const { icon: Icon, label, className } = getAccountStatusUI(status);
@@ -116,12 +116,12 @@ export const columns: ColumnDef<User>[] = [
         </Badge>
       );
     },
-    meta: { label: "Trang thai" },
+    meta: { label: "Trạng thái" },
   },
 
   {
     accessorKey: "createdAt",
-    header: () => <SortableHeader label="Ngay tao" sortKey="createdAt" />,
+    header: () => <SortableHeader label="Ngày tạo" sortKey="createdAt" />,
     cell: ({ row }) => {
       const date = new Date(row.original.createdAt);
 
@@ -130,13 +130,13 @@ export const columns: ColumnDef<User>[] = [
         timeStyle: "short",
       });
     },
-    meta: { label: "Ngay tao" },
+    meta: { label: "Ngày tạo" },
   },
 
   {
     id: "actions",
-    header: "Thao tac",
+    header: "Thao tác",
     cell: ({ row }) => <ActionsCell user={row.original} />,
-    meta: { label: "Thao tac" },
+    meta: { label: "Thao tác" },
   },
 ];

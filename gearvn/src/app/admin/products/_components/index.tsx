@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useQueryState } from "nuqs";
 
 import { useProducts } from "@/react-query/query/product";
+import type { ProductStockStatus } from "@/types/product";
 
 import { columns } from "./columns";
 import { DataTable } from "./data-table";
@@ -19,12 +20,15 @@ export const ProductsPage = () => {
   const [search] = useQueryState("search");
   const [sortBy] = useQueryState("sortBy");
   const [category] = useQueryState("category");
+  const [stockStatus] = useQueryState("stockStatus");
 
   const [attributes] = useQueryState<Record<string, string[]>>("attributes", {
     parse: (v) => (v ? JSON.parse(decodeURIComponent(v)) : {}),
     serialize: (v) => encodeURIComponent(JSON.stringify(v)),
   });
 
+  const normalizedStockStatus: ProductStockStatus | undefined =
+    stockStatus === "zero" || stockStatus === "low" ? stockStatus : undefined;
   const queryParams = useMemo(
     () => ({
       page: (page ?? 0) + 1,
@@ -37,8 +41,9 @@ export const ProductsPage = () => {
           : undefined,
       search: search || undefined,
       visibility: DEFAULT_VISIBILITY_FILTER,
+      stockStatus: normalizedStockStatus,
     }),
-    [page, sortBy, category, attributes, search]
+    [page, sortBy, category, attributes, search, normalizedStockStatus]
   );
 
   const { data: products, isPending } = useProducts(queryParams);

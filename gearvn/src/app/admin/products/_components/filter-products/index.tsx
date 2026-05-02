@@ -12,7 +12,7 @@ import { cn } from "@/utils/cn";
 
 import { PaginatedResponse } from "@/types/global";
 import { CategoryType, CategoryFields } from "@/types/category";
-
+import type { ProductStockStatus } from "@/types/product";
 import {
   Select,
   SelectItem,
@@ -31,14 +31,21 @@ import { Button } from "@/components/ui/button";
 
 import { FilterOption } from "./filter-option";
 
+const STOCK_STATUS_OPTIONS: Array<{ value: ProductStockStatus; label: string }> = [
+  { value: "zero", label: "Hết hàng" },
+  { value: "low", label: "Sắp hết" },
+];
+
 type FilterProductsProps = {
   selectedCategory: string;
   fields?: CategoryFields[];
   isPendingFields?: boolean;
   filters: Record<string, string[]>;
   categories?: PaginatedResponse<CategoryType>;
+  stockStatus: ProductStockStatus | null;
   setSelectedCategory: (value: string) => void;
   setFiltersParam: (value: string | null) => void;
+  setStockStatusParam: (value: ProductStockStatus | null) => void;
   setCategoryParam: (value: string | null) => void;
   setFilters: Dispatch<SetStateAction<Record<string, string[]>>>;
 };
@@ -50,8 +57,10 @@ export const FilterProducts = ({
   setFilters,
   isPendingFields,
   setFiltersParam,
+  setStockStatusParam,
   setCategoryParam,
   selectedCategory,
+  stockStatus,
   setSelectedCategory,
 }: FilterProductsProps) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -122,7 +131,34 @@ export const FilterProducts = ({
           </Select>
         </div>
 
-        {!selectedCategory && (
+        <div className="mb-2">
+          <Label className="mb-2">Tình trạng tồn kho</Label>
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={!stockStatus ? "default" : "outline"}
+              onClick={() => setStockStatusParam(null)}
+              className="h-9 px-2 text-xs sm:text-sm"
+            >
+              Tất cả
+            </Button>
+            {STOCK_STATUS_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                size="sm"
+                variant={stockStatus === option.value ? "default" : "outline"}
+                onClick={() => setStockStatusParam(option.value)}
+                className="h-9 px-2 text-xs sm:text-sm"
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {!selectedCategory && !stockStatus && (
           <Button
             variant="outline"
             onClick={() => setIsOpen(false)}
@@ -171,7 +207,7 @@ export const FilterProducts = ({
             </div>
           ))}
 
-        {(selectedCategory || Object.keys(filters).length > 0) && (
+        {(selectedCategory || stockStatus || Object.keys(filters).length > 0) && (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 mt-4">
             <Button
               variant="outline"
@@ -187,6 +223,7 @@ export const FilterProducts = ({
                 setFilters({});
                 setFiltersParam(null);
                 setCategoryParam(null);
+                setStockStatusParam(null);
                 setSelectedCategory("");
               }}
               className="w-full sm:w-auto"

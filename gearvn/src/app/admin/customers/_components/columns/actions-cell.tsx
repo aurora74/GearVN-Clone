@@ -80,13 +80,13 @@ const ReasonDialog = ({
 
         <div className="space-y-2">
           <label className="text-sm font-semibold" htmlFor={`reason-${user._id}`}>
-            Ly do
+            Lý do
           </label>
           <Textarea
             id={`reason-${user._id}`}
             value={reason}
             disabled={isPending}
-            placeholder="Nhap ly do de ghi nhan vao audit log."
+            placeholder="Nhập lý do để ghi nhận vào audit log."
             onChange={(event) => setReason(event.target.value)}
           />
         </div>
@@ -153,9 +153,9 @@ export const ActionsCell = ({ user }: { user: User }) => {
         {user.status !== ACCOUNT_STATUS.BANNED && (
           <ReasonDialog
             user={user}
-            title="Khoa tai khoan"
-            description="Khoa tai khoan: thao tac nay ngan nguoi dung dang nhap vao he thong"
-            submitLabel="Khoa tai khoan"
+            title="Khóa tài khoản"
+            description="Khóa tài khoản: thao tác này ngăn người dùng đăng nhập vào hệ thống"
+            submitLabel="Khóa tài khoản"
             setOpenDropdown={setOpenDropdown}
             isPending={isUpdatingStatus}
             onSubmit={(reason) =>
@@ -168,16 +168,16 @@ export const ActionsCell = ({ user }: { user: User }) => {
               className="group hover:!bg-red-500/10"
             >
               <Ban className="size-4 group-hover:text-red-500" />
-              <p className="group-hover:text-red-500">Khoa tai khoan</p>
+              <p className="group-hover:text-red-500">Khóa tài khoản</p>
             </DropdownMenuItem>
           </ReasonDialog>
         )}
 
         <ReasonDialog
           user={user}
-          title="Xoa tai khoan"
-          description="Xoa tai khoan: thao tac nay khong the hoan tac voi"
-          submitLabel="Xoa tai khoan"
+          title="Xóa tài khoản"
+          description="Xóa tài khoản: thao tác này không thể hoàn tác với"
+          submitLabel="Xóa tài khoản"
           setOpenDropdown={setOpenDropdown}
           isPending={isDeletingAccount}
           onSubmit={(reason) => deleteAccount({ userId: user._id, reason })}
@@ -188,7 +188,7 @@ export const ActionsCell = ({ user }: { user: User }) => {
             className="group"
           >
             <Trash2 className="size-4 group-hover:text-red-500" />
-            <p className="group-hover:text-red-500">Xoa tai khoan</p>
+            <p className="group-hover:text-red-500">Xóa tài khoản</p>
           </DropdownMenuItem>
         </ReasonDialog>
       </DropdownMenuContent>

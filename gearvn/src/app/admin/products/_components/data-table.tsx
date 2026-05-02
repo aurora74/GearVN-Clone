@@ -66,6 +66,12 @@ export const DataTable = <TData, TValue>({
     }
   );
 
+  const [stockStatus, setStockStatusParam] = useQueryState("stockStatus", {
+    history: "push",
+  });
+  const normalizedStockStatus =
+    stockStatus === "zero" || stockStatus === "low" ? stockStatus : null;
+
   const [filters, setFilters] = useState<Record<string, string[]>>(() => {
     if (!filtersParam) return {};
     try {
@@ -132,6 +138,7 @@ export const DataTable = <TData, TValue>({
           data={data}
           table={table}
           filters={filters}
+          stockStatus={normalizedStockStatus}
           fields={category}
           setFilters={setFilters}
           categories={categories}
@@ -139,6 +146,7 @@ export const DataTable = <TData, TValue>({
           canManageCatalog={canManageCatalog}
           isPendingFields={isPendingFields}
           setFiltersParam={setFiltersParam}
+          setStockStatusParam={setStockStatusParam}
           selectedCategory={selectedCategory}
           setCategoryParam={setCategoryParam}
           setSelectedCategory={setSelectedCategory}

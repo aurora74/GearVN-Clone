@@ -39,7 +39,6 @@ const toProductPayload = (
   name: product.name,
   slug: product.slug,
   price: product.price,
-  stock: product.stock,
   category: product.category,
   description: product.description,
   images: product.images,

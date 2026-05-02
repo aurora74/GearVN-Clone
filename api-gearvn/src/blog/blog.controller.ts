@@ -71,7 +71,7 @@ export class BlogController {
     name: 'sortBy',
     required: false,
     type: String,
-    description: 'Sort fields. Example: title,-createdAt',
+    description: 'Sort fields. Example: -createdAt for newest, createdAt for oldest, title',
   })
   @ApiQuery({
     name: 'fields',
@@ -134,7 +134,7 @@ export class BlogController {
     name: 'sortBy',
     required: false,
     type: String,
-    description: 'Sort fields. Example: title,-createdAt',
+    description: 'Sort fields. Example: -createdAt for newest, createdAt for oldest, title',
   })
   @ApiQuery({
     name: 'fields',

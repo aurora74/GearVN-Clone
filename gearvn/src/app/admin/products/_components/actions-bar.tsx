@@ -5,7 +5,7 @@ import type { Table as TableType, Column } from "@tanstack/react-table";
 
 import type { PaginatedResponse } from "@/types/global";
 import type { CategoryFields, CategoryType } from "@/types/category";
-
+import type { ProductStockStatus } from "@/types/product";
 import {
   Popover,
   PopoverContent,
@@ -26,8 +26,10 @@ type ActionsBarProps<TData> = {
   fields?: CategoryFields[];
   filters: Record<string, string[]>;
   tableColumns: Column<TData, unknown>[];
+  stockStatus: ProductStockStatus | null;
   categories?: PaginatedResponse<CategoryType>;
   setFiltersParam: (val: string | null) => void;
+  setStockStatusParam: (val: ProductStockStatus | null) => void;
   setCategoryParam: (val: string | null) => void;
   setSelectedCategory: React.Dispatch<React.SetStateAction<string>>;
   setFilters: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
@@ -44,8 +46,10 @@ export const ActionsBar = <TData,>({
   canManageCatalog,
   isPendingFields,
   setFiltersParam,
+  setStockStatusParam,
   selectedCategory,
   setCategoryParam,
+  stockStatus,
   setSelectedCategory,
 }: ActionsBarProps<TData>) => {
   return (
@@ -62,10 +66,12 @@ export const ActionsBar = <TData,>({
         <FilterProducts
           filters={filters}
           fields={fields}
+          stockStatus={stockStatus}
           setFilters={setFilters}
           categories={categories}
           isPendingFields={isPendingFields}
           setFiltersParam={setFiltersParam}
+          setStockStatusParam={setStockStatusParam}
           selectedCategory={selectedCategory}
           setCategoryParam={setCategoryParam}
           setSelectedCategory={setSelectedCategory}
@@ -100,10 +106,12 @@ export const ActionsBar = <TData,>({
             <FilterProducts
               filters={filters}
               fields={fields}
+              stockStatus={stockStatus}
               setFilters={setFilters}
               categories={categories}
               isPendingFields={isPendingFields}
               setFiltersParam={setFiltersParam}
+              setStockStatusParam={setStockStatusParam}
               selectedCategory={selectedCategory}
               setCategoryParam={setCategoryParam}
               setSelectedCategory={setSelectedCategory}
