@@ -13,6 +13,32 @@ import { Blog, BlogDocument } from './blog.schema';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 type CleanupWarning = { cleanupWarning?: true; cleanupFailedAssets?: string[] };
+type BlogSortDirection = 1 | -1;
+
+const ALLOWED_BLOG_SORT_FIELDS = new Set(['createdAt', 'publishedAt', 'title']);
+const DEFAULT_BLOG_SORT: Record<string, BlogSortDirection> = {
+  createdAt: -1,
+  _id: -1,
+};
+
+const parseBlogSort = (sortBy?: string): Record<string, BlogSortDirection> => {
+  const sort = (sortBy ?? '')
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean)
+    .reduce<Record<string, BlogSortDirection>>((acc, field) => {
+      const direction: BlogSortDirection = field.startsWith('-') ? -1 : 1;
+      const fieldName = field.startsWith('-') ? field.slice(1) : field;
+
+      if (ALLOWED_BLOG_SORT_FIELDS.has(fieldName)) {
+        acc[fieldName] = direction;
+      }
+
+      return acc;
+    }, {});
+
+  return Object.keys(sort).length > 0 ? sort : DEFAULT_BLOG_SORT;
+};
 
 @Injectable()
 export class BlogService {
@@ -120,14 +146,7 @@ export class BlogService {
     let mongooseQuery: Query<BlogDocument[], BlogDocument> =
       this.blogModel.find(filter);
 
-    if (sortBy) {
-      const sortFields = sortBy
-        .split(',')
-        .map((field) =>
-          field.startsWith('-') ? [field.slice(1), -1] : [field, 1],
-        );
-      mongooseQuery = mongooseQuery.sort(Object.fromEntries(sortFields));
-    }
+    mongooseQuery = mongooseQuery.sort(parseBlogSort(sortBy));
 
     if (fields) {
       mongooseQuery = mongooseQuery.select(fields.split(',').join(' '));
@@ -189,16 +208,7 @@ export class BlogService {
     let mongooseQuery: Query<BlogDocument[], BlogDocument> =
       this.blogModel.find(filter);
 
-    if (sortBy) {
-      const sortFields = sortBy
-        .split(',')
-        .map((field) =>
-          field.startsWith('-') ? [field.slice(1), -1] : [field, 1],
-        );
-      mongooseQuery = mongooseQuery.sort(Object.fromEntries(sortFields));
-    } else {
-      mongooseQuery = mongooseQuery.sort({ createdAt: -1 });
-    }
+    mongooseQuery = mongooseQuery.sort(parseBlogSort(sortBy));
 
     if (fields) {
       mongooseQuery = mongooseQuery.select(fields.split(',').join(' '));

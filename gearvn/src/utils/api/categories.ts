@@ -2,8 +2,12 @@ import { CategoryFields, CategoryType } from "@/types/category";
 
 export const fetchCategories = async (): Promise<CategoryType[]> => {
   try {
+    const params = new URLSearchParams({
+      limit: "20",
+      sortBy: "-createdAt",
+    });
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_APP_URL}/api/categories?limit=20`,
+      `${process.env.NEXT_PUBLIC_APP_URL}/api/categories?${params.toString()}`,
       { next: { revalidate: 60 } }
     );
     if (!res.ok) return [];

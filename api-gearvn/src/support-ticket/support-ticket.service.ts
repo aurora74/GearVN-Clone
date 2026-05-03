@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { ClientSession, Model } from 'mongoose';
 
 import { SUPPORT_TICKET_SOURCE, SUPPORT_TICKET_STATUS } from '../config.global';
 import { Permission, roleHasPermission } from '../auth/policy/permissions';
@@ -22,6 +22,10 @@ export interface CreateProductQuestionTicketInput {
   productSlug?: string;
   customerId: string;
   contextLabel: string;
+}
+
+export interface CreateProductQuestionTicketOptions {
+  session?: ClientSession;
 }
 
 export interface CreateChatTicketInput {
@@ -63,11 +67,19 @@ export class SupportTicketService {
     }
   }
 
-  async createForProductQuestion(input: CreateProductQuestionTicketInput) {
-    const existing = await this.supportTicketModel.findOne({
+  async createForProductQuestion(
+    input: CreateProductQuestionTicketInput,
+    options: CreateProductQuestionTicketOptions = {},
+  ) {
+    const existingQuery = this.supportTicketModel.findOne({
       sourceType: SUPPORT_TICKET_SOURCE.PRODUCT_QNA,
       sourceId: input.questionId,
     });
+    if (options.session) {
+      existingQuery.session(options.session);
+    }
+
+    const existing = await existingQuery;
 
     if (existing) {
       return existing;
@@ -88,7 +100,7 @@ export class SupportTicketService {
       },
     });
 
-    await ticket.save();
+    await ticket.save({ session: options.session });
     return ticket;
   }
 

@@ -15,6 +15,34 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { Product, ProductDocument } from '../product/product.schema';
 
 type CleanupWarning = { cleanupWarning?: true; cleanupFailedAssets?: string[] };
+type CategorySortDirection = 1 | -1;
+
+const ALLOWED_CATEGORY_SORT_FIELDS = new Set(['createdAt', 'label', 'name']);
+const DEFAULT_CATEGORY_SORT: Record<string, CategorySortDirection> = {
+  createdAt: -1,
+  _id: -1,
+};
+
+const parseCategorySort = (
+  sortBy?: string,
+): Record<string, CategorySortDirection> => {
+  const sort = (sortBy ?? '')
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean)
+    .reduce<Record<string, CategorySortDirection>>((acc, field) => {
+      const direction: CategorySortDirection = field.startsWith('-') ? -1 : 1;
+      const fieldName = field.startsWith('-') ? field.slice(1) : field;
+
+      if (ALLOWED_CATEGORY_SORT_FIELDS.has(fieldName)) {
+        acc[fieldName] = direction;
+      }
+
+      return acc;
+    }, {});
+
+  return Object.keys(sort).length > 0 ? sort : DEFAULT_CATEGORY_SORT;
+};
 
 @Injectable()
 export class CategoryService {
@@ -178,12 +206,7 @@ export class CategoryService {
     let mongooseQuery: Query<Category[], Category> =
       this.categoryModel.find(filter);
 
-    if (sortBy) {
-      const sortFields = sortBy
-        .split(',')
-        .map((f) => (f.startsWith('-') ? [f.slice(1), -1] : [f, 1]));
-      mongooseQuery = mongooseQuery.sort(Object.fromEntries(sortFields));
-    }
+    mongooseQuery = mongooseQuery.sort(parseCategorySort(sortBy));
 
     if (fields) {
       mongooseQuery = mongooseQuery.select(fields.split(',').join(' '));
@@ -207,7 +230,11 @@ export class CategoryService {
 
   async findCategoryByName(name: string) {
     const category = await this.categoryModel
-      .findOne({ name })
+      .findOne({
+        name,
+        isPublished: { $ne: false },
+        isArchived: { $ne: true },
+      })
       .select('fields');
     if (!category) {
       throw new NotFoundException(`Category ${name} not found`);
@@ -217,7 +244,11 @@ export class CategoryService {
   }
 
   async findLabelByCategory(category: string) {
-    const cat = await this.categoryModel.findOne({ name: category });
+    const cat = await this.categoryModel.findOne({
+      name: category,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+    });
     if (!cat) {
       throw new NotFoundException(`Category "${category}" not found`);
     }
@@ -254,17 +285,8 @@ export class CategoryService {
       };
     });
 
-    let imageUrl: string | undefined;
-    if (file) {
-      const uploaded = await this.cloudinaryService.uploadImage(file);
-      imageUrl = uploaded.secure_url;
-    }
-
     const currentCategory = await this.categoryModel.findById(id);
     if (!currentCategory) {
-      if (imageUrl) {
-        await this.cleanupReplacedImage(imageUrl);
-      }
       throw new NotFoundException(`Category ${id} not found`);
     }
 
@@ -279,6 +301,12 @@ export class CategoryService {
         currentCategory.fields,
         normalizedFields,
       );
+    }
+
+    let imageUrl: string | undefined;
+    if (file) {
+      const uploaded = await this.cloudinaryService.uploadImage(file);
+      imageUrl = uploaded.secure_url;
     }
 
     const normalizedDto: any = {

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model, Types } from 'mongoose';
 
 import { UserRole } from '../auth/enums/user-role.enum';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -32,7 +32,7 @@ export interface ProductQuestionActor {
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Moderator.';
+const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Quản trị viên.';
 
 export interface ProductQuestionModerationDto {
   action: 'hide' | 'delete';
@@ -46,6 +46,8 @@ export class ProductQuestionService {
     private readonly productQuestionModel: Model<ProductQuestionDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    @InjectConnection()
+    private readonly connection: Connection,
     private readonly cloudinaryService: CloudinaryService,
     private readonly supportTicketService: SupportTicketService,
     private readonly moderationService: ModerationService,
@@ -57,6 +59,18 @@ export class ProductQuestionService {
       throw new BadRequestException('Missing authenticated actor');
     }
     return String(actorId);
+  }
+
+  private isModeratorActor(actor: ProductQuestionActor) {
+    return actor?.role === UserRole.CSR || actor?.role === UserRole.MANAGER;
+  }
+
+  private getVisibleProductFilter(productId: string) {
+    return {
+      _id: productId,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+    };
   }
 
   private assertContent(content?: string) {
@@ -82,7 +96,7 @@ export class ProductQuestionService {
       actor.role === UserRole.CSR || actor.role === UserRole.MANAGER;
 
     return {
-      authorRoleLabel: isModerator ? 'Moderator' : 'Customer',
+      authorRoleLabel: isModerator ? 'Quản trị viên' : 'Customer',
       isModerator,
     };
   }
@@ -106,7 +120,7 @@ export class ProductQuestionService {
       !comment.isModerator &&
       (storedDisplayName === 'Customer' || storedDisplayName === 'Khach hang');
     const displayName = comment.isModerator
-      ? 'Moderator'
+      ? 'Quản trị viên'
       : populatedDisplayName ||
         (!isGenericCustomerDisplayName ? storedDisplayName : undefined) ||
         'Khach hang';
@@ -140,6 +154,21 @@ export class ProductQuestionService {
     );
 
     return uploadedImages.map((image) => image.secure_url);
+  }
+
+  private async cleanupUploadedImages(urls: string[]) {
+    const uniqueUrls = [...new Set(urls.filter(Boolean))];
+    if (!uniqueUrls.length) return;
+
+    await Promise.all(
+      uniqueUrls.map(async (url) => {
+        try {
+          await this.cloudinaryService.deleteImage(url);
+        } catch (error) {
+          console.warn('Failed to delete orphaned product question image', { url, error });
+        }
+      }),
+    );
   }
 
   toPublicQuestion(question: ProductQuestionDocument | any) {
@@ -181,7 +210,7 @@ export class ProductQuestionService {
       id: comment._id?.toString(),
       authorId,
       author,
-      authorRoleLabel: comment.authorRoleLabel,
+      authorRoleLabel: comment.isModerator ? 'Quản trị viên' : comment.authorRoleLabel,
       isModerator: comment.isModerator,
       content: status === 'hidden' ? HIDDEN_CONTENT_PLACEHOLDER : comment.content,
       images: status === 'hidden' ? [] : (comment.images ?? []),
@@ -190,6 +219,11 @@ export class ProductQuestionService {
   }
 
   async listByProduct(productId: string) {
+    const product = await this.productModel.findOne(this.getVisibleProductFilter(productId));
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
     const questions = await this.productQuestionModel
       .find({ productId, publicStatus: 'visible' })
       .populate({ path: 'authorId', select: 'fullName email avatarUrl' })
@@ -209,7 +243,7 @@ export class ProductQuestionService {
     const content = this.assertContent(dto.content);
     this.assertImages(files);
 
-    const product = await this.productModel.findById(productId);
+    const product = await this.productModel.findOne(this.getVisibleProductFilter(productId));
     if (!product) {
       throw new NotFoundException('Product not found');
     }
@@ -225,18 +259,36 @@ export class ProductQuestionService {
       moderationStatus: 'visible',
     });
 
-    await question.save();
+    let ticket: Awaited<ReturnType<SupportTicketService['createForProductQuestion']>> | null = null;
+    const session = await this.connection.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await question.save({ session });
 
-    const ticket = await this.supportTicketService.createForProductQuestion({
-      questionId: question._id.toString(),
-      productId,
-      productSlug: product.slug,
-      customerId: actorId,
-      contextLabel: product.name,
-    });
+        ticket = await this.supportTicketService.createForProductQuestion(
+          {
+            questionId: question._id.toString(),
+            productId,
+            productSlug: product.slug,
+            customerId: actorId,
+            contextLabel: product.name,
+          },
+          { session },
+        );
 
-    question.ticketId = ticket._id.toString();
-    await question.save();
+        question.ticketId = ticket._id.toString();
+        await question.save({ session });
+      });
+    } catch (error) {
+      await this.cleanupUploadedImages(images);
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+
+    if (!ticket) {
+      throw new BadRequestException('Failed to create product question ticket');
+    }
 
     const publicQuestion = await this.toPopulatedPublicQuestion(question);
 
@@ -257,6 +309,20 @@ export class ProductQuestionService {
       throw new NotFoundException('Product question not found');
     }
 
+    const status = question.moderationStatus ?? question.publicStatus ?? 'visible';
+    if (status !== 'visible') {
+      throw new BadRequestException('Cannot reply to a moderated question');
+    }
+
+    if (!this.isModeratorActor(actor)) {
+      const product = await this.productModel.findOne(
+        this.getVisibleProductFilter(question.productId.toString()),
+      );
+      if (!product) {
+        throw new NotFoundException('Product not found');
+      }
+    }
+
     const content = this.assertContent(dto.content);
     const images = await this.uploadImages(files);
     const roleLabel = this.getRoleLabel(actor);
@@ -266,7 +332,7 @@ export class ProductQuestionService {
       authorId: this.getActorId(actor),
       authorDisplayName: this.getActorDisplayName(
         actor,
-        roleLabel.isModerator ? 'Moderator' : 'Khach hang',
+        roleLabel.isModerator ? 'Quản trị viên' : 'Khach hang',
       ),
       ...roleLabel,
       content,

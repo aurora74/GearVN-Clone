@@ -42,6 +42,16 @@ const VALID_STAFF_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.CANCELLED]: [],
 };
 
+const ORDER_STATUS_LABEL_VI: Record<OrderStatus, string> = {
+  [OrderStatus.PROCESSING]: 'Đang xử lý',
+  [OrderStatus.SHIPPING]: 'Đang giao hàng',
+  [OrderStatus.COMPLETED]: 'Hoàn thành',
+  [OrderStatus.CANCELLED]: 'Đã hủy',
+};
+
+const getOrderStatusLabelVi = (status: OrderStatus) =>
+  ORDER_STATUS_LABEL_VI[status] ?? status;
+
 type InventoryTransitionTarget = 'RESERVED' | 'COMMITTED' | 'RELEASED';
 type InventoryStatusValue = 'NONE' | 'RESERVED' | 'COMMITTED' | 'RELEASED';
 
@@ -242,7 +252,7 @@ export class OrderService {
     detail: Record<string, unknown> = {},
   ) {
     return new BadRequestException({
-      message: 'Checkout validation failed',
+      message: 'Không thể hoàn tất đặt hàng',
       description,
       detail: {
         code,
@@ -465,7 +475,7 @@ export class OrderService {
       if (availableStock < quantity) {
         throw this.createCheckoutError(
           'CHECKOUT_STOCK_CHANGED',
-          'Stock changed for one or more products.',
+          'Tồn kho của một hoặc nhiều sản phẩm đã thay đổi.',
           {
             items: [
               {
@@ -686,7 +696,7 @@ export class OrderService {
 
           throw this.createCheckoutError(
             'CHECKOUT_STOCK_CHANGED',
-            'Stock changed for one or more products.',
+            'Tồn kho của một hoặc nhiều sản phẩm đã thay đổi.',
             {
               source,
               items: [
@@ -759,7 +769,7 @@ export class OrderService {
             if (!updatedProduct) {
               throw this.createCheckoutError(
                 'CHECKOUT_STOCK_CHANGED',
-                'Stock changed for one or more products.',
+                'Tồn kho của một hoặc nhiều sản phẩm đã thay đổi.',
                 {
                   source,
                   items: [
@@ -1163,7 +1173,7 @@ export class OrderService {
     };
     const orderEvent = {
       type: 'ORDER_STATUS_CHANGED',
-      message: `Order status changed from ${currentStatus} to ${targetStatus}`,
+      message: `Trạng thái đơn hàng đã chuyển từ ${getOrderStatusLabelVi(currentStatus)} sang ${getOrderStatusLabelVi(targetStatus)}.`,
       actorId: actorId || undefined,
       actorRole,
       metadata: {
@@ -1442,8 +1452,45 @@ export class OrderService {
     return (currentCount - previousCount) / previousCount;
   }
 
+  private async enrichTopSellingProduct(product: any) {
+    const name = String(product?.name ?? '').trim();
+    const images = Array.isArray(product?.images)
+      ? product.images.filter(Boolean)
+      : [];
+    const productId = String(product?._id ?? '').trim();
+
+    if (name && images.length > 0) {
+      return { ...product, name, images };
+    }
+
+    if (!productId) {
+      return { ...product, name, images };
+    }
+
+    try {
+      const managedProduct = await this.productService.findManagedOne(productId);
+      const plainProduct =
+        managedProduct && typeof (managedProduct as any).toObject === 'function'
+          ? (managedProduct as any).toObject()
+          : managedProduct;
+
+      return {
+        ...product,
+        name: name || plainProduct?.name || '',
+        images:
+          images.length > 0
+            ? images
+            : Array.isArray(plainProduct?.images)
+              ? plainProduct.images
+              : [],
+      };
+    } catch {
+      return { ...product, name, images };
+    }
+  }
+
   async getTopSellingProducts(startDate: Date, endDate: Date, limit = 5) {
-    return this.orderModel.aggregate([
+    const topProducts = await this.orderModel.aggregate([
       {
         $match: {
           createdAt: { $gte: startDate, $lte: endDate },
@@ -1472,6 +1519,10 @@ export class OrderService {
         },
       },
     ]);
+
+    return Promise.all(
+      topProducts.map((product) => this.enrichTopSellingProduct(product)),
+    );
   }
 
   async getSalesAndOrdersByDate(startDate: Date, endDate: Date) {

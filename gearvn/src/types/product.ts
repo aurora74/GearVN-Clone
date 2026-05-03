@@ -92,6 +92,8 @@ export type UpdateProductStockPayload = {
   stock: number;
 };
 
+export type ProductStockStatus = "zero" | "low";
+
 export type UseProductsParams = {
   page?: number;
   limit?: number;
@@ -102,6 +104,7 @@ export type UseProductsParams = {
   event?: string;
   attributes?: Record<string, string[]>;
   visibility?: "all" | "active" | "unpublished" | "archived";
+  stockStatus?: ProductStockStatus;
 };
 
 export type UseRelatedProductsParams = {

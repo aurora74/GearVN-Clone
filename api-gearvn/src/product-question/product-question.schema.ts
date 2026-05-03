@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type ProductQuestionDocument = ProductQuestion & Document<Types.ObjectId>;
 export type ProductQuestionPublicStatus = 'visible' | 'hidden' | 'deleted';
-export type ProductQuestionRoleLabel = 'Customer' | 'Moderator';
+export type ProductQuestionRoleLabel = 'Customer' | 'Moderator' | 'Quản trị viên';
 
 @Schema({ timestamps: true })
 export class ProductQuestionComment {

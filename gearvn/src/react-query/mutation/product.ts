@@ -20,6 +20,7 @@ const invalidateProductPromotionCaches = (
   productId?: string
 ) => {
   queryClient.invalidateQueries({ queryKey: queryKeys.product.root });
+  queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.root });
   queryClient.invalidateQueries({ queryKey: queryKeys.promotion.summary });
 
   if (productId) {
@@ -166,6 +167,7 @@ export const useUpdateProductStock = (onSuccessCallback?: () => void) => {
     onSuccess: (data, variables) => {
       toastSuccess("Cập nhật tồn kho", data.description);
       queryClient.invalidateQueries({ queryKey: queryKeys.products.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.product.detail(variables.productId) });
       onSuccessCallback?.();
     },

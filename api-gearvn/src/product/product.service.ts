@@ -17,7 +17,7 @@ import {
 } from '../moderation/moderation.service';
 import { Permission, roleHasPermission } from '../auth/policy/permissions';
 
-const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Moderator.';
+const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Quản trị viên.';
 
 export interface ProductModerationDto {
   action: 'hide' | 'delete';
@@ -189,6 +189,17 @@ export class ProductService {
       .filter(Boolean);
   }
 
+  private async findVisibleProductForPublicEngagement(productId: string) {
+    const product = await this.productModel.findOne({
+      _id: productId,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+
+    return product;
+  }
+
   async create(
     body: any,
     files: Express.Multer.File[],
@@ -242,16 +253,19 @@ export class ProductService {
     actor?: ProductMutationActor,
   ) {
     this.assertStockMutationAllowed(body, actor);
-    let parsedAttributes: Record<string, any>;
-    try {
-      parsedAttributes =
-        typeof body.attributes === 'string'
-          ? JSON.parse(body.attributes)
-          : body.attributes;
-    } catch {
-      throw new BadRequestException('"attributes" field must be valid JSON');
+    let parsedAttributes: Record<string, any> | undefined;
+    if (body.attributes !== undefined) {
+      try {
+        parsedAttributes =
+          typeof body.attributes === 'string'
+            ? JSON.parse(body.attributes)
+            : body.attributes;
+      } catch {
+        throw new BadRequestException('"attributes" field must be valid JSON');
+      }
     }
 
+    const oldImagesProvided = body.oldImages !== undefined;
     let oldImages: string[] = [];
     try {
       oldImages =
@@ -287,16 +301,22 @@ export class ProductService {
         )
       : [];
 
+    const keptImages = oldImagesProvided
+      ? oldImages
+      : (existingProduct.images ?? []);
     const updatedImages = [
-      ...oldImages,
+      ...keptImages,
       ...newImages.map((img) => img.secure_url),
     ];
 
     const updateData: Record<string, any> = {
       ...this.pickCatalogFields(body, CATALOG_UPDATE_FIELDS),
-      attributes: parsedAttributes,
       images: updatedImages,
     };
+
+    if (body.attributes !== undefined) {
+      updateData.attributes = parsedAttributes;
+    }
 
     if (this.actorCanManageStock(actor) && body.stock !== undefined) {
       updateData.stock = body.stock;
@@ -357,6 +377,7 @@ export class ProductService {
     attributesRaw?: string;
     publicOnly?: boolean;
     visibility?: 'all' | 'active' | 'unpublished' | 'archived';
+    stockStatus?: 'zero' | 'low';
   }) {
     const {
       page,
@@ -369,6 +390,7 @@ export class ProductService {
       attributesRaw,
       publicOnly = true,
       visibility = 'active',
+      stockStatus,
     } = params;
     const skip = (page - 1) * limit;
 
@@ -408,6 +430,12 @@ export class ProductService {
 
     if (category) filter.category = category;
     if (event) filter.event = event;
+
+    if (stockStatus === 'zero') {
+      filter.stock = { $lte: 0 };
+    } else if (stockStatus === 'low') {
+      filter.stock = { $gt: 0, $lte: 5 };
+    }
 
     Object.entries(attributes).forEach(([key, values]) => {
       filter[`attributes.${key}`] = { $in: values };
@@ -596,15 +624,14 @@ export class ProductService {
     dto: CreateCommentDto,
     files: Express.Multer.File[],
   ) {
-    const { rating } = dto;
+    const rating = Number(dto.rating);
     const content = sanitizePlainTextContent(dto.content, 'Comment content');
 
-    if (rating < 1 || rating > 5) {
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
       throw new BadRequestException('Rating must be between 1 and 5');
     }
 
-    const product = await this.productModel.findById(productId);
-    if (!product) throw new NotFoundException('Product not found');
+    const product = await this.findVisibleProductForPublicEngagement(productId);
 
     validateImageUploads(files);
     let uploadedImages: { secure_url: string }[] = [];
@@ -637,8 +664,7 @@ export class ProductService {
     commentId: string,
     userId: string,
   ) {
-    const product = await this.productModel.findById(productId);
-    if (!product) throw new NotFoundException('Product not found');
+    const product = await this.findVisibleProductForPublicEngagement(productId);
 
     const comment = product.comments.find(
       (c: any) => c._id.toString() === commentId,
@@ -665,8 +691,7 @@ export class ProductService {
     content: string,
     files: Express.Multer.File[],
   ) {
-    const product = await this.productModel.findById(productId);
-    if (!product) throw new NotFoundException('Product not found');
+    const product = await this.findVisibleProductForPublicEngagement(productId);
 
     const parentComment = product.comments.find(
       (c: any) => c._id.toString() === parentCommentId,
@@ -710,8 +735,7 @@ export class ProductService {
     files: Express.Multer.File[],
     oldImages: string[] | string = [],
   ) {
-    const product = await this.productModel.findById(productId);
-    if (!product) throw new NotFoundException('Product not found');
+    const product = await this.findVisibleProductForPublicEngagement(productId);
 
     let parsedOldImages: string[] = [];
     if (typeof oldImages === 'string') {
@@ -757,8 +781,7 @@ export class ProductService {
   }
 
   async deleteComment(productId: string, commentId: string, userId: string) {
-    const product = await this.productModel.findById(productId);
-    if (!product) throw new NotFoundException('Product not found');
+    const product = await this.findVisibleProductForPublicEngagement(productId);
 
     let found = false;
     const commentIndex = product.comments.findIndex(
@@ -866,8 +889,8 @@ export class ProductService {
   }
 
   async getProductAnalytics({ lowStockThreshold = 5, limit = 5 } = {}) {
-    const baseFilter = { isArchived: false };
-    const activeFilter = { ...baseFilter, isPublished: true };
+    const baseFilter = { isArchived: { $ne: true } };
+    const activeFilter = { ...baseFilter, isPublished: { $ne: false } };
     const productFields = '_id name images soldQuantity stock isPublished';
 
     const [

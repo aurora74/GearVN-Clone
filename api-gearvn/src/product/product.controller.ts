@@ -148,6 +148,7 @@ export class ProductController {
   @ApiQuery({ name: 'fields', required: false, type: String })
   @ApiQuery({ name: 'category', required: false, type: String })
   @ApiQuery({ name: 'event', required: false, type: String })
+  @ApiQuery({ name: 'stockStatus', required: false, enum: ['zero', 'low'] })
   @ApiQuery({
     name: 'attributes',
     required: false,
@@ -164,6 +165,7 @@ export class ProductController {
     @Query('fields') fields?: string,
     @Query('category') category?: string,
     @Query('attributes') attributesRaw?: string,
+    @Query('stockStatus') stockStatus?: 'zero' | 'low',
   ) {
     return this.productService.findAll({
       page: Number(page),
@@ -174,6 +176,7 @@ export class ProductController {
       category,
       event,
       attributesRaw,
+      stockStatus,
     });
   }
 
@@ -190,6 +193,7 @@ export class ProductController {
   @ApiQuery({ name: 'category', required: false, type: String })
   @ApiQuery({ name: 'attributes', required: false, type: String })
   @ApiQuery({ name: 'visibility', required: false, type: String })
+  @ApiQuery({ name: 'stockStatus', required: false, enum: ['zero', 'low'] })
   async findAllManaged(
     @Query('page') page = 1,
     @Query('limit') limit = 10,
@@ -201,6 +205,7 @@ export class ProductController {
     @Query('attributes') attributesRaw?: string,
     @Query('visibility')
     visibility?: 'all' | 'active' | 'unpublished' | 'archived',
+    @Query('stockStatus') stockStatus?: 'zero' | 'low',
   ) {
     return this.productService.findAll({
       page: Number(page),
@@ -213,6 +218,7 @@ export class ProductController {
       attributesRaw,
       publicOnly: false,
       visibility: visibility ?? 'active',
+      stockStatus,
     });
   }
 
