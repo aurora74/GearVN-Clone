@@ -5,6 +5,12 @@ import { queryKeys } from "../query-keys";
 import { PaginatedResponse } from "@/types/global";
 import { Message, UseMessageParams } from "@/types/chat";
 
+const parseResult = async <T>(response: Response): Promise<T> => {
+  const data = await response.json();
+  if (!response.ok) throw data;
+  return data.result;
+};
+
 export const useMessagesByRoom = (
   roomId: string,
   params: UseMessageParams = { page: 1, limit: 20 }
@@ -23,8 +29,7 @@ export const useMessagesByRoom = (
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseResult<PaginatedResponse<Message>>(response);
     },
 
     enabled: !!roomId,
@@ -46,8 +51,7 @@ export const useLatestMessages = (params: UseMessageParams) =>
         credentials: "include",
       });
 
-      const { result } = await response.json();
-      return result;
+      return parseResult<PaginatedResponse<Message>>(response);
     },
     refetchInterval: 2000,
     refetchIntervalInBackground: true,

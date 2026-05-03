@@ -12,6 +12,12 @@ import { getOrderStatusUI } from "@/utils/get/get-order-status-ui";
 import { getPaymentStatusUI } from "@/utils/get/get-payment-status-ui";
 
 import {
+  getOrderEventTypeVi,
+  getOrderStatusVi,
+  ORDER_DISPLAY_FALLBACK,
+  ORDER_STATUS_VI,
+} from "@/constants/admin/orders/convert-vi";
+import {
   Sheet,
   SheetTitle,
   SheetHeader,
@@ -19,6 +25,21 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+
+const LEGACY_ORDER_STATUS_CHANGED_PATTERN = /^Order status changed from (\S+) to (\S+)$/;
+
+const formatOrderStatusChangeMessage = (message?: string) => {
+  const legacyMatch = message?.match(LEGACY_ORDER_STATUS_CHANGED_PATTERN);
+  if (!legacyMatch) return message || ORDER_DISPLAY_FALLBACK;
+
+  const fromStatus = getOrderStatusVi(legacyMatch[1]);
+  const toStatus = getOrderStatusVi(legacyMatch[2]);
+  if (fromStatus === ORDER_DISPLAY_FALLBACK || toStatus === ORDER_DISPLAY_FALLBACK) {
+    return ORDER_DISPLAY_FALLBACK;
+  }
+
+  return `Trạng thái đơn hàng đã chuyển từ ${fromStatus} sang ${toStatus}.`;
+};
 
 const formatDateTime = (value?: string | Date) =>
   value ? formatDateVi(new Date(value)) : "Chưa ghi nhận";
@@ -31,6 +52,9 @@ export const OrderDetailsCell = ({ order }: { order: Order }) => {
     className: paymentClassName,
   } = getPaymentStatusUI(order.paymentStatus);
 
+  const customer = order.userId;
+  const customerEmail = customer?.email ?? "Khách vãng lai";
+  const customerAvatar = customer?.avatarUrl || "/avatar-default.jpg";
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -68,13 +92,13 @@ export const OrderDetailsCell = ({ order }: { order: Order }) => {
                 width={42}
                 height={42}
                 alt={order.fullName}
-                src={order.userId.avatarUrl || "/avatar-default.jpg"}
+                src={customerAvatar}
                 className="rounded-full object-cover"
               />
               <div>
                 <p className="text-sm font-medium">{order.fullName}</p>
                 <p className="text-sm text-muted-foreground">
-                  {order.userId.email}
+                  {customerEmail}
                 </p>
               </div>
             </div>
@@ -237,7 +261,7 @@ export const OrderDetailsCell = ({ order }: { order: Order }) => {
                 {order.statusHistory?.map((entry, index) => (
                   <div key={`${entry.changedAt}-${index}`} className="space-y-1">
                     <p className="font-medium">
-                      {entry.fromStatus} → {entry.toStatus}
+                      {ORDER_STATUS_VI[entry.fromStatus] ?? ORDER_DISPLAY_FALLBACK} → {ORDER_STATUS_VI[entry.toStatus] ?? ORDER_DISPLAY_FALLBACK}
                     </p>
                     <p className="text-muted-foreground">
                       {formatDateTime(entry.changedAt)}
@@ -270,9 +294,9 @@ export const OrderDetailsCell = ({ order }: { order: Order }) => {
               <div className="space-y-3 text-sm">
                 {order.orderEvents?.map((event, index) => (
                   <div key={`${event.createdAt}-${index}`} className="space-y-1">
-                    <p className="font-medium">{event.message}</p>
+                    <p className="font-medium">{formatOrderStatusChangeMessage(event.message)}</p>
                     <p className="text-muted-foreground">
-                      {event.type} · {formatDateTime(event.createdAt)}
+                      {getOrderEventTypeVi(event.type)} · {formatDateTime(event.createdAt)}
                     </p>
                   </div>
                 ))}

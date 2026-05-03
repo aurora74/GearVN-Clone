@@ -138,7 +138,7 @@ export const useAnswerProductQuestion = (onSuccessCallback?: () => void) => {
         );
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.productQuestion.root });
-      toastSuccess("Đã trả lời câu hỏi", "Phản hồi Moderator đã được đăng.");
+      toastSuccess("Đã trả lời câu hỏi", "Phản hồi Quản trị viên đã được đăng.");
       onSuccessCallback?.();
     },
     onError: (err: any) => {

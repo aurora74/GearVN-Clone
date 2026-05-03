@@ -13,7 +13,7 @@ export type ProductQuestionComment = {
     displayName: string;
     avatarUrl?: string;
   };
-  authorRoleLabel: "Customer" | "Moderator";
+  authorRoleLabel: "Customer" | "Moderator" | "Quản trị viên";
   isModerator: boolean;
   content: string;
   images: string[];

@@ -43,16 +43,16 @@ const createManagerSchema = z.object({
   fullName: z
     .string()
     .trim()
-    .min(1, "Vui long nhap ho ten")
-    .regex(/^[\p{L} ]+$/u, "Ho ten chi duoc chua chu cai va khoang cach"),
-  email: z.string().trim().min(1, "Vui long nhap email").email("Email khong hop le"),
-  password: z.string().min(6, "Mat khau phai co it nhat 6 ky tu"),
+    .min(1, "Vui lòng nhập họ tên")
+    .regex(/^[\p{L} ]+$/u, "Họ tên chỉ được chứa chữ cái và khoảng cách"),
+  email: z.string().trim().min(1, "Vui lòng nhập email").email("Email không hợp lệ"),
+  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
   phone: z
     .string()
     .trim()
     .optional()
     .refine((val) => !val || /^0\d{9,10}$/.test(val), {
-      message: "So dien thoai khong hop le",
+      message: "Số điện thoại không hợp lệ",
     }),
   address: z.string().trim().optional(),
 });
@@ -98,9 +98,9 @@ const CreateManagerDialog = ({ children }: { children: ReactNode }) => {
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl">Tao Manager</DialogTitle>
+          <DialogTitle className="text-xl">Tạo Manager</DialogTitle>
           <DialogDescription>
-            Tao tai khoan Manager de quan ly cac nhom van hanh.
+            Tạo tài khoản Manager để quản lý các nhóm vận hành.
           </DialogDescription>
         </DialogHeader>
 
@@ -111,9 +111,9 @@ const CreateManagerDialog = ({ children }: { children: ReactNode }) => {
               name="fullName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Ho ten</FormLabel>
+                  <FormLabel>Họ tên</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} placeholder="Nhap ho ten" />
+                    <Input {...field} disabled={isPending} placeholder="Nhập họ tên" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -126,7 +126,7 @@ const CreateManagerDialog = ({ children }: { children: ReactNode }) => {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} placeholder="Nhap email" />
+                    <Input {...field} disabled={isPending} placeholder="Nhập email" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -137,13 +137,13 @@ const CreateManagerDialog = ({ children }: { children: ReactNode }) => {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Mat khau tam thoi</FormLabel>
+                  <FormLabel>Mật khẩu tạm thời</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
                       type="password"
                       disabled={isPending}
-                      placeholder="Nhap mat khau tam thoi"
+                      placeholder="Nhập mật khẩu tạm thời"
                     />
                   </FormControl>
                   <FormMessage />
@@ -155,9 +155,9 @@ const CreateManagerDialog = ({ children }: { children: ReactNode }) => {
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>So dien thoai</FormLabel>
+                  <FormLabel>Số điện thoại</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} placeholder="Nhap so dien thoai" />
+                    <Input {...field} disabled={isPending} placeholder="Nhập số điện thoại" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -168,9 +168,9 @@ const CreateManagerDialog = ({ children }: { children: ReactNode }) => {
               name="address"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Dia chi</FormLabel>
+                  <FormLabel>Địa chỉ</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} placeholder="Nhap dia chi" />
+                    <Input {...field} disabled={isPending} placeholder="Nhập địa chỉ" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -184,11 +184,11 @@ const CreateManagerDialog = ({ children }: { children: ReactNode }) => {
                 disabled={isPending}
                 onClick={() => setOpen(false)}
               >
-                Huy
+                Hủy
               </Button>
               <Button type="submit" disabled={isPending}>
                 {isPending && <Loader className="size-4 animate-spin" />}
-                Tao Manager
+                Tạo Manager
               </Button>
             </DialogFooter>
           </form>
@@ -212,7 +212,7 @@ export const ActionsBar = <TData,>({
         {canCreateManager && (
           <CreateManagerDialog>
             <Button>
-              <Plus /> Tao Manager
+              <Plus /> Tạo Manager
             </Button>
           </CreateManagerDialog>
         )}
@@ -237,7 +237,7 @@ export const ActionsBar = <TData,>({
             {canCreateManager && (
               <CreateManagerDialog>
                 <Button className="w-full justify-center sm:justify-start">
-                  <Plus className="mr-2 size-4" /> Tao Manager
+                  <Plus className="mr-2 size-4" /> Tạo Manager
                 </Button>
               </CreateManagerDialog>
             )}

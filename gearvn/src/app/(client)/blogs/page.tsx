@@ -1,6 +1,6 @@
 import { Metadata } from "next";
 
-import { fetchBlogs } from "@/utils/api/blogs";
+import { fetchBlogs, type BlogSort } from "@/utils/api/blogs";
 
 import { PageClient } from ".";
 import { Breadcrumbs } from "@/components/global/breadcrumbs";
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 };
 
 type BlogsPageProps = {
-  searchParams: Promise<{ page?: string; search?: string }>;
+  searchParams: Promise<{ page?: string; search?: string; sort?: string }>;
 };
 
 const BlogsPage = async ({ searchParams }: BlogsPageProps) => {
@@ -31,8 +31,9 @@ const BlogsPage = async ({ searchParams }: BlogsPageProps) => {
 
   const page = Number(params.page ?? 1);
   const search = (params.search ?? "").trim();
+  const sort: BlogSort = params.sort === "oldest" ? "oldest" : "newest";
 
-  const blogs = await fetchBlogs({ page, limit: 6, search });
+  const blogs = await fetchBlogs({ page, limit: 6, search, sort });
 
   return (
     <div className="bg-[#f7f8f9]">

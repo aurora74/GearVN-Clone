@@ -48,5 +48,14 @@ export class SupportTicket {
 }
 
 export const SupportTicketSchema = SchemaFactory.createForClass(SupportTicket);
-SupportTicketSchema.index({ sourceType: 1, sourceId: 1 }, { unique: true, sparse: true });
+SupportTicketSchema.index(
+  { sourceType: 1, sourceId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      sourceType: SUPPORT_TICKET_SOURCE.PRODUCT_QNA,
+      sourceId: { $type: 'string' },
+    },
+  },
+);
 SupportTicketSchema.index({ status: 1, latestActivityAt: -1 });
