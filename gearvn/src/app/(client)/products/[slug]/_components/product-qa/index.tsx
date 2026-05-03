@@ -91,7 +91,7 @@ export const ProductQa = ({ productId }: { productId: string }) => {
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold">Hỏi đáp sản phẩm</h2>
         <p className="text-sm text-muted-foreground">
-          Câu hỏi công khai về sản phẩm và phản hồi từ Moderator.
+          Câu hỏi công khai về sản phẩm và phản hồi từ Quản trị viên.
         </p>
       </div>
 
@@ -267,7 +267,7 @@ export const ProductQa = ({ productId }: { productId: string }) => {
                           )}
                         >
                           {comment.isModerator
-                            ? "Moderator"
+                            ? "Quản trị viên"
                             : comment.author?.displayName || comment.authorRoleLabel}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
@@ -307,7 +307,7 @@ export const ProductQa = ({ productId }: { productId: string }) => {
                     disabled={isBusy}
                     placeholder={
                       isModerator
-                        ? "Phản hồi với nhãn Moderator"
+                        ? "Phản hồi với nhãn Quản trị viên"
                         : "Bổ sung câu hỏi"
                     }
                     onChange={(event) =>

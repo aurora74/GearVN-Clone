@@ -50,7 +50,7 @@ const SystemConfigRow = ({ config }: { config: SystemConfig }) => {
           <p className="font-medium">{config.key}</p>
           {config.updatedAt && (
             <p className="text-xs text-muted-foreground">
-              Cap nhat:{" "}
+              Cập nhật:{" "}
               {new Date(config.updatedAt).toLocaleString("vi-VN", {
                 dateStyle: "short",
                 timeStyle: "short",
@@ -78,13 +78,13 @@ const SystemConfigRow = ({ config }: { config: SystemConfig }) => {
       <TableCell className="min-w-[260px] align-top">
         <div className="space-y-2">
           <label className="text-sm font-semibold" htmlFor={`reason-${config.key}`}>
-            Ly do
+            Lý do
           </label>
           <Textarea
             id={`reason-${config.key}`}
             value={reason}
             disabled={isPending}
-            placeholder="Nhap ly do de ghi nhan vao audit log."
+            placeholder="Nhập lý do để ghi nhận vào audit log."
             onChange={(event) => setReason(event.target.value)}
           />
         </div>
@@ -123,9 +123,9 @@ export default function SystemPage() {
   return (
     <div className="h-full p-4 space-y-4 border bg-white shadow-sm rounded-md">
       <div className="flex items-center gap-2">
-        <h1 className="text-lg font-semibold">Quan tri he thong</h1>
+        <h1 className="text-lg font-semibold">Quản trị hệ thống</h1>
         <p className="text-sm text-muted-foreground">
-          ({sortedConfigs.length} cau hinh)
+          ({sortedConfigs.length} cấu hình)
         </p>
       </div>
 
@@ -133,18 +133,18 @@ export default function SystemPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Khoa</TableHead>
-              <TableHead>Gia tri</TableHead>
-              <TableHead>Mo ta</TableHead>
-              <TableHead>Ly do</TableHead>
-              <TableHead className="text-right">Thao tac</TableHead>
+              <TableHead>Khóa</TableHead>
+              <TableHead>Giá trị</TableHead>
+              <TableHead>Mô tả</TableHead>
+              <TableHead>Lý do</TableHead>
+              <TableHead className="text-right">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isPending ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                  Dang tai cau hinh...
+                  Đang tải cấu hình...
                 </TableCell>
               </TableRow>
             ) : sortedConfigs.length ? (
@@ -155,9 +155,9 @@ export default function SystemPage() {
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center">
                   <div className="space-y-1">
-                    <p className="font-medium">Chua co cau hinh</p>
+                    <p className="font-medium">Chưa có cấu hình</p>
                     <p className="text-sm text-muted-foreground">
-                      He thong chua tra ve cau hinh nao de quan tri.
+                      Hệ thống chưa trả về cấu hình nào để quản trị.
                     </p>
                   </div>
                 </TableCell>

@@ -18,7 +18,7 @@ export interface BlogCommentActor {
   email?: string;
 }
 
-const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Moderator.';
+const HIDDEN_CONTENT_PLACEHOLDER = 'Nội dung này đã được ẩn bởi Quản trị viên.';
 
 export interface BlogCommentModerationDto {
   action: 'hide' | 'delete';

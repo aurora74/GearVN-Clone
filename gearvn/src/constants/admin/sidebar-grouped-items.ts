@@ -38,11 +38,11 @@ type AllowedRoles = readonly UserRole[];
 
 export const SIDEBAR_GROUPED_ITEMS = [
   {
-    title: "Tong quan",
+    title: "Tổng quan",
     allowedRoles: BUSINESS_ROLES,
     items: [
       {
-        title: "Thong ke",
+        title: "Thống kê",
         url: "/admin/dashboard",
         icon: LayoutDashboard,
         allowedRoles: MANAGER_ROLES,
@@ -50,17 +50,17 @@ export const SIDEBAR_GROUPED_ITEMS = [
     ],
   },
   {
-    title: "Quan ly san pham",
+    title: "Quản lý sản phẩm",
     allowedRoles: PRODUCT_MARKETING_ROLES,
     items: [
       {
-        title: "San pham",
+        title: "Sản phẩm",
         url: "/admin/products",
         icon: Box,
         allowedRoles: PRODUCT_MARKETING_ROLES,
       },
       {
-        title: "Danh muc",
+        title: "Danh mục",
         url: "/admin/categories",
         icon: Layers,
         allowedRoles: PRODUCT_MARKETING_ROLES,
@@ -68,11 +68,11 @@ export const SIDEBAR_GROUPED_ITEMS = [
     ],
   },
   {
-    title: "Ban hang",
+    title: "Bán hàng",
     allowedRoles: SALES_OPERATIONS_ROLES,
     items: [
       {
-        title: "Don hang",
+        title: "Đơn hàng",
         url: "/admin/orders",
         icon: Receipt,
         allowedRoles: SALES_OPERATIONS_ROLES,
@@ -86,17 +86,17 @@ export const SIDEBAR_GROUPED_ITEMS = [
     ],
   },
   {
-    title: "Noi dung & khuyen mai",
+    title: "Nội dung & khuyến mãi",
     allowedRoles: PRODUCT_MARKETING_ROLES,
     items: [
       {
-        title: "Bai viet",
+        title: "Bài viết",
         url: "/admin/blogs",
         icon: Newspaper,
         allowedRoles: PRODUCT_MARKETING_ROLES,
       },
       {
-        title: "Khuyen mai",
+        title: "Khuyến mãi",
         url: "/admin/promotions",
         icon: TicketPercent,
         allowedRoles: PRODUCT_MARKETING_ROLES,
@@ -116,17 +116,17 @@ export const SIDEBAR_GROUPED_ITEMS = [
     ],
   },
   {
-    title: "Tai khoan",
+    title: "Tài khoản",
     allowedRoles: ACCOUNT_GOVERNANCE_ROLES,
     items: [
       {
-        title: "Khach hang",
+        title: "Khách hàng",
         url: "/admin/customers",
         icon: Users,
         allowedRoles: ADMIN_ROLES,
       },
       {
-        title: "Nhan su",
+        title: "Nhân sự",
         url: "/admin/staff",
         icon: Users,
         allowedRoles: MANAGER_ROLES,
@@ -134,11 +134,11 @@ export const SIDEBAR_GROUPED_ITEMS = [
     ],
   },
   {
-    title: "Quan tri he thong",
+    title: "Quản trị hệ thống",
     allowedRoles: ADMIN_ROLES,
     items: [
       {
-        title: "Cau hinh he thong",
+        title: "Cấu hình hệ thống",
         url: "/admin/system",
         icon: Settings,
         allowedRoles: ADMIN_ROLES,

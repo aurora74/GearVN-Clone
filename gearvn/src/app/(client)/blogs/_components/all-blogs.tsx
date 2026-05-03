@@ -9,13 +9,26 @@ import { SearchIcon, X } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 
 import { BlogType } from "@/types/blog";
+import { type BlogSort } from "@/utils/api/blogs";
 import { PaginatedResponse } from "@/types/global";
 
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { BlogGrid } from "./blog-grid";
 import { NoResults } from "./no-results";
 import { BlogPagination } from "./blog-pagination";
+
+const BLOG_SORT_OPTIONS: Array<{ value: BlogSort; label: string }> = [
+  { value: "newest", label: "Mới nhất" },
+  { value: "oldest", label: "Cũ nhất" },
+];
 
 export const AllBlogs = ({ blogs }: { blogs: PaginatedResponse<BlogType> }) => {
   const isEmpty = blogs.data.length === 0;
@@ -33,8 +46,15 @@ export const AllBlogs = ({ blogs }: { blogs: PaginatedResponse<BlogType> }) => {
     serialize: String,
   });
 
+  const [sort, setSort] = useQueryState("sort", {
+    parse: (value): BlogSort => (value === "oldest" ? "oldest" : "newest"),
+    serialize: String,
+  });
+
   const [inputValue, setInputValue] = useState(search ?? "");
   const debouncedSearch = useDebounce(inputValue, 400);
+  const currentSort: BlogSort = sort === "oldest" ? "oldest" : "newest";
+  const currentSearch = search ?? "";
 
   useEffect(() => {
     router.refresh();
@@ -42,12 +62,15 @@ export const AllBlogs = ({ blogs }: { blogs: PaginatedResponse<BlogType> }) => {
   }, [searchParams, router]);
 
   useEffect(() => {
+    if (debouncedSearch === currentSearch) return;
+
     setPage(1);
     setSearch(debouncedSearch || null);
-  }, [debouncedSearch, setPage, setSearch]);
+  }, [currentSearch, debouncedSearch, setPage, setSearch]);
 
   const clearSearch = () => {
-    setSearch("");
+    setInputValue("");
+    setSearch(null);
     setPage(1);
   };
 
@@ -58,6 +81,11 @@ export const AllBlogs = ({ blogs }: { blogs: PaginatedResponse<BlogType> }) => {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSearch(inputValue || "");
+    setPage(1);
+  };
+
+  const handleSortChange = (value: BlogSort) => {
+    setSort(value);
     setPage(1);
   };
 
@@ -72,29 +100,58 @@ export const AllBlogs = ({ blogs }: { blogs: PaginatedResponse<BlogType> }) => {
           bạn khám phá
         </p>
 
-        <form
-          onSubmit={handleSearchSubmit}
-          className="relative max-w-2xl mt-6 mx-auto"
-        >
-          <Input
-            value={inputValue}
-            aria-label="Tìm kiếm bài viết"
-            placeholder="Tìm kiếm bài viết..."
-            onChange={(e) => setInputValue(e.target.value)}
-            className="pl-10 pr-8 h-10 text-base border border-primary/50 bg-white rounded-full"
-          />
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
-          {inputValue && (
-            <button
-              type="button"
-              onClick={clearSearch}
-              aria-label="Xoá tìm kiếm"
-              className="absolute top-1/2 right-3 -translate-y-1/2 size-6 flex items-center justify-center text-muted-foreground bg-muted/50 hover:bg-muted rounded-full cursor-pointer"
+        <div className="mx-auto mt-6 flex w-full max-w-4xl flex-col gap-3 px-4 text-left md:flex-row md:items-end md:justify-center">
+          <form
+            onSubmit={handleSearchSubmit}
+            className="relative w-full md:max-w-2xl"
+          >
+            <Input
+              value={inputValue}
+              aria-label="Tìm kiếm bài viết"
+              placeholder="Tìm kiếm bài viết..."
+              onChange={(e) => setInputValue(e.target.value)}
+              className="h-10 rounded-full border border-primary/50 bg-white pl-10 pr-8 text-base"
+            />
+            <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" />
+            {inputValue && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                aria-label="Xoá tìm kiếm"
+                className="absolute top-1/2 right-3 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-muted/50 text-muted-foreground hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </form>
+
+          <div className="w-full md:w-44">
+            <label
+              id="blog-sort-label"
+              className="mb-1.5 block text-sm font-medium text-foreground"
             >
-              <X className="size-4" />
-            </button>
-          )}
-        </form>
+              Sắp xếp bài viết
+            </label>
+            <Select
+              value={currentSort}
+              onValueChange={(value) => handleSortChange(value as BlogSort)}
+            >
+              <SelectTrigger
+                aria-labelledby="blog-sort-label"
+                className="h-10 border-primary/50 bg-white"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BLOG_SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
         {inputValue && blogs.data.length > 0 && (
           <p className="text-sm text-muted-foreground mt-4">

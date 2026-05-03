@@ -105,6 +105,7 @@ export const Header = ({ categories }: { categories: CategoryType[] }) => {
               <Link
                 href="/orders/lookup"
                 title="Tra cứu đơn hàng"
+                aria-label="Tra cứu đơn hàng"
                 className="flex items-center gap-2"
               >
                 <ClipboardClock aria-hidden="true" className="flex-shrink-0" />
