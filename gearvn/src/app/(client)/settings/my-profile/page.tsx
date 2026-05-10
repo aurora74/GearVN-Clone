@@ -8,6 +8,8 @@ export const metadata: Metadata = {
     "Cập nhật thông tin cá nhân, địa chỉ và số điện thoại của bạn tại GEARVN.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function Page() {
   return <PageClient />;
 }

@@ -22,6 +22,8 @@ export const metadata: Metadata = {
   },
 };
 
+export const dynamic = "force-dynamic";
+
 type BlogsPageProps = {
   searchParams: Promise<{ page?: string; search?: string; sort?: string }>;
 };

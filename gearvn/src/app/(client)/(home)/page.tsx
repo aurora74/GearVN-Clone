@@ -17,6 +17,8 @@ import { ServiceFeatures } from "./_components/service-features";
 import { AuthTokenGuard } from "@/components/guards/auth-token-guard";
 import { AdImageGrid, AdImageRow } from "@/components/global/advertise-images";
 
+export const dynamic = "force-dynamic";
+
 const HomePage = async () => {
   const [blogs, events, categories] = await Promise.all([
     fetchBlogs(),

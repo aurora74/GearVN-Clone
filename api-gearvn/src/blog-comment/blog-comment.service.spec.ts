@@ -174,7 +174,7 @@ describe('BlogCommentService', () => {
     );
     expect(result).toEqual(
       expect.objectContaining({
-        content: 'Nội dung này đã được ẩn bởi Moderator.',
+        content: 'Nội dung này đã được ẩn bởi Quản trị viên.',
         status: 'hidden',
       }),
     );

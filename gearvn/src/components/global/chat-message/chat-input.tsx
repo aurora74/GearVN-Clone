@@ -30,6 +30,7 @@ type ChatInputProps = {
   user: User | null;
   socketRef: RefObject<Socket | null>;
   onOptimisticMessage?: (message: OptimisticMessagePayload) => void;
+  onAssistantRequestStart?: () => void;
 };
 
 export const ChatInput = ({
@@ -37,6 +38,7 @@ export const ChatInput = ({
   roomId,
   socketRef,
   onOptimisticMessage,
+  onAssistantRequestStart,
 }: ChatInputProps) => {
   const { setModal } = useAuthModal();
 
@@ -48,7 +50,9 @@ export const ChatInput = ({
   const [text, setText] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const uploadedCount = attachments.filter((attachment) => attachment.url).length;
+  const uploadedCount = attachments.filter(
+    (attachment) => attachment.url,
+  ).length;
   const isUploading = attachments.some((attachment) => attachment.uploading);
 
   const sendMessage = () => {
@@ -62,7 +66,11 @@ export const ChatInput = ({
       .map((att) => att.url)
       .filter(Boolean) as string[];
 
-    if ((!messageText && messageAttachments.length === 0) || isUploading || !socketRef.current)
+    if (
+      (!messageText && messageAttachments.length === 0) ||
+      isUploading ||
+      !socketRef.current
+    )
       return;
 
     const createdAt = new Date().toISOString();
@@ -82,9 +90,12 @@ export const ChatInput = ({
       attachments: messageAttachments,
       createdAt,
     });
+    onAssistantRequestStart?.();
 
     setText("");
-    attachments.forEach((attachment) => URL.revokeObjectURL(attachment.preview));
+    attachments.forEach((attachment) =>
+      URL.revokeObjectURL(attachment.preview),
+    );
     setAttachments([]);
     socketRef.current.emit("typing", {
       roomId,
@@ -140,15 +151,16 @@ export const ChatInput = ({
           return index !== -1
             ? { ...att, url: uploadedUrls[index], uploading: false }
             : att;
-        })
+        }),
       );
     } catch {
       setUploadError(
-        "Không thể gửi nội dung. Kiểm tra lại nội dung hoặc ảnh đính kèm rồi thử lại."
+        "Không thể gửi nội dung. Kiểm tra lại nội dung hoặc ảnh đính kèm rồi thử lại.",
       );
       setAttachments((prev) => {
         prev.forEach((att) => {
-          if (selectedFiles.includes(att.file)) URL.revokeObjectURL(att.preview);
+          if (selectedFiles.includes(att.file))
+            URL.revokeObjectURL(att.preview);
         });
         return prev.filter((att) => !selectedFiles.includes(att.file));
       });
@@ -164,7 +176,7 @@ export const ChatInput = ({
   };
 
   return (
-    <div className="flex flex-col gap-2 p-2 border-t">
+    <div className="flex flex-col gap-3 border-t bg-white p-4">
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {attachments.map((att, idx) => (
@@ -198,11 +210,9 @@ export const ChatInput = ({
         </div>
       )}
 
-      {uploadError && (
-        <p className="text-sm text-red-600">{uploadError}</p>
-      )}
+      {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <input
           multiple
           type="file"
@@ -212,8 +222,12 @@ export const ChatInput = ({
           onChange={handleFilesChange}
         />
 
-        <Button variant="ghost" onClick={() => fileInputRef.current?.click()}>
-          <Paperclip size={16} />
+        <Button
+          variant="ghost"
+          onClick={() => fileInputRef.current?.click()}
+          className="size-12 shrink-0"
+        >
+          <Paperclip size={20} />
         </Button>
 
         <Input
@@ -226,20 +240,20 @@ export const ChatInput = ({
             }
           }}
           onChange={(e) => handleTyping(e.target.value)}
-          className="flex-1 text-sm"
+          className="h-12 flex-1 text-base"
         />
 
         <Button
           onClick={sendMessage}
           disabled={(!text.trim() && uploadedCount === 0) || isUploading}
           className={cn(
-            "text-white bg-primary hover:bg-primary/80",
+            "size-12 shrink-0 text-white bg-primary hover:bg-primary/80",
             (!text.trim() && uploadedCount === 0) || isUploading
               ? "opacity-50 cursor-not-allowed"
-              : undefined
+              : undefined,
           )}
         >
-          <Send size={16} />
+          <Send size={20} />
         </Button>
       </div>
     </div>

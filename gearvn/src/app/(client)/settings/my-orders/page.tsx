@@ -8,6 +8,8 @@ export const metadata: Metadata = {
     "Xem lịch sử đơn hàng, trạng thái vận chuyển và chi tiết thanh toán tại GEARVN.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function Page() {
   return <MyOrdersPage />;
 }

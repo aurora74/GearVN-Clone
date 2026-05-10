@@ -31,7 +31,9 @@ describe('ProductQuestionService', () => {
 
   let questionModel: any;
   let productModel: any;
-  let cloudinaryService: { uploadImage: jest.Mock };
+  let connection: any;
+  let session: any;
+  let cloudinaryService: { uploadImage: jest.Mock; deleteImage: jest.Mock };
   let supportTicketService: jest.Mocked<Pick<SupportTicketService, 'createForProductQuestion'>>;
   let service: ProductQuestionService;
   let moderationService: {
@@ -41,17 +43,27 @@ describe('ProductQuestionService', () => {
 
   beforeEach(() => {
     questionModel = createQuestionModel();
+    const product = {
+      _id: productId,
+      name: 'Laptop gaming',
+      slug: 'laptop-gaming',
+      averageRating: 4.5,
+      ratingsCount: 12,
+    };
     productModel = {
-      findById: jest.fn().mockResolvedValue({
-        _id: productId,
-        name: 'Laptop gaming',
-        slug: 'laptop-gaming',
-        averageRating: 4.5,
-        ratingsCount: 12,
-      }),
+      findById: jest.fn().mockResolvedValue(product),
+      findOne: jest.fn().mockResolvedValue(product),
+    };
+    session = {
+      withTransaction: jest.fn(async (callback: () => Promise<void>) => callback()),
+      endSession: jest.fn().mockResolvedValue(undefined),
+    };
+    connection = {
+      startSession: jest.fn().mockResolvedValue(session),
     };
     cloudinaryService = {
       uploadImage: jest.fn().mockResolvedValue({ secure_url: 'https://cdn.test/qna.png' }),
+      deleteImage: jest.fn().mockResolvedValue({ result: 'ok' }),
     };
     supportTicketService = {
       createForProductQuestion: jest.fn().mockResolvedValue({
@@ -71,6 +83,7 @@ describe('ProductQuestionService', () => {
     service = new ProductQuestionService(
       questionModel,
       productModel,
+      connection as any,
       cloudinaryService as any,
       supportTicketService as any,
       moderationService as any,
@@ -91,7 +104,11 @@ describe('ProductQuestionService', () => {
       ],
     );
 
-    expect(productModel.findById).toHaveBeenCalledWith(productId);
+    expect(productModel.findOne).toHaveBeenCalledWith({
+      _id: productId,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+    });
     expect(cloudinaryService.uploadImage).toHaveBeenCalledTimes(1);
     expect(questionModel).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -112,10 +129,14 @@ describe('ProductQuestionService', () => {
         contextLabel: 'Laptop gaming',
         productSlug: 'laptop-gaming',
       }),
+      { session },
     );
-    expect(productModel.findById.mock.results[0].value).resolves.toEqual(
-      expect.not.objectContaining({ comments: expect.any(Array) }),
-    );
+    const savedQuestion = questionModel.mock.results[0].value;
+    expect(connection.startSession).toHaveBeenCalledTimes(1);
+    expect(session.withTransaction).toHaveBeenCalledTimes(1);
+    expect(savedQuestion.save).toHaveBeenCalledWith({ session });
+    expect(savedQuestion.save).toHaveBeenCalledTimes(2);
+    expect(session.endSession).toHaveBeenCalledTimes(1);
     expect(result.ticket).toEqual(expect.objectContaining({ status: 'new' }));
   });
 
@@ -132,6 +153,83 @@ describe('ProductQuestionService', () => {
     expect(supportTicketService.createForProductQuestion).not.toHaveBeenCalled();
   });
 
+  it('requires a visible product before listing public questions', async () => {
+    const question = {
+      _id: new Types.ObjectId(),
+      productId,
+      authorId: actor.id,
+      content: 'Con hang khong?',
+      images: [],
+      comments: [],
+      publicStatus: 'visible',
+    };
+    const query = {
+      populate: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockResolvedValue([question]),
+    };
+    questionModel.find.mockReturnValue(query);
+
+    const result = await service.listByProduct(productId);
+
+    expect(productModel.findOne).toHaveBeenCalledWith({
+      _id: productId,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
+    });
+    expect(questionModel.find).toHaveBeenCalledWith({ productId, publicStatus: 'visible' });
+    expect(result).toHaveLength(1);
+  });
+
+  it('rejects public question creation for hidden products before upload or ticket creation', async () => {
+    productModel.findOne.mockResolvedValueOnce(null);
+
+    await expect(
+      service.createQuestion(
+        productId,
+        actor,
+        { content: 'May nay con khong?' },
+        [{ mimetype: 'image/png', size: 1024, buffer: Buffer.from('x') } as Express.Multer.File],
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(cloudinaryService.uploadImage).not.toHaveBeenCalled();
+    expect(connection.startSession).not.toHaveBeenCalled();
+    expect(supportTicketService.createForProductQuestion).not.toHaveBeenCalled();
+  });
+
+  it('cleans up uploaded images and rethrows the original error when ticket creation fails', async () => {
+    const ticketError = new Error('ticket down');
+    const cleanupError = new Error('cloudinary down');
+    supportTicketService.createForProductQuestion.mockRejectedValueOnce(ticketError);
+    cloudinaryService.deleteImage.mockRejectedValueOnce(cleanupError);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      await expect(
+        service.createQuestion(
+          productId,
+          actor,
+          { content: 'Can tu van them' },
+          [{ mimetype: 'image/png', size: 1024, buffer: Buffer.from('x') } as Express.Multer.File],
+        ),
+      ).rejects.toBe(ticketError);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Failed to delete orphaned product question image',
+        expect.objectContaining({
+          url: 'https://cdn.test/qna.png',
+          error: cleanupError,
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(cloudinaryService.uploadImage).toHaveBeenCalledTimes(1);
+    expect(cloudinaryService.deleteImage).toHaveBeenCalledWith('https://cdn.test/qna.png');
+    expect(session.withTransaction).toHaveBeenCalledTimes(1);
+    expect(session.endSession).toHaveBeenCalledTimes(1);
+  });
   it('adds public follow-up comments without touching product ratings', async () => {
     const question = {
       _id: new Types.ObjectId(),
@@ -160,7 +258,31 @@ describe('ProductQuestionService', () => {
     expect(afterProduct.ratingsCount).toBe(beforeProduct.ratingsCount);
   });
 
-  it('stores moderator answers with public Moderator label', async () => {
+  it('rejects follow-up comments on moderated questions before upload or mutation', async () => {
+    const question = {
+      _id: new Types.ObjectId(),
+      productId,
+      publicStatus: 'hidden',
+      comments: [],
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    questionModel.findById.mockResolvedValue(question);
+
+    await expect(
+      service.addComment(
+        question._id.toString(),
+        actor,
+        { content: 'Minh hoi them' },
+        [{ mimetype: 'image/png', size: 1024, buffer: Buffer.from('x') } as Express.Multer.File],
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(cloudinaryService.uploadImage).not.toHaveBeenCalled();
+    expect(question.comments).toHaveLength(0);
+    expect(question.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects customer follow-up comments when parent product is hidden before upload or mutation', async () => {
     const question = {
       _id: new Types.ObjectId(),
       productId,
@@ -168,19 +290,54 @@ describe('ProductQuestionService', () => {
       save: jest.fn().mockResolvedValue(undefined),
     };
     questionModel.findById.mockResolvedValue(question);
+    productModel.findOne.mockResolvedValueOnce(null);
 
-    const result = await service.answerQuestion(question._id.toString(), {
-      ...actor,
-      role: UserRole.CSR,
-      id: new Types.ObjectId().toString(),
-    }, {
-      content: 'San pham nay nang cap RAM toi da 32GB.',
+    await expect(
+      service.addComment(
+        question._id.toString(),
+        actor,
+        { content: 'Minh hoi them' },
+        [{ mimetype: 'image/png', size: 1024, buffer: Buffer.from('x') } as Express.Multer.File],
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(productModel.findOne).toHaveBeenCalledWith({
+      _id: productId,
+      isPublished: { $ne: false },
+      isArchived: { $ne: true },
     });
+    expect(cloudinaryService.uploadImage).not.toHaveBeenCalled();
+    expect(question.comments).toHaveLength(0);
+    expect(question.save).not.toHaveBeenCalled();
+  });
 
+  it('stores moderator answers with public label even when parent product is hidden', async () => {
+    const question = {
+      _id: new Types.ObjectId(),
+      productId,
+      comments: [],
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    questionModel.findById.mockResolvedValue(question);
+    productModel.findOne.mockResolvedValueOnce(null);
+
+    const result = await service.answerQuestion(
+      question._id.toString(),
+      {
+        ...actor,
+        role: UserRole.CSR,
+        id: new Types.ObjectId().toString(),
+      },
+      {
+        content: 'San pham nay nang cap RAM toi da 32GB.',
+      },
+    );
+
+    expect(productModel.findOne).not.toHaveBeenCalled();
     expect(result!.comments[0]).toEqual(
       expect.objectContaining({
-        author: expect.objectContaining({ displayName: 'Moderator' }),
-        authorRoleLabel: 'Moderator',
+        author: expect.objectContaining({ displayName: 'Quản trị viên' }),
+        authorRoleLabel: 'Quản trị viên',
         isModerator: true,
       }),
     );
@@ -284,7 +441,7 @@ describe('ProductQuestionService', () => {
     );
     expect(result).toEqual(
       expect.objectContaining({
-        content: 'Nội dung này đã được ẩn bởi Moderator.',
+        content: 'Nội dung này đã được ẩn bởi Quản trị viên.',
         images: [],
       }),
     );
@@ -350,7 +507,7 @@ describe('ProductQuestionService', () => {
 
     expect(result?.comments[0]).toEqual(
       expect.objectContaining({
-        content: 'Nội dung này đã được ẩn bởi Moderator.',
+        content: 'Nội dung này đã được ẩn bởi Quản trị viên.',
         images: [],
       }),
     );

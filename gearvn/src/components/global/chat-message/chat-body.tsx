@@ -17,10 +17,14 @@ import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails";
 import "yet-another-react-lightbox/styles.css";
 import "yet-another-react-lightbox/plugins/thumbnails.css";
 
-import { ArrowUp, Edit, MoreVertical, Trash } from "lucide-react";
+import { ArrowUp, Edit, Loader2, MoreVertical, Trash } from "lucide-react";
 
 import { User } from "@/types/user";
-import { Message } from "@/types/chat";
+import {
+  AssistantActionDraft,
+  AssistantCheckoutReviewCard,
+  Message,
+} from "@/types/chat";
 
 import { cn } from "@/utils/cn";
 import { formatDateVi } from "@/utils/format/format-date-vi";
@@ -32,6 +36,10 @@ import { useMessagesByRoom } from "@/react-query/query/chat";
 import { DEFAULT_MESSAGE_CHAT } from "@/constants/chat/default-message-chat";
 
 import { MessageSkeleton } from "./message-skeleton";
+import { AiActionButton } from "./ai-action-button";
+import { AiOrderCard } from "./ai-order-card";
+import { AiProductCard } from "./ai-product-card";
+import { AiReviewSummary } from "./ai-review-summary";
 
 import {
   Popover,
@@ -45,20 +53,138 @@ type ChatBodyProps = {
   roomId: string;
   user: User | null;
   isTyping: boolean;
+  isAssistantThinking: boolean;
   messages: Message[];
   socketRef: RefObject<any>;
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setUnreadCount: Dispatch<SetStateAction<number>>;
+  onConfirmAssistantAction?: (draft: AssistantActionDraft) => void;
+  pendingAssistantDraftId?: string | null;
+  onPendingAssistantDraftChange?: (draftId: string | null) => void;
+  onOptimisticAssistantMessage?: (message: {
+    text: string;
+    attachments: string[];
+    createdAt: string;
+  }) => void;
+  onAssistantRequestStart?: () => void;
 };
 
+const formatUnsupportedReason = (reason: unknown) => {
+  if (reason === "out_of_scope") return "Ngoài phạm vi hỗ trợ hiện tại";
+  if (reason === "direct_order_or_payment_creation") {
+    return "Cần xác nhận qua hệ thống GearVN";
+  }
+  return typeof reason === "string" ? reason : "Yêu cầu chưa được hỗ trợ";
+};
+
+type AiCheckoutReviewCardProps = {
+  review: AssistantCheckoutReviewCard;
+  draft?: AssistantActionDraft | null;
+  roomId: string;
+  userId?: string;
+  socketRef: RefObject<any>;
+  pendingDraftId?: string | null;
+  onConfirmAction?: (draft: AssistantActionDraft) => void;
+  onOptimisticMessage?: (message: {
+    text: string;
+    attachments: string[];
+    createdAt: string;
+  }) => void;
+  onAssistantRequestStart?: () => void;
+};
+
+const AiCheckoutReviewCard = ({
+  review,
+  draft,
+  roomId,
+  userId,
+  socketRef,
+  pendingDraftId,
+  onConfirmAction,
+  onOptimisticMessage,
+  onAssistantRequestStart,
+}: AiCheckoutReviewCardProps) => {
+  const isPending = Boolean(draft?.draftId && pendingDraftId === draft.draftId);
+  const sendReviewReply = (text: string) => {
+    if (!socketRef.current || !roomId) return;
+    const createdAt = new Date().toISOString();
+    socketRef.current.emit("send-message", {
+      text,
+      roomId,
+      isRead: false,
+      userId,
+      sender: "CUSTOMER",
+      createdAt,
+      attachments: [],
+    });
+    onOptimisticMessage?.({ text, attachments: [], createdAt });
+    onAssistantRequestStart?.();
+  };
+  const confirmReview = () => {
+    if (draft) {
+      onConfirmAction?.(draft);
+      return;
+    }
+    sendReviewReply("Đúng rồi");
+  };
+
+  return (
+    <div className="w-full rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-gray-900">
+      <div className="space-y-2">
+        <div className="flex justify-between gap-3">
+          <span className="shrink-0 text-gray-500">Tên</span>
+          <span className="min-w-0 text-right font-medium">
+            {review.name || "Chưa có"}
+          </span>
+        </div>
+        <div className="flex justify-between gap-3" aria-label="phone">
+          <span className="shrink-0 text-gray-500">Số điện thoại</span>
+          <span className="min-w-0 text-right font-medium">
+            {review.phoneMasked || review.phone || "Chưa có"}
+          </span>
+        </div>
+        <div className="flex justify-between gap-3" aria-label="address">
+          <span className="shrink-0 text-gray-500">Địa chỉ</span>
+          <span className="min-w-0 text-right font-medium">
+            {review.addressPreview || review.address || "Chưa có"}
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={confirmReview}
+          className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md bg-primary px-3 text-xs font-semibold text-white transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-wait disabled:opacity-70"
+        >
+          Đúng rồi
+        </button>
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => sendReviewReply("Chỉnh sửa")}
+          className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          Chỉnh sửa
+        </button>
+      </div>
+    </div>
+  );
+};
 export const ChatBody = ({
   user,
   roomId,
   messages,
   isTyping,
+  isAssistantThinking,
   socketRef,
   setMessages,
   setUnreadCount,
+  onConfirmAssistantAction,
+  pendingAssistantDraftId,
+  onPendingAssistantDraftChange,
+  onOptimisticAssistantMessage,
+  onAssistantRequestStart,
 }: ChatBodyProps) => {
   const [page, setPage] = useState(1);
 
@@ -96,7 +222,7 @@ export const ChatBody = ({
     setMessages((prevMessages) => {
       const existingIds = new Set(prevMessages.map((m) => m._id));
       const newMessages = messagesRoom.data.filter(
-        (m) => !existingIds.has(m._id)
+        (m) => !existingIds.has(m._id),
       );
 
       if (page > 1) {
@@ -127,7 +253,7 @@ export const ChatBody = ({
     if (page === 1) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isTyping, page]);
+  }, [messages, isTyping, isAssistantThinking, page]);
 
   useEffect(() => {
     if (editingMessageId && editInputRef.current) {
@@ -156,8 +282,8 @@ export const ChatBody = ({
       prev.map((msg) =>
         msg._id === editingMessageId
           ? { ...msg, text: editingText.trim() }
-          : msg
-      )
+          : msg,
+      ),
     );
 
     setEditingText("");
@@ -178,15 +304,152 @@ export const ChatBody = ({
               attachments: [],
               isDeleted: true,
             }
-          : msg
-      )
+          : msg,
+      ),
+    );
+  };
+
+  const getAddDraftForProduct = (
+    drafts: AssistantActionDraft[] | undefined,
+    productId: string,
+  ) =>
+    drafts?.find((draft) => {
+      const action = draft.action ?? draft.kind;
+      return action === "CART_ADD" && draft.productId === productId;
+    });
+
+  const renderAssistantMetadata = (message: Message) => {
+    if (message.isDeleted || message.metadata?.kind !== "assistant")
+      return null;
+
+    const metadata = message.metadata;
+    const productCards = metadata.productCards ?? [];
+    const orderCards = metadata.orderCards ?? [];
+    const actionDrafts = metadata.actionDrafts ?? [];
+    const checkoutDraft =
+      metadata.actionDraft ??
+      actionDrafts.find((draft) => {
+        const action = draft.action ?? draft.kind;
+        return action === "CHECKOUT_REDIRECT" || action === "CHECKOUT_PREP";
+      }) ??
+      null;
+    const visibleActionDrafts = checkoutDraft
+      ? actionDrafts.filter((draft) => draft.draftId !== checkoutDraft.draftId)
+      : actionDrafts;
+    const hasNoOrderResults =
+      "orderCards" in metadata && orderCards.length === 0;
+    const statusRows = [
+      productCards.length > 0 ? "Sản phẩm phù hợp trong catalog GearVN" : null,
+      visibleActionDrafts.length > 0 ? "Cần bạn xác nhận thao tác" : null,
+      metadata.reviewSummary ? "Tóm tắt đánh giá từ nguồn liên quan" : null,
+    ].filter(Boolean) as string[];
+    const hasBlocks =
+      productCards.length > 0 ||
+      Boolean(metadata.reviewSummary) ||
+      orderCards.length > 0 ||
+      visibleActionDrafts.length > 0 ||
+      Boolean(metadata.checkoutReview) ||
+      hasNoOrderResults ||
+      Boolean(metadata.handoff?.requested) ||
+      Boolean(metadata.unsupportedReason);
+
+    if (!hasBlocks) return null;
+
+    return (
+      <div className="mt-2 flex w-full min-w-0 flex-col gap-2">
+        {statusRows.map((statusText) => (
+          <div
+            key={statusText}
+            aria-live="polite"
+            className="rounded-sm bg-gray-50 px-3 py-2 text-sm text-gray-500"
+          >
+            {statusText}
+          </div>
+        ))}
+        {productCards.map((product) => (
+          <AiProductCard
+            key={product.productId}
+            product={product}
+            addDraft={getAddDraftForProduct(
+              metadata.actionDrafts,
+              product.productId,
+            )}
+            pendingDraftId={pendingAssistantDraftId}
+            onConfirmAction={onConfirmAssistantAction}
+          />
+        ))}
+
+        {metadata.reviewSummary && (
+          <AiReviewSummary summary={metadata.reviewSummary} />
+        )}
+
+        {!user && (orderCards.length > 0 || hasNoOrderResults) ? (
+          <AiOrderCard isAuthenticated={false} />
+        ) : orderCards.length > 0 ? (
+          orderCards.map((order) => (
+            <AiOrderCard
+              key={
+                order.orderId ||
+                order.orderCode ||
+                `${order.status}-${order.createdAt}`
+              }
+              order={order}
+              isAuthenticated
+            />
+          ))
+        ) : hasNoOrderResults ? (
+          <AiOrderCard isAuthenticated />
+        ) : null}
+
+        {metadata.checkoutReview && (
+          <AiCheckoutReviewCard
+            review={metadata.checkoutReview}
+            draft={checkoutDraft}
+            roomId={roomId}
+            userId={user?._id}
+            socketRef={socketRef}
+            pendingDraftId={pendingAssistantDraftId}
+            onConfirmAction={onConfirmAssistantAction}
+            onOptimisticMessage={onOptimisticAssistantMessage}
+            onAssistantRequestStart={onAssistantRequestStart}
+          />
+        )}
+
+        {visibleActionDrafts.length > 0 && (
+          <div className="flex w-full flex-col gap-2">
+            {visibleActionDrafts.map((draft) => (
+              <AiActionButton
+                key={draft.draftId}
+                draft={draft}
+                roomId={roomId}
+                socketRef={socketRef}
+                pendingDraftId={pendingAssistantDraftId}
+                onPendingDraftChange={onPendingAssistantDraftChange}
+                onOptimisticMessage={onOptimisticAssistantMessage}
+              />
+            ))}
+          </div>
+        )}
+
+        {metadata.handoff?.requested && (
+          <div className="rounded-md border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-800">
+            Đã chuyển cuộc trò chuyện cho nhân viên tư vấn.
+          </div>
+        )}
+
+        {metadata.unsupportedReason && (
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+            {formatUnsupportedReason(metadata.unsupportedReason)}
+          </div>
+        )}
+      </div>
     );
   };
 
   return (
     <div
       ref={chatBodyRef}
-      className="flex-1 p-4 bg-gray-50 overflow-y-auto custom-scroll"
+      className="flex-1 overflow-y-auto bg-gray-50 p-4 custom-scroll sm:p-6"
     >
       {user && isPending ? (
         <MessageSkeleton />
@@ -207,7 +470,7 @@ export const ChatBody = ({
 
           {messages.length === 0 ? (
             <div className="flex items-start mb-4">
-              <div className="size-8 flex-shrink-0 rounded-full overflow-hidden">
+              <div className="size-10 flex-shrink-0 overflow-hidden rounded-full">
                 <Image
                   width={100}
                   height={100}
@@ -215,12 +478,15 @@ export const ChatBody = ({
                   src="/avatar-default.jpg"
                 />
               </div>
-              <div className="max-w-xs flex flex-col items-start mx-2 text-[12px]">
+              <div className="mx-3 flex min-w-0 max-w-[min(42rem,calc(100vw-5rem))] flex-col items-start text-sm sm:max-w-[min(42rem,78vw)]">
                 <p className="text-gray-500 mb-1">GearVN</p>
-                <div className="text-sm text-gray-900 p-2 border bg-white shadow-sm rounded-lg">
+                <div className="rounded-lg border bg-white p-3 text-base leading-relaxed text-gray-900 shadow-sm">
                   {DEFAULT_MESSAGE_CHAT.text}
                 </div>
-                <span className="text-[10px] text-gray-400 mt-1" suppressHydrationWarning>
+                <span
+                  className="text-[10px] text-gray-400 mt-1"
+                  suppressHydrationWarning
+                >
                   {formatDateVi(new Date())}
                 </span>
               </div>
@@ -237,11 +503,11 @@ export const ChatBody = ({
                     "flex items-start mb-4",
                     (editingMessageId || confirmDeleteId) && "!max-w-full",
                     isClient
-                      ? "max-w-[280px] flex-row-reverse ml-auto"
-                      : "max-w-full flex-row"
+                      ? "max-w-[min(42rem,calc(100vw-5rem))] flex-row-reverse ml-auto sm:max-w-[min(42rem,78vw)]"
+                      : "max-w-full flex-row",
                   )}
                 >
-                  <div className="size-8 flex-shrink-0 rounded-full overflow-hidden">
+                  <div className="size-10 flex-shrink-0 overflow-hidden rounded-full">
                     <Image
                       width={100}
                       height={100}
@@ -256,14 +522,16 @@ export const ChatBody = ({
 
                   <div
                     className={cn(
-                      "max-w-xs flex flex-col text-[12px] mx-2",
-                      isClient ? "items-end" : "items-start"
+                      "mx-3 flex min-w-0 max-w-[min(42rem,calc(100vw-5rem))] flex-col text-sm sm:max-w-[min(42rem,78vw)]",
+                      isClient ? "items-end" : "items-start",
                     )}
                   >
                     <p className="text-gray-500 mb-1">
                       {isClient
                         ? formatShortName(user?.fullName || "")
-                        : "Quản trị viên"}
+                        : message.messageKind === "assistant"
+                          ? "AI GearVN"
+                          : "Quản trị viên"}
                     </p>
 
                     <div className="relative group">
@@ -327,19 +595,24 @@ export const ChatBody = ({
                         // === Normal message ===
                         <div
                           className={cn(
-                            "relative group text-sm p-2 border rounded-lg shadow-sm break-words",
+                            "relative group w-full break-words rounded-lg border p-3 text-base leading-relaxed shadow-sm",
                             isClient
                               ? message.isDeleted
                                 ? "text-gray-500 italic bg-gray-200"
                                 : "text-white bg-primary"
                               : message.isDeleted
-                              ? "text-gray-400 italic bg-gray-100"
-                              : "text-gray-900 bg-white"
+                                ? "text-gray-400 italic bg-gray-100"
+                                : "text-gray-900 bg-white",
                           )}
                         >
-                          {message.isDeleted
-                            ? "Tin nhắn đã thu hồi"
-                            : message.text}
+                          {message.isDeleted ? (
+                            "Tin nhắn đã thu hồi"
+                          ) : (
+                            <>
+                              {message.text && <p>{message.text}</p>}
+                              {renderAssistantMetadata(message)}
+                            </>
+                          )}
 
                           {!message.isDeleted &&
                             isClient &&
@@ -403,7 +676,7 @@ export const ChatBody = ({
                       <div
                         className={cn(
                           "flex gap-2 mt-2",
-                          isClient ? "justify-end" : "justify-start"
+                          isClient ? "justify-end" : "justify-start",
                         )}
                       >
                         {attachments
@@ -462,6 +735,25 @@ export const ChatBody = ({
         </>
       )}
 
+      {isAssistantThinking && (
+        <div className="mb-4 flex items-start" aria-live="polite" role="status">
+          <div className="size-10 flex-shrink-0 overflow-hidden rounded-full">
+            <Image
+              width={100}
+              height={100}
+              alt="Avatar"
+              src="/avatar-default.jpg"
+            />
+          </div>
+          <div className="mx-3 flex min-w-0 max-w-[min(42rem,calc(100vw-5rem))] flex-col items-start text-sm sm:max-w-[min(42rem,78vw)]">
+            <p className="mb-1 text-gray-500">AI GearVN</p>
+            <div className="inline-flex max-w-full items-center gap-2 rounded-lg border bg-white p-3 text-sm leading-relaxed text-gray-700 shadow-sm">
+              <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+              <span>AI GearVN đang suy nghĩ...</span>
+            </div>
+          </div>
+        </div>
+      )}
       {isTyping && (
         <p className="absolute left-0 bottom-[70px] sm:bottom-[53px] w-full text-[13px] text-muted-foreground py-1 px-4 bg-white italic mt-2">
           Quản trị viên đang soạn tin...

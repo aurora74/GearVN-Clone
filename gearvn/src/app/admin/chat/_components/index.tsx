@@ -20,6 +20,7 @@ import { ChatInput } from "./chat-input";
 import { ChatHeader } from "./chat-header";
 import { ChatMessages } from "./chat-messages";
 import { SupportTicketPanel } from "./support-ticket-panel";
+import { StaffAiSummaryPanel } from "./staff-ai-summary-panel";
 
 const getMessageUser = (message: Message): Message["userId"] | null => {
   const user = message.userId as unknown;
@@ -494,15 +495,25 @@ export const ChatPage = () => {
               onResolve={() => resolveChatTicket(selectedRoomId)}
             />
 
-            <ChatMessages
-              setUsers={setUsers}
-              socket={socketRef.current!}
-              selectedUser={selectedUser}
-              selectedRoomId={selectedRoomId}
-              typing={selectedUserData?.typing}
-              userName={selectedUserData.fullName || "Ẩn danh"}
-              messages={selectedUserData?.messages || []}
+            <StaffAiSummaryPanel
+              summary={selectedTicket?.metadata?.assistantHandoffSummary}
             />
+
+            <div
+              id={`admin-chat-transcript-${selectedRoomId}`}
+              tabIndex={-1}
+              className="flex flex-1 min-h-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChatMessages
+                setUsers={setUsers}
+                socket={socketRef.current!}
+                selectedUser={selectedUser}
+                selectedRoomId={selectedRoomId}
+                typing={selectedUserData?.typing}
+                userName={selectedUserData.fullName || "Ẩn danh"}
+                messages={selectedUserData?.messages || []}
+              />
+            </div>
 
             <ChatInput
               value={newMessage}

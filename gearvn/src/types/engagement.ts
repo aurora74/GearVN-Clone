@@ -38,6 +38,21 @@ export type ProductQuestion = {
   updatedAt: string;
 };
 
+export type StaffAiSummary = {
+  need: string;
+  budget: string | null;
+  constraints: string[];
+  productsDiscussed: string[];
+  cartCheckoutContext: string | null;
+  orderContext: string | null;
+  unresolvedQuestions: string[];
+  confidence: number | string | null;
+  uncertainty: string | null;
+  latestHandoffAt: string;
+  staffOnly: boolean;
+  transcriptRoomId: string;
+};
+
 export type SupportTicket = {
   _id: string;
   ticketCode: string;
@@ -60,6 +75,7 @@ export type SupportTicket = {
     productId?: string;
     productSlug?: string;
     latestMessageId?: string;
+    assistantHandoffSummary?: StaffAiSummary;
     [key: string]: unknown;
   };
   createdAt?: string;

@@ -1,22 +1,36 @@
-import {
-  WardType,
-  DistrictType,
-  ProvinceType,
-  AddressFormData,
-} from "@/types/order";
+import { AddressItem } from "@/hooks/use-vietnam-address";
+
+type AddressForm = {
+  street?: string;
+  ward?: string;
+  district?: string;
+  province?: string;
+};
 
 export const buildAddress = (
-  wards: WardType[],
-  provinces: ProvinceType[],
-  districts: DistrictType[],
-  data: AddressFormData
-): string => {
-  return [
+  wards: AddressItem[] | undefined,
+  provinces: AddressItem[] | undefined,
+  districts: AddressItem[] | undefined,
+  data: AddressForm,
+) => {
+  const parts = [
     data.street,
-    wards.find((w) => String(w.code) === data.ward)?.name,
-    districts.find((d) => String(d.code) === data.district)?.name,
-    provinces.find((p) => String(p.code) === data.province)?.name,
-  ]
-    .filter(Boolean)
+    findAddressName(wards, data.ward),
+    findAddressName(districts, data.district),
+    findAddressName(provinces, data.province),
+  ];
+
+  return parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
     .join(", ");
+};
+
+const findAddressName = (
+  items: AddressItem[] | undefined,
+  code?: string,
+): string | undefined => {
+  if (!code) return undefined;
+  const item = items?.find((entry) => String(entry.code) === String(code));
+  return item?.name ?? code;
 };

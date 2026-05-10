@@ -98,6 +98,7 @@ describe('OrderService checkout validation', () => {
   let orderModel: any;
   let productService: {
     findOne: jest.Mock;
+    findManagedOne: jest.Mock;
     decreaseStock: jest.Mock;
     increaseStock: jest.Mock;
     increaseSoldQuantity: jest.Mock;
@@ -133,6 +134,7 @@ describe('OrderService checkout validation', () => {
 
     productService = {
       findOne: jest.fn(),
+      findManagedOne: jest.fn(),
       decreaseStock: jest.fn().mockResolvedValue({ _id: 'product-1', stock: 8 }),
       increaseStock: jest.fn().mockResolvedValue({ acknowledged: true }),
       increaseSoldQuantity: jest.fn().mockResolvedValue({ acknowledged: true }),
@@ -485,8 +487,12 @@ describe('OrderService checkout validation', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(BadRequestException);
       const response = (error as BadRequestException).getResponse() as {
+        message?: string;
+        description?: string;
         detail?: { code?: string };
       };
+      expect(response.message).toBe('Không thể hoàn tất đặt hàng');
+      expect(response.description).toBe('Tồn kho của một hoặc nhiều sản phẩm đã thay đổi.');
       expect(response.detail?.code).toBe('CHECKOUT_STOCK_CHANGED');
     }
   });
@@ -632,6 +638,7 @@ describe('OrderService checkout validation', () => {
           }),
           orderEvents: expect.objectContaining({
             type: 'ORDER_STATUS_CHANGED',
+            message: 'Trạng thái đơn hàng đã chuyển từ Đang xử lý sang Đang giao hàng.',
           }),
         }),
       }),
@@ -933,5 +940,28 @@ describe('OrderService checkout validation', () => {
     expect(JSON.stringify(orderModel.aggregate.mock.calls[0][0])).toContain(
       'createdAt',
     );
+  });
+
+  it('enriches top selling products when order item snapshots lack display fields', async () => {
+    orderModel.aggregate = jest.fn().mockResolvedValue([
+      { _id: 'product-1', name: '', images: [], soldQuantity: 3 },
+      { _id: 'product-2', name: 'Snapshot name', images: [], soldQuantity: 2 },
+    ]);
+    productService.findManagedOne
+      .mockResolvedValueOnce({ name: 'Laptop', images: ['image.png'] })
+      .mockResolvedValueOnce({ name: 'Fresh product name', images: ['fresh.png'] });
+
+    const result = await service.getTopSellingProducts(
+      new Date('2026-05-01T00:00:00.000Z'),
+      new Date('2026-05-03T23:59:59.999Z'),
+      5,
+    );
+
+    expect(result).toEqual([
+      { _id: 'product-1', name: 'Laptop', images: ['image.png'], soldQuantity: 3 },
+      { _id: 'product-2', name: 'Snapshot name', images: ['fresh.png'], soldQuantity: 2 },
+    ]);
+    expect(productService.findManagedOne).toHaveBeenNthCalledWith(1, 'product-1');
+    expect(productService.findManagedOne).toHaveBeenNthCalledWith(2, 'product-2');
   });
 });

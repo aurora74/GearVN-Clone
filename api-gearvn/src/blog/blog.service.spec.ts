@@ -94,6 +94,37 @@ describe('BlogService', () => {
     expect(blogModel.countDocuments).toHaveBeenCalledWith(filter);
   });
 
+  it('defaults public lists to newest createdAt order', async () => {
+    const exec = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ exec });
+    const skip = jest.fn().mockReturnValue({ limit });
+    const sort = jest.fn().mockReturnValue({ skip });
+    blogModel.find.mockReturnValue({ sort, skip });
+    blogModel.countDocuments.mockResolvedValue(0);
+
+    await service.findAll({ page: 1, limit: 10, publicOnly: true });
+
+    expect(sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+  });
+
+  it('applies oldest createdAt order when requested', async () => {
+    const exec = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ exec });
+    const skip = jest.fn().mockReturnValue({ limit });
+    const sort = jest.fn().mockReturnValue({ skip });
+    blogModel.find.mockReturnValue({ sort, skip });
+    blogModel.countDocuments.mockResolvedValue(0);
+
+    await service.findAll({
+      page: 1,
+      limit: 10,
+      publicOnly: true,
+      sortBy: 'createdAt',
+    });
+
+    expect(sort).toHaveBeenCalledWith({ createdAt: 1 });
+  });
+
   it('shows published and draft posts in managed all visibility while excluding archived posts', async () => {
     const exec = jest.fn().mockResolvedValue([]);
     const limit = jest.fn().mockReturnValue({ exec });

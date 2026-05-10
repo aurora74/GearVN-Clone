@@ -1,12 +1,17 @@
+import { CategoryFieldsType } from "@/types/category";
+
 export const buildCollectionUrl = (
-  categoryName: string,
-  fieldName: string,
-  fieldType: string,
-  option: string | number
+  category: string,
+  fieldName?: string,
+  fieldType?: CategoryFieldsType,
+  option?: string | number,
 ) => {
-  const value = fieldType === "number" ? Number(option) : option;
+  const params = new URLSearchParams();
+  if (fieldName && option !== undefined && option !== null) {
+    params.set(fieldName, String(option));
+    if (fieldType) params.set(`${fieldName}Type`, fieldType);
+  }
 
-  const encodedValue = encodeURIComponent(String(value));
-
-  return `/collections/${categoryName}?attributes=${fieldName}=${encodedValue}`;
+  const query = params.toString();
+  return `/collections/${encodeURIComponent(category)}${query ? `?${query}` : ""}`;
 };

@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 
 import { SUPPORT_TICKET_SOURCE, SUPPORT_TICKET_STATUS } from '../config.global';
+import { SupportTicketSchema } from './support-ticket.schema';
 import { SupportTicketService } from './support-ticket.service';
 
 const createTicketModel = () => {
@@ -27,6 +28,30 @@ describe('SupportTicketService', () => {
   beforeEach(() => {
     ticketModel = createTicketModel();
     service = new SupportTicketService(ticketModel);
+  });
+
+  it('scopes the unique source index to product Q&A tickets with source ids', () => {
+    const sourceIndex = SupportTicketSchema.indexes().find(
+      ([fields, options]) => {
+        return (
+          fields.sourceType === 1 && fields.sourceId === 1 && options.unique
+        );
+      },
+    );
+
+    expect(sourceIndex).toBeDefined();
+    expect(sourceIndex?.[1]).toEqual(
+      expect.objectContaining({
+        unique: true,
+        partialFilterExpression: {
+          sourceType: SUPPORT_TICKET_SOURCE.PRODUCT_QNA,
+          sourceId: { $type: 'string' },
+        },
+      }),
+    );
+    expect(sourceIndex?.[1]).not.toEqual(
+      expect.objectContaining({ sparse: true }),
+    );
   });
 
   it('creates one new product_qna ticket and reuses an existing ticket for the same source', async () => {
