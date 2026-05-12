@@ -100,12 +100,60 @@ export type ProductCragRetryMetadata = {
   relaxedConstraints: string[];
 };
 
+export type ProductRetrievalPipelineMode =
+  | 'phase-09.2-baseline'
+  | 'phase-10-improved';
+
+export type ProductRetrievalRewriteMetadata = {
+  rewrittenQuery: string;
+  detectedIntents: string[];
+  productGroups: string[];
+  hardConstraints: ProductRetrievalConstraints;
+  softSignals: string[];
+  expandedKeywords: string[];
+  comboGroups: string[];
+  confidence?: number;
+  metadata: {
+    rewrite_provider: 'deepseek';
+    rewrite_model: string;
+    rewrite_status: string;
+    rewrite_retry_count: number;
+    rewrite_latency_ms: number;
+    rewritten_query: string;
+  };
+};
+
+export type ProductRetrievalClarification = {
+  needed: boolean;
+  reason: string | null;
+  questions?: string[];
+};
+
+export type ProductComboGroupResult = {
+  id: string;
+  label: string;
+  query: string;
+  results: RerankedProductCandidate[];
+};
+
+export type ProductGroupCoverage = {
+  expectedGroups: string[];
+  coveredGroups: string[];
+  missingGroups: string[];
+  coverageRate: number;
+};
+
 export type ProductRetrievalResult = {
   query: ProductRetrievalQuery;
   candidates: ProductCandidate[];
   lexicalCandidates?: ProductCandidate[];
   vectorCandidates?: ProductCandidate[];
   results: RerankedProductCandidate[];
+  pipelineVersion?: ProductRetrievalPipelineMode;
+  rewrite?: ProductRetrievalRewriteMetadata;
+  clarification?: ProductRetrievalClarification;
+  comboGroups?: ProductComboGroupResult[];
+  groupCoverage?: ProductGroupCoverage;
   effectiveQuery?: string;
   relaxedConstraints?: string[];
   cragRetry?: ProductCragRetryMetadata;

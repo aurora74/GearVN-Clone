@@ -1,4 +1,8 @@
-import { extractHardConstraints, rerankProducts } from './product-reranker';
+import {
+  expandProductQuery,
+  extractHardConstraints,
+  rerankProducts,
+} from './product-reranker';
 import { ProductRetriever } from './product-retriever';
 import { ProductCandidate } from './product-retrieval.types';
 
@@ -141,6 +145,20 @@ describe('product reranker hard shopping constraints', () => {
     });
     expect(extractHardConstraints('đừng quá 25m')).toMatchObject({
       maxPrice: 25_000_000,
+    });
+  });
+
+  it('applies Phase 10 intent primitive expansion and constraints for AI learning laptops', () => {
+    expect(expandProductQuery('laptop học AI')).toEqual(
+      expect.arrayContaining(['CUDA', 'NVIDIA', 'RTX', 'RAM 16GB', 'sinh viên IT']),
+    );
+    expect(extractHardConstraints('laptop học AI')).toMatchObject({
+      categoryHints: ['laptop'],
+      requiredSpecs: {
+        ramGb: 16,
+        ssdGb: 512,
+        gpu: 'nvidia',
+      },
     });
   });
 

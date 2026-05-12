@@ -9,7 +9,10 @@ import {
   expandWithTechDictionary,
   normalizeDictionaryText,
 } from './product-domain-dictionary';
-
+import {
+  constraintsFromIntentPrimitives,
+  expandWithIntentPrimitives,
+} from './product-intent-primitives';
 type ExpansionRule = {
   patterns: string[];
   expansions: string[];
@@ -141,6 +144,7 @@ export function expandProductQuery(query: string): string[] {
   const expansions = new Set<string>([
     ...splitQueryTerms(normalized),
     ...expandWithTechDictionary(query),
+    ...expandWithIntentPrimitives(query),
   ]);
 
   for (const rule of EXPANSION_RULES) {
@@ -191,7 +195,10 @@ export function extractHardConstraints(
     constraints.requiredSpecs = requiredSpecs;
   }
 
-  return constraints;
+  return mergeRetrievalConstraints(
+    constraintsFromIntentPrimitives(query),
+    constraints,
+  );
 }
 
 export function rerankProducts(
