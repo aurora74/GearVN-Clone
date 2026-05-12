@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { queryKeys } from "../query-keys";
 import { USER_ROLES } from "@/config.global";
+import { useCartStore } from "@/stores/use-cart-store";
 import { useRoleStore } from "@/stores/use-role-store";
 
 import { User, UserRole, UseUsersParams } from "@/types/user";
@@ -31,6 +32,8 @@ export const useMe = () => {
         const data = await response.json();
         const user = data.result || null;
 
+        useCartStore.getState().syncOwner(user?._id ?? null);
+
         if (USER_ROLES.includes(user?.role as UserRole)) {
           setRole(user.role);
         } else {
@@ -39,6 +42,7 @@ export const useMe = () => {
 
         return user;
       } catch {
+        useCartStore.getState().syncOwner(null);
         clearRole();
         return null;
       }

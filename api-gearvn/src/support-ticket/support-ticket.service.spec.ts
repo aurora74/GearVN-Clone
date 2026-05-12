@@ -135,9 +135,12 @@ describe('SupportTicketService', () => {
 
   it('creates or refreshes a single active chat ticket by room', async () => {
     const roomId = 'room-client-customer-1';
+    const firstMessageId = new Types.ObjectId().toString();
+    const refreshedMessageId = new Types.ObjectId().toString();
     const existingTicket = {
       _id: new Types.ObjectId(),
       sourceType: SUPPORT_TICKET_SOURCE.CHAT,
+      sourceId: firstMessageId,
       roomId,
       status: SUPPORT_TICKET_STATUS.PROCESSING,
       metadata: {},
@@ -149,25 +152,126 @@ describe('SupportTicketService', () => {
     const created = await service.createOrRefreshForChat({
       roomId,
       customerId: new Types.ObjectId().toString(),
-      latestMessageId: new Types.ObjectId().toString(),
+      latestMessageId: firstMessageId,
       contextLabel: 'Chat khách hàng',
     });
     const refreshed = await service.createOrRefreshForChat({
       roomId,
       customerId: new Types.ObjectId().toString(),
-      latestMessageId: new Types.ObjectId().toString(),
+      latestMessageId: refreshedMessageId,
       contextLabel: 'Chat khách hàng',
     });
 
     expect(ticketModel).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceType: SUPPORT_TICKET_SOURCE.CHAT,
+        sourceId: firstMessageId,
         roomId,
         status: SUPPORT_TICKET_STATUS.NEW,
       }),
     );
-    expect(created).toEqual(expect.objectContaining({ sourceType: SUPPORT_TICKET_SOURCE.CHAT }));
+    expect(created).toEqual(
+      expect.objectContaining({
+        sourceType: SUPPORT_TICKET_SOURCE.CHAT,
+        sourceId: firstMessageId,
+      }),
+    );
     expect(refreshed.status).toBe(SUPPORT_TICKET_STATUS.NEW);
+    expect(refreshed.sourceId).toBe(firstMessageId);
+    expect(existingTicket.save).toHaveBeenCalled();
+  });
+
+  it('backfills missing source ids on legacy active chat tickets', async () => {
+    const roomId = 'room-client-customer-1';
+    const latestMessageId = new Types.ObjectId().toString();
+    const existingTicket = {
+      _id: new Types.ObjectId(),
+      sourceType: SUPPORT_TICKET_SOURCE.CHAT,
+      sourceId: null,
+      roomId,
+      status: SUPPORT_TICKET_STATUS.PROCESSING,
+      metadata: {},
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    ticketModel.findOne.mockResolvedValue(existingTicket);
+
+    const refreshed = await service.createOrRefreshForChat({
+      roomId,
+      customerId: new Types.ObjectId().toString(),
+      latestMessageId,
+      contextLabel: 'Chat khách hàng',
+    });
+
+    expect(ticketModel).not.toHaveBeenCalled();
+    expect(refreshed.sourceId).toBe(latestMessageId);
+    expect(existingTicket.save).toHaveBeenCalled();
+  });
+
+  it('persists staff-only assistant handoff metadata on chat ticket create and refresh', async () => {
+    const roomId = 'room-client-customer-1';
+    const firstMessageId = new Types.ObjectId().toString();
+    const refreshedMessageId = new Types.ObjectId().toString();
+    const initialSummary = {
+      staffOnly: true,
+      need: 'Laptop gaming kiêm đồ họa',
+      confidence: 'medium',
+    };
+    const refreshedSummary = {
+      staffOnly: true,
+      need: 'Laptop gaming kiêm đồ họa',
+      uncertainty: 'chưa xác minh tồn kho chi nhánh',
+    };
+    const existingTicket = {
+      _id: new Types.ObjectId(),
+      sourceType: SUPPORT_TICKET_SOURCE.CHAT,
+      roomId,
+      status: SUPPORT_TICKET_STATUS.PROCESSING,
+      metadata: {
+        latestMessageId: firstMessageId,
+        previousContext: 'existing metadata survives',
+        assistantHandoffSummary: initialSummary,
+      },
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    ticketModel.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(existingTicket);
+
+    const created = await service.createOrRefreshForChat({
+      roomId,
+      customerId: new Types.ObjectId().toString(),
+      latestMessageId: firstMessageId,
+      contextLabel: 'Chat khách hàng',
+      metadata: {
+        assistantHandoffSummary: initialSummary,
+      },
+    });
+    const refreshed = await service.createOrRefreshForChat({
+      roomId,
+      customerId: new Types.ObjectId().toString(),
+      latestMessageId: refreshedMessageId,
+      contextLabel: 'Chat khách hàng',
+      metadata: {
+        assistantHandoffSummary: refreshedSummary,
+      },
+    });
+
+    expect(ticketModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          latestMessageId: firstMessageId,
+          assistantHandoffSummary: initialSummary,
+        }),
+      }),
+    );
+    expect(created.metadata.assistantHandoffSummary).toBe(initialSummary);
+    expect(refreshed.metadata).toEqual(
+      expect.objectContaining({
+        latestMessageId: refreshedMessageId,
+        previousContext: 'existing metadata survives',
+        assistantHandoffSummary: refreshedSummary,
+      }),
+    );
     expect(existingTicket.save).toHaveBeenCalled();
   });
 

@@ -16,8 +16,13 @@ export const StepGuard = ({ children }: Props) => {
 
   useEffect(() => {
     const status = searchParams.get("status");
+    const step = searchParams.get("step");
 
-    if (status) setStep("complete");
+    if (status) {
+      setStep("complete");
+    } else if (step === "cart" || step === "order-info" || step === "payment") {
+      setStep(step);
+    }
     if (status === "success") clearCart();
   }, [searchParams, setStep, clearCart]);
 

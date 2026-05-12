@@ -1,4 +1,4 @@
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 @Schema({ timestamps: true })
@@ -18,6 +18,11 @@ export class Chat {
   @Prop({ type: [String], default: [] })
   attachments: string[];
 
+  @Prop({ type: String, enum: ['user', 'assistant', 'system'], default: 'user' })
+  messageKind: 'user' | 'assistant' | 'system';
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: undefined })
+  metadata?: Record<string, any>;
   @Prop({ type: Boolean, default: false })
   isRead: boolean;
 

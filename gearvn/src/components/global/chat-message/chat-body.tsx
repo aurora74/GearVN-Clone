@@ -77,6 +77,28 @@ const formatUnsupportedReason = (reason: unknown) => {
   return typeof reason === "string" ? reason : "Yêu cầu chưa được hỗ trợ";
 };
 
+const getMessageActionDrafts = (message: Message) => {
+  if (message.isDeleted || message.metadata?.kind !== "assistant") return [];
+
+  const drafts = message.metadata.actionDrafts ?? [];
+  const singleDraft = message.metadata.actionDraft;
+  const allDrafts = singleDraft ? [...drafts, singleDraft] : drafts;
+  const seen = new Set<string>();
+
+  return allDrafts.filter((draft) => {
+    if (!draft?.draftId || seen.has(draft.draftId)) return false;
+    seen.add(draft.draftId);
+    return true;
+  });
+};
+
+const hasInteractiveAssistantMetadata = (message: Message) =>
+  getMessageActionDrafts(message).length > 0 ||
+  Boolean(
+    !message.isDeleted &&
+      message.metadata?.kind === "assistant" &&
+      message.metadata.checkoutReview,
+  );
 type AiCheckoutReviewCardProps = {
   review: AssistantCheckoutReviewCard;
   draft?: AssistantActionDraft | null;
@@ -309,6 +331,18 @@ export const ChatBody = ({
     );
   };
 
+  const latestConversationMessage =
+    [...messages]
+      .reverse()
+      .find(
+        (message) =>
+          !message.isDeleted &&
+          message.metadata?.kind !== "assistant-action-confirmed",
+      ) ?? null;
+  const latestInteractiveMessageId =
+    latestConversationMessage && hasInteractiveAssistantMetadata(latestConversationMessage)
+      ? latestConversationMessage._id
+      : null;
   const getAddDraftForProduct = (
     drafts: AssistantActionDraft[] | undefined,
     productId: string,
@@ -325,17 +359,24 @@ export const ChatBody = ({
     const metadata = message.metadata;
     const productCards = metadata.productCards ?? [];
     const orderCards = metadata.orderCards ?? [];
-    const actionDrafts = metadata.actionDrafts ?? [];
-    const checkoutDraft =
-      metadata.actionDraft ??
-      actionDrafts.find((draft) => {
-        const action = draft.action ?? draft.kind;
-        return action === "CHECKOUT_REDIRECT" || action === "CHECKOUT_PREP";
-      }) ??
-      null;
+    const isLatestInteractiveMessage =
+      message._id === latestInteractiveMessageId;
+    const actionDrafts = isLatestInteractiveMessage
+      ? (metadata.actionDrafts ?? [])
+      : [];
+    const checkoutDraft = isLatestInteractiveMessage
+      ? (metadata.actionDraft ??
+        actionDrafts.find((draft) => {
+          const action = draft.action ?? draft.kind;
+          return action === "CHECKOUT_REDIRECT" || action === "CHECKOUT_PREP";
+        }) ??
+        null)
+      : null;
     const visibleActionDrafts = checkoutDraft
       ? actionDrafts.filter((draft) => draft.draftId !== checkoutDraft.draftId)
       : actionDrafts;
+    const showCheckoutReview =
+      isLatestInteractiveMessage && Boolean(metadata.checkoutReview);
     const hasNoOrderResults =
       "orderCards" in metadata && orderCards.length === 0;
     const statusRows = [
@@ -348,7 +389,7 @@ export const ChatBody = ({
       Boolean(metadata.reviewSummary) ||
       orderCards.length > 0 ||
       visibleActionDrafts.length > 0 ||
-      Boolean(metadata.checkoutReview) ||
+      showCheckoutReview ||
       hasNoOrderResults ||
       Boolean(metadata.handoff?.requested) ||
       Boolean(metadata.unsupportedReason);
@@ -370,10 +411,7 @@ export const ChatBody = ({
           <AiProductCard
             key={product.productId}
             product={product}
-            addDraft={getAddDraftForProduct(
-              metadata.actionDrafts,
-              product.productId,
-            )}
+            addDraft={getAddDraftForProduct(actionDrafts, product.productId)}
             pendingDraftId={pendingAssistantDraftId}
             onConfirmAction={onConfirmAssistantAction}
           />
@@ -401,7 +439,7 @@ export const ChatBody = ({
           <AiOrderCard isAuthenticated />
         ) : null}
 
-        {metadata.checkoutReview && (
+        {showCheckoutReview && metadata.checkoutReview && (
           <AiCheckoutReviewCard
             review={metadata.checkoutReview}
             draft={checkoutDraft}

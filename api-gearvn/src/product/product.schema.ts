@@ -3,6 +3,20 @@ import { Schema as MongooseSchema, Document, Types } from 'mongoose';
 
 export type ProductDocument = Product & Document;
 
+export type ProductSearchMetadata = {
+  sourceSku?: string;
+  sourceUrlKey?: string;
+  normalizedName?: string;
+  categoryPath?: string[];
+  normalizedSpecs?: Record<string, unknown>;
+  specsSummary?: string;
+  semanticTags?: string[];
+  useCases?: string[];
+  targetUsers?: string[];
+  searchText?: string;
+  [key: string]: unknown;
+};
+
 @Schema({ timestamps: true })
 export class Reply {
   @Prop({ type: String, default: () => new Types.ObjectId().toString() })
@@ -108,6 +122,9 @@ export class Product {
   @Prop({ type: Map, of: MongooseSchema.Types.Mixed })
   attributes: Record<string, any>;
 
+  @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
+  searchMetadata?: ProductSearchMetadata;
+
   @Prop({ type: [Comment], default: [] })
   comments: Comment[];
 
@@ -146,3 +163,17 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 
 ProductSchema.index({ isArchived: 1, isPublished: 1, stock: 1 });
 ProductSchema.index({ isArchived: 1, soldQuantity: -1 });
+ProductSchema.index({ 'searchMetadata.sourceSku': 1 }, { sparse: true });
+ProductSchema.index({ 'searchMetadata.sourceUrlKey': 1 }, { sparse: true });
+ProductSchema.index({ 'searchMetadata.normalizedName': 1 }, { sparse: true });
+ProductSchema.index({
+  isArchived: 1,
+  isPublished: 1,
+  category: 1,
+  'searchMetadata.categoryPath': 1,
+});
+ProductSchema.index({
+  name: 'text',
+  description: 'text',
+  'searchMetadata.searchText': 'text',
+});

@@ -14,6 +14,7 @@ type PromotionWarning = {
 type CartState = {
   // --- State ---
   items: CartItemType[];
+  ownerId: string | null;
   justAddedItem: boolean;
 
   // --- Actions ---
@@ -21,7 +22,7 @@ type CartState = {
   removeFromCart: (id: string) => void;
   removeItem: (id: string) => void;
   clearCart: () => void;
-
+  syncOwner: (ownerId: string | null) => void;
   updateQuantity: (id: string, quantity: number) => void;
   increaseQuantity: (id: string) => void;
   decreaseQuantity: (id: string) => void;
@@ -38,6 +39,7 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       // --- State ---
       items: [],
+      ownerId: null,
       justAddedItem: false,
 
       // --- Actions ---
@@ -83,7 +85,13 @@ export const useCartStore = create<CartState>()(
 
       removeItem: (id) => get().removeFromCart(id),
 
-      clearCart: () => set({ items: [] }),
+      clearCart: () => set({ items: [], ownerId: null }),
+      syncOwner: (ownerId) => {
+        const currentOwnerId = get().ownerId;
+        if (currentOwnerId === ownerId) return;
+
+        set({ items: [], ownerId, justAddedItem: false });
+      },
 
       updateQuantity: (id, quantity) => {
         if (quantity <= 0) {
@@ -167,8 +175,13 @@ export const useCartStore = create<CartState>()(
 
     {
       name: "cart-storage",
+      version: 2,
       storage: encryptedStorage,
-      partialize: (state) => ({ items: state.items }),
+      migrate: (persistedState, version) => {
+        if (version < 2) return { items: [], ownerId: null };
+        return persistedState as CartState;
+      },
+      partialize: (state) => ({ items: state.items, ownerId: state.ownerId }),
     }
   )
 );

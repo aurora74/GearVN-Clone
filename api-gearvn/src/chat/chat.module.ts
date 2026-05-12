@@ -12,11 +12,13 @@ import { ChatAuthService } from './chat-auth.service';
 import { ChatController } from './chat.controller';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { SupportTicketModule } from '../support-ticket/support-ticket.module';
+import { AiAssistantModule } from '../ai/assistant/ai-assistant.module';
 
 @Module({
   imports: [
     CloudinaryModule,
     SupportTicketModule,
+    AiAssistantModule,
     ConfigModule.forFeature(jwtConfig),
     JwtModule.registerAsync(jwtConfig.asProvider()),
     MongooseModule.forFeature([{ name: Chat.name, schema: ChatSchema }]),

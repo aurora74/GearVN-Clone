@@ -31,50 +31,6 @@ const actionLabels: Record<string, string> = {
 
 const getActionKind = (draft: AssistantActionDraft) => draft.action ?? draft.kind;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const getDraftPayload = (draft: AssistantActionDraft) =>
-  isRecord(draft.payload) ? draft.payload : {};
-
-const coerceCheckoutDetails = (
-  value: unknown,
-): AssistantActionDraft["checkout"] => {
-  if (!isRecord(value)) return undefined;
-
-  const checkout: AssistantActionDraft["checkout"] = {};
-  if (typeof value.name === "string") checkout.name = value.name;
-  if (typeof value.phone === "string") checkout.phone = value.phone;
-  if (typeof value.address === "string") checkout.address = value.address;
-
-  return Object.keys(checkout).length ? checkout : undefined;
-};
-
-const getDraftCheckout = (
-  draft: AssistantActionDraft,
-): AssistantActionDraft["checkout"] => {
-  if (draft.checkout) return draft.checkout;
-  return coerceCheckoutDetails(getDraftPayload(draft).checkout);
-};
-
-const getDraftProductId = (draft: AssistantActionDraft) => {
-  const payload = getDraftPayload(draft);
-  return draft.productId ??
-    (typeof payload.productId === "string" ? payload.productId : undefined);
-};
-
-const getDraftQuantity = (draft: AssistantActionDraft) => {
-  const payload = getDraftPayload(draft);
-  const value = draft.quantity ?? payload.quantity;
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : undefined;
-};
-
-const getDraftVoucherCode = (draft: AssistantActionDraft) => {
-  const payload = getDraftPayload(draft);
-  return draft.voucherCode ??
-    (typeof payload.voucherCode === "string" ? payload.voucherCode : undefined);
-};
 
 export const AiActionButton = ({
   draft,
@@ -95,15 +51,10 @@ export const AiActionButton = ({
     if (!socketRef.current || isDisabled) return;
 
     const displayText = label || draft.displayText;
-    const checkout = getDraftCheckout(draft);
     socketRef.current.emit("assistant-confirm-action", {
       roomId,
       draftId: draft.draftId,
       displayText,
-      productId: getDraftProductId(draft),
-      quantity: getDraftQuantity(draft),
-      voucherCode: getDraftVoucherCode(draft),
-      checkout,
     });
     onOptimisticMessage?.({
       text: displayText,

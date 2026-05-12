@@ -13,6 +13,17 @@ import { UserRole } from '../auth/enums/user-role.enum';
 import { validateImageUploads } from '../common/validators/upload-validator';
 import { SupportTicketService } from '../support-ticket/support-ticket.service';
 
+type ChatMessageKind = 'user' | 'assistant' | 'system';
+
+type InternalChatMessageInput = Partial<Chat> & {
+  roomId: string;
+  userId: string;
+  text?: string;
+  sender: 'CUSTOMER' | 'ADMIN';
+  messageKind: Exclude<ChatMessageKind, 'user'>;
+  metadata?: Record<string, any>;
+};
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -79,28 +90,23 @@ export class ChatService {
     const sender = supportActor ? UserRole.ADMIN : UserRole.CUSTOMER;
     const userId = supportActor ? roomOwnerId : this.getActorId(actor) ?? roomOwnerId;
     const text = typeof message.text === 'string' ? message.text.trim() : '';
-    const attachments = Array.isArray(message.attachments)
-      ? message.attachments
-          .filter((attachment): attachment is string => typeof attachment === 'string')
-          .map((attachment) => attachment.trim())
-          .filter(Boolean)
-      : [];
+    const attachments = this.normalizeAttachments(message.attachments);
 
     if (String(userId) !== String(roomOwnerId)) {
       throw new BadRequestException('Chat room and user do not match');
     }
 
-    if (!text && attachments.length === 0) {
-      throw new BadRequestException('Message text or attachment is required');
-    }
+    this.assertMessageHasContent(text, attachments);
 
     const chat = new this.chatModel({
-      ...message,
       text,
       attachments,
       sender,
       userId: roomOwnerId,
       roomId: message.roomId,
+      isRead: message.isRead,
+      unreadCount: message.unreadCount,
+      messageKind: 'user',
     });
     const saved = (await chat.save()) ?? chat;
 
@@ -114,6 +120,63 @@ export class ChatService {
     }
 
     return saved;
+  }
+
+  async createInternalMessage(message: InternalChatMessageInput) {
+    const roomOwnerId = this.assertCanAccessChatRoom(
+      { id: message.userId, role: UserRole.CUSTOMER },
+      message.roomId,
+    );
+    const text = typeof message.text === 'string' ? message.text.trim() : '';
+    const attachments = this.normalizeAttachments(message.attachments);
+
+    this.assertMessageHasContent(text, attachments);
+
+    const chat = new this.chatModel({
+      text,
+      attachments,
+      sender: message.sender,
+      userId: roomOwnerId,
+      roomId: message.roomId,
+      isRead: message.isRead,
+      unreadCount: message.unreadCount ?? 0,
+      messageKind: message.messageKind,
+      metadata: message.metadata,
+    });
+
+    return (await chat.save()) ?? chat;
+  }
+
+  serializeCustomerMessage<T extends { metadata?: Record<string, any> }>(message: T): T {
+    const base = typeof (message as any)?.toObject === 'function'
+      ? (message as any).toObject()
+      : { ...(message as any) };
+    const metadata = this.filterCustomerMetadata(base.metadata);
+
+    return {
+      ...base,
+      metadata,
+    };
+  }
+
+  private normalizeAttachments(attachments?: string[]) {
+    return Array.isArray(attachments)
+      ? attachments
+          .filter((attachment): attachment is string => typeof attachment === 'string')
+          .map((attachment) => attachment.trim())
+          .filter(Boolean)
+      : [];
+  }
+
+  private assertMessageHasContent(text: string, attachments: string[]) {
+    if (!text && attachments.length === 0) {
+      throw new BadRequestException('Message text or attachment is required');
+    }
+  }
+
+  private filterCustomerMetadata(metadata?: Record<string, any>) {
+    if (!metadata || typeof metadata !== 'object') return metadata;
+    return stripStaffOnlyMetadata(metadata);
   }
 
   async uploadFiles(files: Express.Multer.File[]): Promise<string[]> {
@@ -183,7 +246,9 @@ export class ChatService {
       limit,
       total,
       totalPages: Math.ceil(total / limit),
-      data,
+      data: this.isSupportActor(actor)
+        ? data
+        : data.map((message) => this.serializeCustomerMessage(message as any)),
     };
   }
 
@@ -348,7 +413,9 @@ export class ChatService {
       limit: limitNumber,
       total,
       totalPages: Math.ceil(total / limitNumber),
-      data,
+      data: this.isSupportActor(actor)
+        ? data
+        : data.map((message) => this.serializeCustomerMessage(message as any)),
     };
   }
 
@@ -449,4 +516,28 @@ export class ChatService {
       unreadCount: 0,
     });
   }
+}
+
+const CUSTOMER_METADATA_DENYLIST = new Set([
+  'assistantHandoffSummary',
+  'staffOnly',
+  'staffSummary',
+  'internalNotes',
+  'queueId',
+]);
+
+function stripStaffOnlyMetadata(value: any): any {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stripStaffOnlyMetadata(item))
+      .filter((item) => item !== undefined);
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.entries(value).reduce<Record<string, any>>((safe, [key, item]) => {
+    if (CUSTOMER_METADATA_DENYLIST.has(key)) return safe;
+    const next = stripStaffOnlyMetadata(item);
+    if (next !== undefined) safe[key] = next;
+    return safe;
+  }, {});
 }

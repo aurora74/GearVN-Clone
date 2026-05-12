@@ -1,4 +1,4 @@
-import { Document } from 'mongoose';
+import { Document, Schema as MongooseSchema } from 'mongoose';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 @Schema({ timestamps: true })
@@ -44,6 +44,14 @@ export class Category extends Document {
 
   @Prop({ type: Date })
   archivedAt?: Date;
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
+  sourceMetadata?: {
+    source?: string;
+    normalizedName?: string;
+    crawlPaths?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export const CategorySchema = SchemaFactory.createForClass(Category);

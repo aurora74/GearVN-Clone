@@ -18,6 +18,7 @@ import { useMe } from "@/react-query/query/user";
 import { CartItemType } from "@/types/order";
 import { useCartStore } from "@/stores/use-cart-store";
 import { useOrderStore } from "@/stores/use-order-store";
+import { useCheckoutStepStore } from "@/stores/use-checkout-step";
 
 import { ChatBody } from "./chat-body";
 import { ChatInput } from "./chat-input";
@@ -96,54 +97,6 @@ const buildAssistantErrorMessage = (
   },
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const getDraftPayload = (draft: AssistantActionDraft) =>
-  isRecord(draft.payload) ? draft.payload : {};
-
-const coerceCheckoutDetails = (
-  value: unknown,
-): AssistantActionDraft["checkout"] => {
-  if (!isRecord(value)) return undefined;
-
-  const checkout: AssistantActionDraft["checkout"] = {};
-  if (typeof value.name === "string") checkout.name = value.name;
-  if (typeof value.phone === "string") checkout.phone = value.phone;
-  if (typeof value.address === "string") checkout.address = value.address;
-
-  return Object.keys(checkout).length ? checkout : undefined;
-};
-
-const getDraftCheckout = (
-  draft: AssistantActionDraft,
-): AssistantActionDraft["checkout"] => {
-  if (draft.checkout) return draft.checkout;
-  return coerceCheckoutDetails(getDraftPayload(draft).checkout);
-};
-
-const getDraftProductId = (draft: AssistantActionDraft) => {
-  const payload = getDraftPayload(draft);
-  return (
-    draft.productId ??
-    (typeof payload.productId === "string" ? payload.productId : undefined)
-  );
-};
-
-const getDraftQuantity = (draft: AssistantActionDraft) => {
-  const payload = getDraftPayload(draft);
-  const value = draft.quantity ?? payload.quantity;
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : undefined;
-};
-
-const getDraftVoucherCode = (draft: AssistantActionDraft) => {
-  const payload = getDraftPayload(draft);
-  return (
-    draft.voucherCode ??
-    (typeof payload.voucherCode === "string" ? payload.voucherCode : undefined)
-  );
-};
 export const ChatMessage = () => {
   const { data: user } = useMe();
   const router = useRouter();
@@ -153,6 +106,7 @@ export const ChatMessage = () => {
   const updateQuantity = useCartStore((state) => state.updateQuantity);
   const setOrder = useOrderStore((state) => state.setOrder);
   const setVoucher = useOrderStore((state) => state.setVoucher);
+  const setStep = useCheckoutStepStore((state) => state.setStep);
 
   const socketRef = useRef<Socket | null>(null);
 
@@ -526,15 +480,10 @@ export const ChatMessage = () => {
       if (!roomId || !socketRef.current) return;
 
       const displayText = draft.displayText || "Thêm vào giỏ";
-      const checkout = getDraftCheckout(draft);
       socketRef.current.emit("assistant-confirm-action", {
         roomId,
         draftId: draft.draftId,
         displayText,
-        productId: getDraftProductId(draft),
-        quantity: getDraftQuantity(draft),
-        voucherCode: getDraftVoucherCode(draft),
-        checkout,
       });
       handleOptimisticMessage({
         text: displayText,
@@ -622,6 +571,15 @@ export const ChatMessage = () => {
         items,
         totalAmount,
       });
+      if (lastConfirmedAction.voucherCode) {
+        setVoucher({
+          voucherCode: lastConfirmedAction.voucherCode,
+          voucherDiscountAmount: 0,
+          voucherDescription: "Voucher sẽ được xác thực ở bước thanh toán",
+          voucherAppliedSubtotal: totalAmount,
+        });
+      }
+      setStep("payment");
       router.push(lastConfirmedAction.redirectPath || "/cart?step=payment");
       applied = true;
     }
@@ -637,6 +595,7 @@ export const ChatMessage = () => {
     removeFromCart,
     router,
     setOrder,
+    setStep,
     setVoucher,
     updateQuantity,
   ]);

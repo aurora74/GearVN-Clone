@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -33,6 +34,7 @@ export interface CreateChatTicketInput {
   customerId: string;
   latestMessageId: string;
   contextLabel: string;
+  metadata?: Record<string, any>;
 }
 
 export interface ListSupportTicketsParams {
@@ -49,9 +51,17 @@ export class SupportTicketService {
   ) {}
 
   private generateTicketCode() {
-    return `TKT-${Date.now().toString(36).toUpperCase()}-${Math.random()
-      .toString(36)
-      .slice(2, 6)
+    return `TKT-${Date.now().toString(36).toUpperCase()}-${randomBytes(3)
+      .toString('hex')
+      .toUpperCase()}`;
+  }
+
+  private getChatSourceId(input: CreateChatTicketInput) {
+    const latestMessageId = input.latestMessageId?.trim();
+    if (latestMessageId) return latestMessageId;
+
+    return `${input.roomId}:${Date.now().toString(36)}:${randomBytes(3)
+      .toString('hex')
       .toUpperCase()}`;
   }
 
@@ -105,6 +115,7 @@ export class SupportTicketService {
   }
 
   async createOrRefreshForChat(input: CreateChatTicketInput) {
+    const chatSourceId = this.getChatSourceId(input);
     const existing = await this.supportTicketModel.findOne({
       sourceType: SUPPORT_TICKET_SOURCE.CHAT,
       roomId: input.roomId,
@@ -113,12 +124,14 @@ export class SupportTicketService {
 
     if (existing) {
       existing.status = SUPPORT_TICKET_STATUS.NEW;
+      existing.sourceId = existing.sourceId || chatSourceId;
       existing.customerId = input.customerId;
       existing.contextLabel = input.contextLabel;
       existing.latestActivityAt = new Date();
       existing.resolvedAt = null;
       existing.metadata = {
         ...(existing.metadata ?? {}),
+        ...(input.metadata ?? {}),
         latestMessageId: input.latestMessageId,
       };
       await existing.save();
@@ -128,6 +141,7 @@ export class SupportTicketService {
     const ticket = new this.supportTicketModel({
       ticketCode: this.generateTicketCode(),
       sourceType: SUPPORT_TICKET_SOURCE.CHAT,
+      sourceId: chatSourceId,
       roomId: input.roomId,
       customerId: input.customerId,
       contextLabel: input.contextLabel,
@@ -135,6 +149,7 @@ export class SupportTicketService {
       latestActivityAt: new Date(),
       resolvedAt: null,
       metadata: {
+        ...(input.metadata ?? {}),
         latestMessageId: input.latestMessageId,
       },
     });
