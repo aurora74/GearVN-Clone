@@ -70,8 +70,13 @@ const PRESERVED_METADATA_KEYS = [
   'fallback_reason',
   'retrieval_query',
   'crag_retry',
+  'consultationMode',
+  'priorRecommendationProductIds',
+  'comparedProductIds',
+  'recommendationContinuity',
+  'llmComposeStatus',
+  'llmComposeFallbackReason',
 ] as const;
-
 const RESPONSE_MERGE_TIMEOUT_MS = 12_000;
 const DETERMINISTIC_FALLBACK_MAX_CHARS = 1800;
 
@@ -88,7 +93,7 @@ export class ResponseMergerService {
 
     if (responseCount <= 1) {
       const response = responses[0];
-      const metadata = response?.metadata ? { ...response.metadata } : {};
+      const metadata = sanitizeMetadata(response?.metadata ? { ...response.metadata } : {});
       return this.result({
         text: response?.text ?? '',
         responses,
@@ -211,11 +216,12 @@ export class ResponseMergerService {
       latencyMs: input.latencyMs,
     } satisfies ResponseMergerResult['trace'];
 
+    const metadata = sanitizeMetadata(input.metadata);
     return {
       text: input.text,
       responses: input.responses,
       metadata: {
-        ...input.metadata,
+        ...metadata,
         response_merge: trace,
         ...(input.factSources?.length
           ? { response_merge_fact_sources: input.factSources }
@@ -328,7 +334,7 @@ function preserveMetadata(
       preserved[key] = mergeMetadataValue(preserved[key], metadata[key]);
     }
   }
-  return preserved;
+  return sanitizeMetadata(preserved);
 }
 
 function mergeMetadataValue(left: unknown, right: unknown) {
@@ -338,6 +344,29 @@ function mergeMetadataValue(left: unknown, right: unknown) {
   return right;
 }
 
+function sanitizeMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(metadata.productCards)) return metadata;
+  return {
+    ...metadata,
+    productCards: uniqueProductCards(metadata.productCards),
+  };
+}
+
+function uniqueProductCards(cards: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  const result: unknown[] = [];
+  for (const card of cards) {
+    if (!isRecord(card)) {
+      result.push(card);
+      continue;
+    }
+    const productId = typeof card.productId === 'string' ? card.productId : '';
+    if (!productId || seen.has(productId)) continue;
+    seen.add(productId);
+    result.push(card);
+  }
+  return result;
+}
 function sourceSubgraphsFromResponses(
   responses: AssistantResponse[],
 ): AssistantSubgraphName[] {

@@ -22,6 +22,7 @@ export type AssistantPromptContextSection = {
   kind:
     | 'progressiveSummary'
     | 'preferenceNotes'
+    | 'cartContext'
     | 'hotMessages'
     | 'pendingActionDrafts'
     | 'profileMemory';
@@ -87,7 +88,12 @@ export class AssistantSessionService {
     const hotMessages = [...(session.hotMessages ?? []), message].slice(
       -HOT_MESSAGE_LIMIT,
     );
-    const progressiveSummary = await this.summarizer.summarize(hotMessages);
+    const generatedSummary = await this.summarizer.summarize(hotMessages);
+    const progressiveSummary = mergeProgressiveSummary(
+      session.progressiveSummary ?? defaultProgressiveSummary(),
+      generatedSummary,
+      hotMessages,
+    );
 
     return this.updateSession(roomId, {
       hotMessages,
@@ -113,6 +119,10 @@ export class AssistantSessionService {
         {
           kind: 'preferenceNotes',
           content: formatPreferenceNotes(summary),
+        },
+        {
+          kind: 'cartContext',
+          content: formatCartContext(summary),
         },
         {
           kind: 'hotMessages',
@@ -263,17 +273,174 @@ function defaultProgressiveSummary(): AssistantProgressiveSummary {
 
 const defaultSummarizer: AssistantSummaryGenerator = {
   async summarize(messages) {
+    const customerFacts = summarizeCustomerShoppingMemory(messages);
     return {
       ...defaultProgressiveSummary(),
+      shoppingNeed: customerFacts.shoppingNeed,
+      budget: customerFacts.budget,
+      constraintsAndSpecs: customerFacts.constraints,
+      constraints: customerFacts.constraints,
       unresolvedQuestions: [],
-      shoppingNeed: messages
-        .map((message) => message.content ?? message.text ?? '')
-        .filter(Boolean)
-        .slice(-3)
-        .join(' | '),
     };
   },
 };
+
+function mergeProgressiveSummary(
+  previous: AssistantProgressiveSummary,
+  generated: AssistantProgressiveSummary,
+  messages: AssistantHotMessage[],
+): AssistantProgressiveSummary {
+  const customerFacts = summarizeCustomerShoppingMemory(messages);
+  const constraints = mergeStringLists(
+    previous.constraints,
+    previous.constraintsAndSpecs,
+    generated.constraints,
+    generated.constraintsAndSpecs,
+    customerFacts.constraints,
+  );
+
+  return {
+    ...defaultProgressiveSummary(),
+    ...previous,
+    ...generated,
+    need: latestText(generated.need, previous.need),
+    shoppingNeed: mergeMemoryText(
+      previous.shoppingNeed,
+      generated.shoppingNeed,
+      customerFacts.shoppingNeed,
+    ),
+    budget: latestText(customerFacts.budget, generated.budget, previous.budget),
+    constraints,
+    constraintsAndSpecs: constraints,
+    discussedProducts: mergeStringLists(
+      previous.discussedProducts,
+      previous.productsDiscussed,
+      generated.discussedProducts,
+      generated.productsDiscussed,
+    ),
+    productsDiscussed: mergeStringLists(
+      previous.productsDiscussed,
+      previous.discussedProducts,
+      generated.productsDiscussed,
+      generated.discussedProducts,
+    ),
+    cartContext: latestText(generated.cartContext, previous.cartContext),
+    checkoutContext: latestText(generated.checkoutContext, previous.checkoutContext),
+    cartCheckoutContext: latestText(
+      generated.cartCheckoutContext,
+      previous.cartCheckoutContext,
+    ),
+    orderContext: latestText(generated.orderContext, previous.orderContext),
+    unresolvedQuestions: mergeStringLists(
+      generated.unresolvedQuestions,
+      previous.unresolvedQuestions,
+    ),
+  };
+}
+
+function summarizeCustomerShoppingMemory(messages: AssistantHotMessage[]): {
+  shoppingNeed: string;
+  budget: string;
+  constraints: string[];
+} {
+  const lines = messages
+    .filter((message) => ['customer', 'user'].includes(message.role))
+    .map((message) => sanitizeMemoryLine(message.content ?? message.text ?? ''))
+    .filter((line) => line && isShoppingMemorySignal(line) && !isRecallLine(line));
+  return {
+    shoppingNeed: mergeMemoryText(...lines.slice(-6)),
+    budget: latestText(...lines.map(extractBudgetText).filter(Boolean).reverse()),
+    constraints: mergeStringLists(lines.flatMap(extractConstraintNotes)),
+  };
+}
+
+function sanitizeMemoryLine(value: string): string {
+  return value
+    .replace(/^(customer|user|assistant|system):\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isShoppingMemorySignal(line: string): boolean {
+  const normalized = normalizeLedgerText(line);
+  return /laptop|pc|may tinh|gaming|game|ai|machine learning|deep learning|cad|autocad|ky thuat|gpu|rtx|ngan sach|trieu|tam gia|duoi|toi da|uu tien|do hoa|render|giai tri|xem phim|ram|ssd|cpu|gio hang|checkout|thanh toan|dat hang/.test(
+    normalized,
+  );
+}
+
+function isRecallLine(line: string): boolean {
+  return /\b(nho|biet|luu)\b.*(thich|quan tam|nhu cau|gi ve|minh|toi|em)|so thich/.test(
+    normalizeLedgerText(line),
+  );
+}
+
+function extractBudgetText(line: string): string {
+  const normalized = normalizeLedgerText(line);
+  const match = normalized.match(/(?:ngan sach|tam gia|duoi|toi da|khoang|tam)?\s*(\d{1,3})\s*(?:trieu|tr)\b/);
+  return match ? `${match[1]} triệu` : '';
+}
+
+function extractConstraintNotes(line: string): string[] {
+  const normalized = normalizeLedgerText(line);
+  const notes: string[] = [];
+  if (/laptop/.test(normalized)) notes.push('laptop');
+  if (/\bpc\b|may tinh de ban|may bo|desktop|workstation/.test(normalized))
+    notes.push('PC');
+  if (/machine learning|deep learning|\bai\b/.test(normalized))
+    notes.push('học AI/Machine Learning');
+  if (/cad|autocad|ky thuat/.test(normalized)) notes.push('CAD/kỹ thuật');
+  if (/do hoa|render/.test(normalized)) notes.push('đồ họa/render');
+  if (/giai tri|xem phim/.test(normalized)) notes.push('giải trí');
+  if (/gaming|game/.test(normalized)) notes.push('gaming');
+  if (/gpu|rtx|cuda/.test(normalized)) notes.push('ưu tiên GPU/RTX');
+  return notes;
+}
+
+function mergeMemoryText(...values: Array<string | undefined>): string {
+  return mergeStringLists(
+    ...values.flatMap((value) =>
+      cleanMemoryText(value)
+        .split(/\n|\|/)
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  )
+    .slice(-6)
+    .join('\n');
+}
+
+function latestText(...values: Array<string | undefined>): string {
+  return values.map(cleanMemoryText).find(Boolean) ?? '';
+}
+
+function mergeStringLists(
+  ...groups: Array<string[] | string | undefined>
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const group of groups) {
+    const values = Array.isArray(group) ? group : group ? [group] : [];
+    for (const value of values) {
+      const cleaned = cleanMemoryText(value);
+      const key = normalizeLedgerText(cleaned);
+      if (!cleaned || seen.has(key) || isAssistantMemoryLine(cleaned)) continue;
+      seen.add(key);
+      result.push(cleaned);
+    }
+  }
+  return result;
+}
+
+function cleanMemoryText(value?: string): string {
+  return value?.replace(/\s+/g, ' ').trim() ?? '';
+}
+
+function isAssistantMemoryLine(value: string): boolean {
+  const normalized = normalizeLedgerText(value);
+  return /^(assistant|system)\b|minh (goi y|da ghi nhan|da them|da chuan bi|co the|khong the|chua thay)|tro ly mua sam/.test(
+    normalized,
+  );
+}
 
 function normalizeActionDraft(
   roomId: string,
@@ -397,7 +564,8 @@ function normalizeLedgerText(value: string): string {
 }
 function formatProgressiveSummary(summary: AssistantProgressiveSummary): string {
   return [
-    summary.need ?? summary.shoppingNeed,
+    summary.need,
+    summary.shoppingNeed,
     summary.budget,
     ...(summary.constraints ?? summary.constraintsAndSpecs ?? []),
     ...(summary.discussedProducts ?? summary.productsDiscussed ?? []),
@@ -410,6 +578,16 @@ function formatProgressiveSummary(summary: AssistantProgressiveSummary): string 
     .join('\n');
 }
 
+function formatCartContext(summary: AssistantProgressiveSummary): string {
+  return [
+    summary.cartContext,
+    summary.checkoutContext,
+    summary.cartCheckoutContext,
+    summary.orderContext,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
 function formatPreferenceNotes(summary: AssistantProgressiveSummary): string {
   return [
     ...(summary.constraints ?? summary.constraintsAndSpecs ?? []),

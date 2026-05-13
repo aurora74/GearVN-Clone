@@ -4,8 +4,8 @@ import {
 } from './evals/shopping-assistant.fixtures';
 
 const expectedScenarioCounts: Record<ShoppingAssistantEvalScenarioType, number> = {
-  need_based_recommendation: 6,
-  broad_ambiguous_request: 3,
+  need_based_recommendation: 8,
+  broad_ambiguous_request: 5,
   catalog_integrity: 5,
   review_comparison_evidence: 5,
   cart_checkout_order_safety: 5,
@@ -25,7 +25,7 @@ const forbiddenServiceCalls = [
 
 describe('shopping assistant MVP eval fixtures', () => {
   it('contains the focused Phase 09.2 hotfix scenario distribution without retrieval metric scope', () => {
-    expect(shoppingAssistantEvalFixtures).toHaveLength(33);
+    expect(shoppingAssistantEvalFixtures).toHaveLength(37);
 
     const counts = shoppingAssistantEvalFixtures.reduce(
       (accumulator, fixture) => {
@@ -42,8 +42,23 @@ describe('shopping assistant MVP eval fixtures', () => {
       fixture.id.startsWith('09.2-scenario-'),
     );
     expect(hotfixScenarios).toHaveLength(5);
-  });
 
+    const phase10Scenarios = shoppingAssistantEvalFixtures.filter((fixture) =>
+      fixture.id.startsWith('10-scenario-'),
+    );
+    expect(phase10Scenarios.map((fixture) => fixture.id)).toEqual([
+      '10-scenario-home-office-combo',
+      '10-scenario-livestream-combo',
+      '10-scenario-ambiguous-strong-value-clarify',
+      '10-scenario-clarification-follow-up',
+    ]);
+    expect(phase10Scenarios.map((fixture) => fixture.userInput)).toEqual([
+      'setup làm việc tại nhà',
+      'góc livestream',
+      'máy mạnh giá tốt',
+      'Laptop, ngân sách khoảng 25 triệu, ưu tiên hiệu năng',
+    ]);
+  });
   it('stores deterministic labels and graph expectations for every fixture', () => {
     for (const fixture of shoppingAssistantEvalFixtures) {
       expect(fixture.userInput.trim()).not.toBe('');

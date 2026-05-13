@@ -121,6 +121,53 @@ describe('AssistantTraceService', () => {
     expect(JSON.stringify(redacted)).not.toContain('toi can laptop');
   });
 
+  it('redactTraceMetadata keeps Phase 10 rewrite and combo evidence but omits prompts and raw provider data', () => {
+    const service = new AssistantTraceService();
+
+    const redacted = service.redactTraceMetadata({
+      traceId: 'trace-phase-10',
+      node: 'product_advice',
+      rewrite_provider: 'deepseek',
+      rewrite_model: 'deepseek-v4-pro',
+      rewrite_status: 'success',
+      rewrite_retry_count: 1,
+      rewrite_latency_ms: 456,
+      rewritten_query: 'setup làm việc tại nhà laptop màn hình webcam',
+      combo_group_count: 3,
+      group_coverage: {
+        expectedGroups: ['laptop', 'monitor', 'webcam'],
+        coveredGroups: ['laptop', 'monitor'],
+        missingGroups: ['webcam'],
+        coverageRate: 2 / 3,
+      },
+      needsClarification: false,
+      prompt: 'system prompt must not be persisted',
+      raw_prompt: 'raw rewrite prompt must not be persisted',
+      apiKey: 'deepseek-secret',
+      authorization: 'Bearer deepseek-secret',
+      raw_request_body: { messages: ['secret prompt'] },
+    });
+
+    expect(redacted).toMatchObject({
+      rewrite_provider: 'deepseek',
+      rewrite_model: 'deepseek-v4-pro',
+      rewrite_status: 'success',
+      rewrite_retry_count: 1,
+      rewrite_latency_ms: 456,
+      rewritten_query: 'setup làm việc tại nhà laptop màn hình webcam',
+      combo_group_count: 3,
+      group_coverage: expect.objectContaining({
+        coveredGroups: ['laptop', 'monitor'],
+      }),
+      needsClarification: false,
+    });
+    const serialized = JSON.stringify(redacted);
+    expect(serialized).not.toContain('system prompt');
+    expect(serialized).not.toContain('raw rewrite prompt');
+    expect(serialized).not.toContain('deepseek-secret');
+    expect(serialized).not.toContain('raw_request_body');
+  });
+
   it('allows 09.2 latency fields while stripping raw messages, public-source text, phone/address-like values, and secrets', () => {
     const service = new AssistantTraceService();
     const rawPublicSourceText =

@@ -160,14 +160,24 @@ describe('AssistantSessionService', () => {
 
     expect(session.progressiveSummary).toMatchObject({
       need: 'Laptop hoc AI va lap trinh',
-      budget: '25 trieu',
-      constraints: ['RAM 16GB', 'RTX 4060', 'SSD 1TB'],
+      budget: '25 triệu',
+      constraints: expect.arrayContaining([
+        'RAM 16GB',
+        'RTX 4060',
+        'SSD 1TB',
+        'laptop',
+        'học AI/Machine Learning',
+        'ưu tiên GPU/RTX',
+      ]),
       discussedProducts: ['Laptop Alpha', 'Laptop Beta'],
       cartContext: 'Dang can xac nhan them Laptop Alpha vao gio',
       checkoutContext: 'Thieu so dien thoai giao hang',
       orderContext: 'Khach hoi don GVN-1001',
       unresolvedQuestions: ['Uu tien man hinh 144Hz hay trong luong nhe?'],
     });
+    expect(session.progressiveSummary.shoppingNeed).toContain(
+      'Can laptop hoc AI tam 25 trieu',
+    );
   });
 
   it('builds prompt context with progressiveSummary and preference notes before recent messages', async () => {
@@ -188,11 +198,12 @@ describe('AssistantSessionService', () => {
     expect(context.sections.map((section) => section.kind)).toEqual([
       'progressiveSummary',
       'preferenceNotes',
+      'cartContext',
       'hotMessages',
       'pendingActionDrafts',
     ]);
     expect(context.sections[0].content).toContain('Laptop hoc AI va lap trinh');
-    expect(context.sections[2].content).toContain(
+    expect(context.sections[3].content).toContain(
       'Can uu tien laptop co GPU NVIDIA',
     );
   });
@@ -660,9 +671,9 @@ describe('assistant model config and trace redaction', () => {
     const config = readAssistantModelConfig();
 
     expect(config.openRouter.apiKeyPresent).toBe(true);
-    expect(config.openRouter.chatModel).toBe('openai/gpt-4o-mini');
+    expect(config.openRouter.chatModel).toBe('deepseek-v4-pro');
     expect(config.openRouter.temperature).toBe(0.1);
-    expect(config.openRouter.maxTokens).toBe(1600);
+    expect(config.openRouter.maxTokens).toBe(2200);
     expect(config.openRouter.provider).toMatchObject({
       require_parameters: true,
     });
@@ -678,7 +689,7 @@ describe('assistant model config and trace redaction', () => {
     expect(readAssistantModelConfig().openRouter.maxTokens).toBe(4000);
 
     process.env.OPENROUTER_CHAT_MAX_TOKENS = '100';
-    expect(readAssistantModelConfig().openRouter.maxTokens).toBe(1600);
+    expect(readAssistantModelConfig().openRouter.maxTokens).toBe(2200);
   });
 
   it('checks structured-output and review-search capabilities before live model use', () => {

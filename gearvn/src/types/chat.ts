@@ -5,6 +5,20 @@ export type Sender = "CUSTOMER" | "ADMIN" | string;
 export type AssistantMode = "ai" | "staff";
 
 export type AssistantSubgraphName = "sales" | "order" | "general";
+export type AssistantProductConsultationMode =
+  | "initial_advice"
+  | "refinement"
+  | "more_options"
+  | "price_sort"
+  | "combo_advice";
+
+export type AssistantRecommendationContinuityMetadata = {
+  mode: AssistantProductConsultationMode;
+  hasPriorRecommendations: boolean;
+  priorRecommendationProductIds: string[];
+  comparedProductIds: string[];
+  preferenceDelta?: string;
+};
 
 export type AssistantActionKind =
   | "CART_ADD"
@@ -193,6 +207,12 @@ export type AssistantMessageMetadata = {
   responseMerge?: AssistantResponseMergeTrace | null;
   activeSubgraph?: AssistantSubgraphName;
   supervisorDecision?: SupervisorDecision;
+  consultationMode?: AssistantProductConsultationMode;
+  priorRecommendationProductIds?: string[];
+  comparedProductIds?: string[];
+  recommendationContinuity?: AssistantRecommendationContinuityMetadata;
+  llmComposeStatus?: "skipped" | "used" | "fallback";
+  llmComposeFallbackReason?: string;
   error?: {
     code?: string;
     message?: string;

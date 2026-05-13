@@ -6,6 +6,7 @@ import {
 
 export const PRODUCT_ENRICHMENT_FIELDS = [
   'categoryPath',
+  'normalizedSpecs',
   'specsSummary',
   'semanticTags',
   'useCases',
@@ -76,14 +77,24 @@ export function auditProductEnrichment(
       ) {
         missingByField[field] += 1;
         coverageIssueFound = true;
-        pushSampleIssue(sampleIssues, { productId, name, field, reason: 'missing' });
+        pushSampleIssue(sampleIssues, {
+          productId,
+          name,
+          field,
+          reason: 'missing',
+        });
         continue;
       }
 
       if (isEmptyValue(metadata[field])) {
         emptyByField[field] += 1;
         coverageIssueFound = true;
-        pushSampleIssue(sampleIssues, { productId, name, field, reason: 'empty' });
+        pushSampleIssue(sampleIssues, {
+          productId,
+          name,
+          field,
+          reason: 'empty',
+        });
       }
     }
 
@@ -140,7 +151,10 @@ export function buildImprovedProductSearchMetadata(
 ): ProductSearchMetadataLike {
   const metadata = product.searchMetadata ?? {};
   const categoryPath = normalizeStringArray(metadata.categoryPath);
-  const normalizedSpecs = normalizeSpecs(metadata.normalizedSpecs ?? product.attributes);
+  const metadataSpecs = normalizeSpecs(metadata.normalizedSpecs);
+  const attributeSpecs = normalizeSpecs(product.attributes);
+  const normalizedSpecs =
+    Object.keys(metadataSpecs).length > 0 ? metadataSpecs : attributeSpecs;
   const specsSummary =
     cleanText(metadata.specsSummary) ||
     (Object.keys(normalizedSpecs).length > 0
@@ -152,7 +166,8 @@ export function buildImprovedProductSearchMetadata(
 
   const nextMetadata: ProductSearchMetadataLike = {
     ...metadata,
-    categoryPath: categoryPath.length > 0 ? categoryPath : fallbackCategoryPath(product),
+    categoryPath:
+      categoryPath.length > 0 ? categoryPath : fallbackCategoryPath(product),
     normalizedSpecs,
     ...(specsSummary ? { specsSummary } : {}),
     semanticTags,
@@ -194,7 +209,8 @@ function pushSampleIssue(
 function isEmptyValue(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0;
   if (typeof value === 'string') return cleanText(value).length === 0;
-  if (!value || typeof value !== 'object') return value === null || value === undefined;
+  if (!value || typeof value !== 'object')
+    return value === null || value === undefined;
   return Object.keys(value).length === 0;
 }
 
@@ -221,7 +237,8 @@ function normalizeSpecs(value: unknown): Record<string, unknown> {
         specValue !== null &&
         specValue !== ''
       ) {
-        specs[cleanKey] = typeof specValue === 'string' ? cleanText(specValue) : specValue;
+        specs[cleanKey] =
+          typeof specValue === 'string' ? cleanText(specValue) : specValue;
       }
       return specs;
     }, {});
@@ -235,7 +252,8 @@ function fallbackCategoryPath(product: ProductDocumentLike): string[] {
 function productIdFor(product: ProductDocumentLike): string {
   const value = product._id ?? product.id;
   if (typeof value === 'string') return value;
-  if (value && typeof value === 'object' && 'toString' in value) return String(value);
+  if (value && typeof value === 'object' && 'toString' in value)
+    return String(value);
   return '';
 }
 

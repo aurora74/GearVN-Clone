@@ -11,6 +11,7 @@ import {
   precisionAtK,
   recallAtK,
   runProductRetrievalBenchmark,
+  runProductRetrievalComparison,
 } from './product-retrieval.benchmark';
 import {
   expandQueryNode,
@@ -257,41 +258,42 @@ describe('ProductRetriever', () => {
 });
 
 describe('retrieval benchmark cases and metrics', () => {
-  it('defines 10-20 cases across keyword, need-based, gift, technical, combo, and ambiguous groups', () => {
-    expect(productRetrievalBenchmarkCases.length).toBeGreaterThanOrEqual(10);
-    expect(productRetrievalBenchmarkCases.length).toBeLessThanOrEqual(20);
-    expect(
-      new Set(productRetrievalBenchmarkCases.map((item) => item.group)),
-    ).toEqual(
-      new Set([
-        'keyword',
-        'need_based',
-        'gift',
-        'technical',
-        'combo',
-        'ambiguous',
-      ]),
-    );
+  it('defines exactly 24 teacher-scoped cases with four fixtures per group', () => {
+    expect(productRetrievalBenchmarkCases.length).toBe(24);
+
+    const countsByGroup = productRetrievalBenchmarkCases.reduce<
+      Record<string, number>
+    >((counts, benchmarkCase) => {
+      counts[benchmarkCase.group] = (counts[benchmarkCase.group] ?? 0) + 1;
+      return counts;
+    }, {});
+
+    expect(countsByGroup).toEqual({
+      keyword: 4,
+      need_based: 4,
+      gift: 4,
+      technical: 4,
+      combo: 4,
+      ambiguous: 4,
+    });
     expect(productRetrievalBenchmarkCases.map((item) => item.query)).toEqual(
       expect.arrayContaining([
-        'iPhone',
-        'MacBook',
-        'RTX laptop',
-        'màn hình Dell',
         'laptop học AI',
-        'máy làm đồ họa',
-        'setup làm việc tại nhà',
-        'màn hình đỡ mỏi mắt',
-        'quà cho bạn trai thích game',
-        'quà cho sinh viên IT',
-        'laptop RAM 16GB SSD 512GB GPU NVIDIA',
-        'màn hình 144Hz',
-        'bàn phím cơ wireless',
-        'góc livestream',
-        'bộ làm việc tại nhà',
-        'máy mạnh giá tốt',
+        'mua quà cho bạn trai thích chơi game',
+        'setup góc làm việc tại nhà',
       ]),
     );
+    expect(
+      productRetrievalBenchmarkCases.every(
+        (item) =>
+          item.expectedCategories.length > 0 &&
+          (item.expectedProductIds?.length ||
+            item.expectedSpecs ||
+            item.expectedIntents?.length ||
+            item.expectedComboGroups?.length ||
+            typeof item.expectedClarification === 'boolean'),
+      ),
+    ).toBe(true);
   });
 
   it('computes Recall@10, Precision@5, MRR, nDCG@10, and Failure Rate deterministically', () => {
@@ -389,6 +391,145 @@ describe('retrieval benchmark cases and metrics', () => {
         'Recall@10': 0.5,
         'Precision@5': 0.2,
         MRR: 1,
+      }),
+    );
+  });
+
+  it('counts expected clarification cases as successful benchmark outcomes', async () => {
+    const retriever = {
+      search: jest.fn().mockResolvedValue({
+        clarification: { needed: true, reason: 'missing_budget' },
+        results: [],
+      }),
+    };
+
+    const report = await runProductRetrievalBenchmark(
+      retriever as unknown as ProductRetriever,
+      [
+        {
+          id: 'case-clarify',
+          query: 'laptop nào tốt',
+          group: 'ambiguous',
+          expectedCategories: ['laptop'],
+          expectedClarification: true,
+        },
+      ],
+    );
+
+    expect(report.summary['Failure Rate']).toBe(0);
+    expect(report.summary['Clarification Rate']).toBe(1);
+    expect(report.results[0]).toEqual(
+      expect.objectContaining({
+        relevantFound: true,
+        clarified: true,
+      }),
+    );
+    expect(report.results[0]).not.toHaveProperty('failureReason');
+  });
+
+  it('reports missing clarification only when expected clarification is not produced', async () => {
+    const retriever = {
+      search: jest.fn().mockResolvedValue({
+        clarification: { needed: false, reason: null },
+        results: [],
+      }),
+    };
+
+    const report = await runProductRetrievalComparison(
+      retriever as unknown as ProductRetriever,
+      [
+        {
+          id: 'case-clarify',
+          query: 'laptop nào tốt',
+          group: 'ambiguous',
+          expectedCategories: ['laptop'],
+          expectedClarification: true,
+        },
+      ],
+      { rewriteModel: 'deepseek-custom' },
+    );
+
+    expect(report.rewriteModel).toBe('deepseek-custom');
+    expect(report.failures).toEqual([
+      {
+        caseId: 'case-clarify',
+        pipeline: 'phase-09.2-baseline',
+        reason: 'Expected clarification was not produced',
+      },
+      {
+        caseId: 'case-clarify',
+        pipeline: 'phase-10-improved',
+        reason: 'Expected clarification was not produced',
+      },
+    ]);
+  });
+
+  it('compares baseline and improved pipelines with identical case IDs and relative gate metadata', async () => {
+    const calls: Array<{ query: string; pipeline: string }> = [];
+    const retriever = {
+      search: jest.fn().mockImplementation(async (query: string, options) => {
+        calls.push({ query, pipeline: options.pipeline });
+        const productId = options.pipeline === 'phase-10-improved' ? 'ai-laptop' : 'other';
+        return {
+          clarification:
+            options.pipeline === 'phase-10-improved'
+              ? { needed: false, reason: null }
+              : undefined,
+          groupCoverage:
+            options.pipeline === 'phase-10-improved'
+              ? {
+                  expectedGroups: ['laptop'],
+                  coveredGroups: ['laptop'],
+                  missingGroups: [],
+                  coverageRate: 1,
+                }
+              : undefined,
+          results: [
+            candidate(productId, {
+              name: productId,
+              category: productId === 'ai-laptop' ? 'laptop' : 'monitor',
+              categoryPath: [productId === 'ai-laptop' ? 'Laptop' : 'Monitor'],
+            }),
+          ].map((item) => ({ ...item, rerankScore: 7, reasons: [] })),
+        };
+      }),
+    };
+    const cases = [
+      {
+        id: 'case-1',
+        query: 'laptop học AI',
+        group: 'need_based' as const,
+        expectedCategories: ['laptop'],
+        expectedProductIds: ['ai-laptop'],
+      },
+    ];
+
+    const report = await runProductRetrievalComparison(
+      retriever as unknown as ProductRetriever,
+      cases,
+      { rewriteModel: 'deepseek-custom' },
+    );
+
+    expect(calls.map((call) => call.pipeline)).toEqual([
+      'phase-09.2-baseline',
+      'phase-10-improved',
+    ]);
+    expect(report.baseline.results.map((result) => result.caseId)).toEqual(
+      report.improved.results.map((result) => result.caseId),
+    );
+    expect(report).toEqual(
+      expect.objectContaining({
+        baselineVersion: 'phase-09.2',
+        improvedVersion: 'phase-10',
+        rewriteModel: 'deepseek-custom',
+        secretKeysLogged: false,
+        relativeGate: expect.objectContaining({ passed: true }),
+      }),
+    );
+    expect(report.improved.summary).toEqual(
+      expect.objectContaining({
+        'Clarification Rate': 0,
+        'Group Coverage': 1,
       }),
     );
   });

@@ -23,6 +23,7 @@ import { User } from "@/types/user";
 import {
   AssistantActionDraft,
   AssistantCheckoutReviewCard,
+  AssistantProductCard,
   Message,
 } from "@/types/chat";
 
@@ -88,6 +89,15 @@ const getMessageActionDrafts = (message: Message) => {
   return allDrafts.filter((draft) => {
     if (!draft?.draftId || seen.has(draft.draftId)) return false;
     seen.add(draft.draftId);
+    return true;
+  });
+};
+
+const uniqueProductCards = (cards: AssistantProductCard[]) => {
+  const seen = new Set<string>();
+  return cards.filter((card) => {
+    if (!card?.productId || seen.has(card.productId)) return false;
+    seen.add(card.productId);
     return true;
   });
 };
@@ -357,7 +367,7 @@ export const ChatBody = ({
       return null;
 
     const metadata = message.metadata;
-    const productCards = metadata.productCards ?? [];
+    const productCards = uniqueProductCards(metadata.productCards ?? []);
     const orderCards = metadata.orderCards ?? [];
     const isLatestInteractiveMessage =
       message._id === latestInteractiveMessageId;

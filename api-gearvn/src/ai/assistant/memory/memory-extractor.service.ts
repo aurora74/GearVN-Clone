@@ -55,7 +55,7 @@ export class MemoryExtractorService {
 
     const raw = await this.invokeExtractor(input);
     const parsed = MemoryExtractionSchema.parse(normalizeRawExtraction(raw));
-    const update = sanitizeExtraction(parsed);
+    const update = sanitizeExtraction(parsed, input.userMessage);
     const memoryReferences = buildTraceSafeMemoryReferences(
       update,
       parsed.confidence,
@@ -97,7 +97,6 @@ export class MemoryExtractorService {
           role: 'user',
           content: [
             `Customer message: ${input.userMessage}`,
-            `Assistant response: ${input.assistantResponse}`,
             `Current redacted profile: ${JSON.stringify(input.currentProfile ?? {})}`,
           ].join('\n'),
         },
@@ -148,9 +147,11 @@ function normalizeRawExtraction(raw: unknown): unknown {
 
 function sanitizeExtraction(
   extraction: MemoryExtraction,
+  userMessage: string,
 ): Partial<MemoryExtraction> {
   const explicit = new Set(extraction.explicitFields);
   const confidence = extraction.confidence;
+  const groundedUserText = normalizeGroundingText(userMessage);
   const update: Partial<MemoryExtraction> = {};
 
   for (const field of [
@@ -160,7 +161,9 @@ function sanitizeExtraction(
     'productsOfInterest',
   ] as const) {
     if (!explicit.has(field) || !fieldIsConfident(confidence, field)) continue;
-    const values = cleanStringArray(extraction[field]);
+    const values = cleanStringArray(extraction[field]).filter((value) =>
+      isGroundedInUserMessage(field, value, groundedUserText),
+    );
     if (values.length) update[field] = values;
   }
 
@@ -169,22 +172,36 @@ function sanitizeExtraction(
     fieldIsConfident(confidence, 'budgetRange')
   ) {
     const budgetRange = cleanText(extraction.budgetRange);
-    if (budgetRange) update.budgetRange = budgetRange;
+    if (
+      budgetRange &&
+      isGroundedInUserMessage('budgetRange', budgetRange, groundedUserText)
+    ) {
+      update.budgetRange = budgetRange;
+    }
   }
 
   if (explicit.has('name') && fieldIsConfident(confidence, 'name')) {
     const name = cleanText(extraction.name);
-    if (name) update.name = name;
+    if (name && isGroundedInUserMessage('name', name, groundedUserText)) {
+      update.name = name;
+    }
   }
 
   if (explicit.has('phone') && fieldIsConfident(confidence, 'phone')) {
     const phone = normalizePhone(extraction.phone);
-    if (phone) update.phone = phone;
+    if (phone && isGroundedInUserMessage('phone', phone, groundedUserText)) {
+      update.phone = phone;
+    }
   }
 
   if (explicit.has('address') && fieldIsConfident(confidence, 'address')) {
     const address = normalizeAddress(extraction.address);
-    if (address) update.address = address;
+    if (
+      address &&
+      isGroundedInUserMessage('address', address, groundedUserText)
+    ) {
+      update.address = address;
+    }
   }
 
   if (
@@ -192,8 +209,17 @@ function sanitizeExtraction(
     fieldIsConfident(confidence, 'specPreferences')
   ) {
     const specPreferences = cleanSpecPreferences(extraction.specPreferences);
-    if (Object.keys(specPreferences).length)
-      update.specPreferences = specPreferences;
+    const filteredSpecPreferences = Object.fromEntries(
+      Object.entries(specPreferences).filter(([key, value]) =>
+        isGroundedInUserMessage(
+          'specPreferences',
+          `${key} ${String(value)}`,
+          groundedUserText,
+        ),
+      ),
+    );
+    if (Object.keys(filteredSpecPreferences).length)
+      update.specPreferences = filteredSpecPreferences;
   }
 
   return update;
@@ -232,6 +258,70 @@ function cleanSpecPreferences(
       ['string', 'number', 'boolean'].includes(typeof item),
     ),
   ) as Record<string, string | number | boolean>;
+}
+
+function normalizeGroundingText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isGroundedInUserMessage(
+  field: string,
+  value: string,
+  groundedUserText: string,
+): boolean {
+  if (!groundedUserText || !value) return false;
+  const normalizedValue = normalizeGroundingText(value);
+  if (!normalizedValue) return false;
+
+  if (field === 'phone') {
+    const digits = value.replace(/\D/g, '');
+    return (
+      Boolean(digits) && groundedUserText.replace(/\D/g, '').includes(digits)
+    );
+  }
+
+  if (field === 'address') {
+    const tokens = normalizedValue
+      .split(' ')
+      .filter((token) => token.length >= 3);
+    return tokens.some((token) => groundedUserText.includes(token));
+  }
+
+  if (field === 'name') {
+    return groundedUserText.includes(normalizedValue);
+  }
+
+  if (field === 'budgetRange') {
+    return (
+      /\d/.test(normalizedValue) && groundedUserText.includes(normalizedValue)
+    );
+  }
+
+  if (field === 'specPreferences') {
+    return normalizedValue
+      .split(' ')
+      .filter((token) => token.length >= 2)
+      .some((token) => groundedUserText.includes(token));
+  }
+
+  return normalizedUserMessageContainsValue(groundedUserText, normalizedValue);
+}
+
+function normalizedUserMessageContainsValue(
+  groundedUserText: string,
+  normalizedValue: string,
+): boolean {
+  return normalizedValue
+    .split(' ')
+    .filter((token) => token.length >= 3)
+    .some((token) => groundedUserText.includes(token));
 }
 
 function buildTraceSafeMemoryReferences(

@@ -13,6 +13,12 @@ import {
   constraintsFromIntentPrimitives,
   expandWithIntentPrimitives,
 } from './product-intent-primitives';
+import {
+  detectProductFamiliesFromText,
+  normalizedTextHasProductFamilyAlias,
+  productFamilyAliases,
+  productFamilyCategoryAliases,
+} from './product-family-taxonomy';
 type ExpansionRule = {
   patterns: string[];
   expansions: string[];
@@ -180,9 +186,18 @@ export function extractHardConstraints(
   const ssdMatch = normalized.match(/ssd\s*(\d{3,4})\s*gb/);
   if (ssdMatch) requiredSpecs.ssdGb = Number(ssdMatch[1]);
 
-  if (normalized.includes('gpu nvidia') || normalized.includes('nvidia')) {
+  const gpuModel = extractConcreteGpuModel(normalized);
+  if (gpuModel) {
+    requiredSpecs.gpu = gpuModel;
+  } else if (
+    normalized.includes('gpu nvidia') ||
+    normalized.includes('nvidia')
+  ) {
     requiredSpecs.gpu = 'nvidia';
   }
+
+  const displayResolution = extractDisplayResolution(normalized);
+  if (displayResolution) requiredSpecs.displayResolution = displayResolution;
 
   const hzMatch = normalized.match(/(\d{2,3})\s*hz/);
   if (hzMatch) requiredSpecs.refreshRateHz = Number(hzMatch[1]);
@@ -195,10 +210,12 @@ export function extractHardConstraints(
     constraints.requiredSpecs = requiredSpecs;
   }
 
-  return mergeRetrievalConstraints(
+  const merged = mergeRetrievalConstraints(
     constraintsFromIntentPrimitives(query),
     constraints,
   );
+
+  return categoryHints.length > 0 ? { ...merged, categoryHints } : merged;
 }
 
 export function rerankProducts(
@@ -234,6 +251,7 @@ export function rerankProducts(
 export function productCandidateSatisfiesHardConstraints(
   candidate: ProductCandidate,
   constraints: ProductRetrievalConstraints,
+  options?: { enforceRequiredSpecs?: boolean },
 ): boolean {
   if (constraints.inStockOnly && candidate.payload.stock <= 0) return false;
   if (
@@ -248,7 +266,16 @@ export function productCandidateSatisfiesHardConstraints(
   ) {
     return false;
   }
-  if (hasHardCategoryConstraint(constraints) && !matchesCategory(candidate, constraints)) {
+  if (
+    hasHardCategoryConstraint(constraints) &&
+    !matchesCategory(candidate, constraints)
+  ) {
+    return false;
+  }
+  if (
+    options?.enforceRequiredSpecs === true &&
+    !candidateSatisfiesRequiredSpecs(candidate, constraints.requiredSpecs)
+  ) {
     return false;
   }
   return true;
@@ -288,7 +315,9 @@ function scoreCandidate(
   if ((candidate.lexicalScore ?? 0) > 0) {
     reasons.push({
       code: 'bm25_score',
-      message: `Mongo lexical/spec score matched ${(candidate.matchedTerms ?? [])
+      message: `Mongo lexical/spec score matched ${(
+        candidate.matchedTerms ?? []
+      )
         .slice(0, 5)
         .join(', ')}`,
       weight: bm25Score,
@@ -407,11 +436,21 @@ function extractMaxPrice(normalizedQuery: string): number | undefined {
     return priceAmount(rangeMatch[2], rangeMatch[3]);
   }
 
-  const unitMatch = normalizedQuery.match(
-    /(?:duoi|toi da|khoang duoi|ngan sach|tam gia|budget|khoang|tam)?\s*(\d{1,3}(?:[.,]\d+)?)\s*(trieu|tr|m|k|nghin)\b/,
+  const majorUnitMatch = normalizedQuery.match(
+    /(?:duoi|toi da|khoang duoi|ngan sach|tam gia|budget|khoang|tam)?\s*(\d{1,3}(?:[.,]\d+)?)\s*(trieu|tr|m)\b/,
   );
-  if (unitMatch) {
-    return priceAmount(unitMatch[1], unitMatch[2]);
+  if (majorUnitMatch) {
+    return priceAmount(majorUnitMatch[1], majorUnitMatch[2]);
+  }
+
+  const smallUnitMatch = normalizedQuery.match(
+    /(?:duoi|toi da|khoang duoi|ngan sach|tam gia|budget|khoang|tam)\s*(\d{1,3}(?:[.,]\d+)?)\s*(k|nghin)\b/,
+  );
+  if (
+    smallUnitMatch &&
+    !isDisplayResolutionToken(normalizedQuery, smallUnitMatch[0])
+  ) {
+    return priceAmount(smallUnitMatch[1], smallUnitMatch[2]);
   }
 
   const vndMatch = normalizedQuery.match(/\b(\d{1,3})\s*000\s*000\b/);
@@ -423,6 +462,16 @@ function extractMaxPrice(normalizedQuery: string): number | undefined {
   return undefined;
 }
 
+function isDisplayResolutionToken(
+  normalizedQuery: string,
+  matchedToken: string,
+): boolean {
+  const normalizedToken = normalizeText(matchedToken);
+  if (!/\b(?:2|4|8)\s*k\b/.test(normalizedToken)) return false;
+  return /\b(man hinh|monitor|do phan giai|resolution|qhd|uhd)\b/.test(
+    normalizedQuery,
+  );
+}
 function priceAmount(rawAmount: string, unit?: string): number | undefined {
   const amount = Number(rawAmount.replace(',', '.'));
   if (!Number.isFinite(amount)) return undefined;
@@ -431,48 +480,7 @@ function priceAmount(rawAmount: string, unit?: string): number | undefined {
 }
 
 function extractCategoryHints(normalizedQuery: string): string[] {
-  const primaryHints = collectCategoryHints(normalizedQuery, [
-    ['laptop', 'laptop'],
-    ['macbook', 'laptop'],
-    ['iphone', 'phone'],
-    ['dien thoai', 'phone'],
-    ['phone', 'phone'],
-    ['smartphone', 'phone'],
-    ['pc', 'pc'],
-    ['may tinh de ban', 'pc'],
-    ['man hinh', 'monitor'],
-    ['monitor', 'monitor'],
-    ['ban phim', 'keyboard'],
-    ['keyboard', 'keyboard'],
-    ['chuot', 'mouse'],
-    ['mouse', 'mouse'],
-    ['tai nghe', 'headset'],
-    ['headphone', 'headset'],
-    ['headset', 'headset'],
-    ['webcam', 'webcam'],
-  ]);
-  if (primaryHints.length > 0) return primaryHints;
-
-  return collectCategoryHints(normalizedQuery, [
-    ['vga', 'vga'],
-    ['card do hoa', 'vga'],
-    ['cpu', 'cpu'],
-    ['ram', 'ram'],
-    ['ssd', 'ssd'],
-  ]);
-}
-
-function collectCategoryHints(
-  normalizedQuery: string,
-  categoryMap: Array<[string, string]>,
-): string[] {
-  const hints: string[] = [];
-  for (const [pattern, category] of categoryMap) {
-    if (normalizedQuery.includes(pattern) && !hints.includes(category)) {
-      hints.push(category);
-    }
-  }
-  return hints;
+  return detectProductFamiliesFromText(normalizedQuery);
 }
 
 function matchesCategory(
@@ -482,13 +490,16 @@ function matchesCategory(
   const categoryText = normalizeText(
     [candidate.payload.category, ...candidate.payload.categoryPath].join(' '),
   );
-  const hints = [
-    ...(constraints.categoryHints ?? []),
+  const exactHints = [
     constraints.category,
     ...(constraints.categoryPath ?? []),
   ].filter((hint): hint is string => Boolean(hint));
+  const hints =
+    exactHints.length > 0 ? exactHints : (constraints.categoryHints ?? []);
 
-  return hints.some((hint) => categoryTextMatchesHint(candidate, categoryText, hint));
+  return hints.some((hint) =>
+    categoryTextMatchesHint(candidate, categoryText, hint),
+  );
 }
 
 function hasHardCategoryConstraint(
@@ -510,38 +521,88 @@ function categoryTextMatchesHint(
   if (normalizedHint === 'laptop') {
     return candidateLooksLikePortableLaptop(candidate, categoryText);
   }
-  const aliases = CATEGORY_HINT_ALIASES[normalizedHint] ?? [normalizedHint];
-  return aliases.some((alias) => categoryText.includes(alias));
+  if (normalizedHint === 'pc') {
+    return candidateLooksLikeDesktopPc(candidate, categoryText);
+  }
+  const aliases = productFamilyCategoryAliases(normalizedHint);
+  return aliases.some((alias) => normalizedTextHasAlias(categoryText, alias));
 }
 
 function candidateLooksLikePortableLaptop(
   candidate: ProductCandidate,
   categoryText: string,
 ): boolean {
-  const aliases = CATEGORY_HINT_ALIASES.laptop;
-  if (!aliases.some((alias) => categoryText.includes(alias))) return false;
+  const aliases = productFamilyCategoryAliases('laptop');
+  if (!aliases.some((alias) => normalizedTextHasAlias(categoryText, alias))) {
+    return false;
+  }
 
   const name = normalizeText(candidate.payload.name);
-  if (aliases.some((alias) => name.includes(alias))) return true;
+  if (aliases.some((alias) => normalizedTextHasAlias(name, alias))) return true;
 
-  const specText = normalizeText(JSON.stringify(candidate.payload.normalizedSpecs ?? {}));
+  const specText = normalizeText(
+    JSON.stringify(candidate.payload.normalizedSpecs ?? {}),
+  );
   return /\b(screen\s*size|screensize|kich thuoc man hinh)\b/.test(specText);
 }
 
-const CATEGORY_HINT_ALIASES: Record<string, string[]> = {
-  laptop: ['laptop', 'macbook', 'may tinh xach tay', 'notebook'],
-  phone: ['phone', 'dien thoai', 'smartphone', 'iphone'],
-  pc: ['pc', 'may tinh de ban', 'desktop'],
-  monitor: ['monitor', 'man hinh'],
-  keyboard: ['keyboard', 'ban phim'],
-  mouse: ['mouse', 'chuot'],
-  headset: ['headset', 'headphone', 'tai nghe'],
-  webcam: ['webcam'],
-  vga: ['vga', 'gpu', 'card do hoa'],
-  cpu: ['cpu', 'processor', 'vi xu ly'],
-  ram: ['ram'],
-  ssd: ['ssd'],
-};
+function candidateLooksLikeDesktopPc(
+  candidate: ProductCandidate,
+  categoryText: string,
+): boolean {
+  const portableAliases = productFamilyCategoryAliases('laptop');
+  const name = normalizeText(candidate.payload.name);
+  const categoryAndNameText = normalizeText(
+    [
+      categoryText,
+      name,
+      ...(candidate.payload.semanticTags ?? []),
+      ...(candidate.payload.useCases ?? []),
+      ...(candidate.payload.targetUsers ?? []),
+    ].join(' '),
+  );
+
+  if (
+    portableAliases.some((alias) =>
+      normalizedTextHasAlias(categoryAndNameText, alias),
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    productFamilyAliases('pc').some((alias) =>
+      normalizedTextHasAlias(categoryAndNameText, alias),
+    )
+  ) {
+    return true;
+  }
+
+  return productFamilyCategoryAliases('pc').some((alias) =>
+    normalizedTextHasAlias(categoryText, alias),
+  );
+}
+
+function extractConcreteGpuModel(normalizedQuery: string): string | undefined {
+  const match = normalizedQuery.match(
+    /\b(?:nvidia\s*)?(rtx|gtx)\s*-?(\d{3,4})(?:\s*(ti|super))?\b/,
+  );
+  if (!match) return undefined;
+  return [match[1], match[2], match[3]].filter(Boolean).join(' ');
+}
+
+function extractDisplayResolution(normalizedQuery: string): string | undefined {
+  if (/\b(?:2\s*k|qhd|wqhd|2560\s*x\s*1440|1440p)\b/.test(normalizedQuery)) {
+    return '2k';
+  }
+  if (/\b(?:4\s*k|uhd|3840\s*x\s*2160|2160p)\b/.test(normalizedQuery)) {
+    return '4k';
+  }
+  if (/\b(?:8\s*k|7680\s*x\s*4320|4320p)\b/.test(normalizedQuery)) {
+    return '8k';
+  }
+  return undefined;
+}
 
 function countSpecMatches(
   candidate: ProductCandidate,
@@ -549,9 +610,11 @@ function countSpecMatches(
 ): number {
   if (!specs) return 0;
   return [
-    specs.ramGb && candidateMatchesSpec(candidate, specs.ramGb, ['gb']),
-    specs.ssdGb && candidateMatchesSpec(candidate, specs.ssdGb, ['gb']),
+    specs.ramGb && candidateMatchesRamSpec(candidate, specs.ramGb),
+    specs.ssdGb && candidateMatchesSsdSpec(candidate, specs.ssdGb),
     specs.gpu && candidateMatchesTextSpec(candidate, specs.gpu),
+    specs.displayResolution &&
+      candidateMatchesDisplayResolution(candidate, specs.displayResolution),
     specs.refreshRateHz &&
       candidateMatchesSpec(candidate, specs.refreshRateHz, ['hz']),
     specs.wireless && candidateMatchesWireless(candidate),
@@ -563,11 +626,16 @@ function candidateSatisfiesRequiredSpecs(
   specs: ProductRetrievalConstraints['requiredSpecs'],
 ): boolean {
   if (!specs) return true;
-  if (specs.ramGb && !candidateMatchesSpec(candidate, specs.ramGb, ['gb']))
+  if (specs.ramGb && !candidateMatchesRamSpec(candidate, specs.ramGb))
     return false;
-  if (specs.ssdGb && !candidateMatchesSpec(candidate, specs.ssdGb, ['gb']))
+  if (specs.ssdGb && !candidateMatchesSsdSpec(candidate, specs.ssdGb))
     return false;
   if (specs.gpu && !candidateMatchesTextSpec(candidate, specs.gpu))
+    return false;
+  if (
+    specs.displayResolution &&
+    !candidateMatchesDisplayResolution(candidate, specs.displayResolution)
+  )
     return false;
   if (
     specs.refreshRateHz &&
@@ -576,6 +644,45 @@ function candidateSatisfiesRequiredSpecs(
     return false;
   if (specs.wireless && !candidateMatchesWireless(candidate)) return false;
   return true;
+}
+
+const RAM_SPEC_KEY_PATTERNS = [/\bram\b/, /\bmemory\b/, /\bbo nho\b/];
+const SSD_SPEC_KEY_PATTERNS = [
+  /\bssd\b/,
+  /\bstorage\b/,
+  /\bo cung\b/,
+  /\bnvme\b/,
+];
+
+function candidateMatchesRamSpec(
+  candidate: ProductCandidate,
+  value: number,
+): boolean {
+  return candidateMatchesCapacitySpec(candidate, value, RAM_SPEC_KEY_PATTERNS);
+}
+
+function candidateMatchesSsdSpec(
+  candidate: ProductCandidate,
+  value: number,
+): boolean {
+  return candidateMatchesCapacitySpec(candidate, value, SSD_SPEC_KEY_PATTERNS);
+}
+
+function candidateMatchesCapacitySpec(
+  candidate: ProductCandidate,
+  value: number,
+  keyPatterns: RegExp[],
+): boolean {
+  const valuePattern = new RegExp(`\\b${value}\\s*gb\\b`);
+  return Object.entries(candidate.payload.normalizedSpecs ?? {}).some(
+    ([key, raw]) => {
+      const normalizedKey = normalizeText(key);
+      if (!keyPatterns.some((pattern) => pattern.test(normalizedKey))) {
+        return false;
+      }
+      return valuePattern.test(normalizeText(raw));
+    },
+  );
 }
 
 function candidateMatchesSpec(
@@ -595,6 +702,33 @@ function candidateMatchesTextSpec(
   return candidateSpecText(candidate).includes(normalizeText(value));
 }
 
+function candidateMatchesDisplayResolution(
+  candidate: ProductCandidate,
+  value: string,
+): boolean {
+  const specText = candidateSpecText(candidate);
+  const aliases = displayResolutionAliases(normalizeText(value));
+  return aliases.some((alias) => alias.test(specText));
+}
+
+function displayResolutionAliases(value: string): RegExp[] {
+  if (/\b(?:2\s*k|qhd|wqhd|2560\s*x\s*1440|1440p)\b/.test(value)) {
+    return [
+      /\b2\s*k\b/,
+      /\bqhd\b/,
+      /\bwqhd\b/,
+      /\b2560\s*x\s*1440\b/,
+      /\b1440p\b/,
+    ];
+  }
+  if (/\b(?:4\s*k|uhd|3840\s*x\s*2160|2160p)\b/.test(value)) {
+    return [/\b4\s*k\b/, /\buhd\b/, /\b3840\s*x\s*2160\b/, /\b2160p\b/];
+  }
+  if (/\b(?:8\s*k|7680\s*x\s*4320|4320p)\b/.test(value)) {
+    return [/\b8\s*k\b/, /\b7680\s*x\s*4320\b/, /\b4320p\b/];
+  }
+  return [new RegExp(`\\b${escapeRegExp(value)}\\b`)];
+}
 function candidateMatchesWireless(candidate: ProductCandidate): boolean {
   const specText = candidateSpecText(candidate);
   return (
@@ -615,13 +749,15 @@ export function mergeRetrievalConstraints(
   provided?: ProductRetrievalConstraints,
 ): ProductRetrievalConstraints {
   if (!provided) return extracted;
+  const providedCategoryHints = uniqueStrings(provided.categoryHints ?? []);
+
   return {
     ...extracted,
     ...provided,
-    categoryHints: uniqueStrings([
-      ...(extracted.categoryHints ?? []),
-      ...(provided.categoryHints ?? []),
-    ]),
+    categoryHints:
+      providedCategoryHints.length > 0
+        ? providedCategoryHints
+        : uniqueStrings(extracted.categoryHints ?? []),
     categoryPath: uniqueStrings([
       ...(extracted.categoryPath ?? []),
       ...(provided.categoryPath ?? []),
@@ -719,6 +855,16 @@ function roundScore(score: number): number {
   return Math.round(score * 1000) / 1000;
 }
 
+function normalizedTextHasAlias(
+  normalizedText: string,
+  alias: string,
+): boolean {
+  return normalizedTextHasProductFamilyAlias(normalizedText, alias);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 function normalizeText(value: unknown): string {
   return normalizeDictionaryText(value);
 }

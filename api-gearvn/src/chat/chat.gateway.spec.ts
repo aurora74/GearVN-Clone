@@ -362,6 +362,60 @@ describe('ChatGateway', () => {
     );
   });
 
+  it('suppresses stale assistant unavailable fallback when a newer customer message is queued', async () => {
+    assistantService.invokeForChatMessage
+      .mockRejectedValueOnce(new Error('assistant_invocation_timeout'))
+      .mockResolvedValueOnce({
+        status: 'completed',
+        text: 'AI trả lời lượt 2',
+        metadata: { kind: 'assistant' },
+      });
+    chatService.getMessageWithUser.mockImplementation((id) =>
+      Promise.resolve({ _id: id?.toString?.() ?? String(id), text: 'saved' }),
+    );
+    chatService.createInternalMessage.mockResolvedValueOnce({
+      _id: { toString: () => 'assistant-2' },
+    });
+    const socket = createSocket({
+      data: { actor: { id: 'customer-1', role: UserRole.CUSTOMER } },
+    });
+
+    const first = gateway.handleMessage(
+      {
+        sender: UserRole.CUSTOMER as any,
+        text: 'tư vấn laptop gaming khoảng 25 triệu',
+        roomId: 'room-client-customer-1',
+      },
+      socket as any,
+    );
+    const second = gateway.handleMessage(
+      {
+        sender: UserRole.CUSTOMER as any,
+        text: 'ưu tiên pin và mỏng nhẹ',
+        roomId: 'room-client-customer-1',
+      },
+      socket as any,
+    );
+
+    await Promise.all([first, second]);
+
+    expect(assistantService.invokeForChatMessage).toHaveBeenCalledTimes(2);
+    expect(chatService.createInternalMessage).toHaveBeenCalledTimes(1);
+    expect(chatService.createInternalMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'AI trả lời lượt 2',
+        metadata: { kind: 'assistant' },
+      }),
+    );
+    expect(chatService.createInternalMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          error: { code: 'assistant_unavailable' },
+        }),
+      }),
+    );
+  });
+
   it('aborts the assistant invocation when the gateway timeout fires', async () => {
     jest.useFakeTimers();
     try {

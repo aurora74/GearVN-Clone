@@ -98,6 +98,253 @@ describe('supervisorNode deterministic bypass', () => {
       fallback_reason: 'memory_recall',
     });
   });
+
+  it('routes more-options follow-ups with prior shopping context and no query echo', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'có máy khác nữa không',
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content: 'customer: tư vấn laptop 30 triệu học Machine Learning',
+            },
+          ],
+        },
+      },
+      {
+        configurable: {
+          classifier,
+        },
+      } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intents).toEqual([AssistantIntent.PRODUCT_ADVICE]);
+    expect(result.intentPlan).toMatchObject({
+      requestedMoreOptions: true,
+      contextualUserText: 'tư vấn laptop 30 triệu học Machine Learning',
+    });
+    expect(String(result.intentPlan?.contextualUserText)).not.toContain(
+      'có máy khác nữa không',
+    );
+  });
+
+  it('treats standalone stock wording as a stock constraint, not more-options', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'laptop RTX 4090 dưới 20 triệu còn hàng',
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.parsedEntities).toMatchObject({ stockRequired: true });
+    expect(result.parsedEntities?.requestedMoreOptions).toBeUndefined();
+    expect(result.intentPlan?.requestedMoreOptions).toBeUndefined();
+  });
+  it('keeps constraint follow-ups anchored to the last customer product category', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'dưới 18 triệu, nhẹ, pin tốt',
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content:
+                'customer: tư vấn laptop\nassistant: Mình cần thêm ngân sách.\nassistant: Gói hoà mạng Viettel không liên quan tới yêu cầu mua hàng.',
+            },
+          ],
+        },
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intentPlan).toMatchObject({
+      contextualUserText: 'tư vấn laptop dưới 18 triệu, nhẹ, pin tốt',
+    });
+    expect(result.parsedEntities).toMatchObject({ productCategory: 'laptop' });
+    expect(String(result.intentPlan?.contextualUserText)).not.toContain('Viettel');
+  });
+
+  it('keeps generic laptop advice broad for product clarification', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'mình cần tư vấn về laptop',
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intentPlan).toMatchObject({ broadNeed: true });
+  });
+
+  it('keeps slangy generic laptop advice broad for product clarification', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'tư vấn laptop cho tao đê',
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intentPlan).toMatchObject({ broadNeed: true });
+  });
+
+  it('keeps generic descriptor laptop advice broad for product clarification', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'tư vấn laptop phổ thông',
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intentPlan).toMatchObject({ broadNeed: true });
+  });
+  it('routes specific purpose laptop advice without broad clarification', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'mình cần tư vấn laptop xem phim giải trí',
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intents).toEqual([AssistantIntent.PRODUCT_ADVICE]);
+    expect(result.intentPlan).not.toMatchObject({ broadNeed: true });
+  });
+
+  it('merges more-options follow-up constraints with prior shopping context', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'có máy khác phục vụ CAD/kỹ thuật không',
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content: 'customer: tư vấn PC 30 triệu',
+            },
+          ],
+        },
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intentPlan).toMatchObject({
+      requestedMoreOptions: true,
+      contextualUserText: expect.stringContaining('tư vấn PC 30 triệu'),
+    });
+    expect(String(result.intentPlan?.contextualUserText)).toContain(
+      'CAD/kỹ thuật',
+    );
+  });
+
+  it('recovers product family from last recommendation ledger for aged-out terse follow-ups', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'ưu tiên hiệu năng hơn',
+        lastRecommendationLedger: [
+          {
+            rank: 1,
+            productId: 'pc-1',
+            name: 'PC Performance Alpha',
+            category: 'PC',
+            price: 30_000_000,
+            stock: 2,
+            specsSummary: 'CPU mạnh, GPU rời',
+            createdAt: new Date('2026-05-16T00:00:00.000Z'),
+          },
+        ],
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content:
+                'customer: có mẫu khác không\nassistant: Mình đã gửi thêm lựa chọn khác.',
+            },
+          ],
+        },
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.intents).toEqual([AssistantIntent.PRODUCT_ADVICE]);
+    expect(result.intentPlan).toMatchObject({
+      contextResolutionReason: 'shopping_constraint_continuation',
+    });
+    expect(String(result.intentPlan?.contextualUserText)).toContain('pc');
+    expect(String(result.intentPlan?.contextualUserText)).toContain(
+      'ưu tiên hiệu năng hơn',
+    );
+    expect(result.parsedEntities).toMatchObject({ productCategory: 'pc' });
+  });
+
+  it('routes courtesy after checkout context to general instead of checkout continuation', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'ok cảm ơn',
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content:
+                'customer: thanh toán giỏ hàng\nassistant: Mình đã chuẩn bị thông tin checkout.',
+            },
+          ],
+        },
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('general');
+    expect(result.intents).toEqual([AssistantIntent.UNSUPPORTED]);
+    expect(result.metadata).toMatchObject({ fallback_reason: 'courtesy' });
+  });
+
   it('routes ambiguous_multi_intent and action-sensitive prompts through classifier/supervisor/guardrail', async () => {
     const classifier = {
       classify: jest.fn().mockResolvedValue({
@@ -194,5 +441,44 @@ describe('supervisorNode deterministic bypass', () => {
     ]);
     expect(result.parsedEntities).toMatchObject({ cartAction: 'CART_ADD' });
     expect(result.metadata?.deterministic_bypass).not.toBe(true);
+  });
+
+  it('does not derive product category from prior assistant combo prose', async () => {
+    const classifier = {
+      classify: jest.fn().mockResolvedValue({
+        route: 'general',
+        confidence: 0.55,
+        intents: [AssistantIntent.UNSUPPORTED],
+        entities: {},
+      }),
+    };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: '30 triệu đổ xuống để học Machine Learning',
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content:
+                'Assistant: mình chia theo từng nhóm sản phẩm: Laptop, Storage để bạn ráp một bộ dùng đồng bộ',
+            },
+          ],
+        },
+      },
+      {
+        configurable: {
+          classifier,
+        },
+      } as any,
+    );
+
+    expect(classifier.classify).toHaveBeenCalledWith(
+      '30 triệu đổ xuống để học Machine Learning',
+    );
+    expect(result.activeSubgraph).toBe('general');
+    expect(result.parsedEntities?.productCategory).toBeUndefined();
+    expect(result.parsedEntities?.contextualUserText).toBeUndefined();
   });
 });

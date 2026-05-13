@@ -79,6 +79,35 @@ export type AssistantProductDetail = {
   specsSummary?: string;
 };
 
+export type AssistantProductConsultationMode =
+  | 'initial_advice'
+  | 'refinement'
+  | 'more_options'
+  | 'price_sort'
+  | 'combo_advice';
+
+export type AssistantRecommendationContinuityMetadata = {
+  mode: AssistantProductConsultationMode;
+  hasPriorRecommendations: boolean;
+  priorRecommendationProductIds: string[];
+  comparedProductIds: string[];
+  preferenceDelta?: string;
+};
+
+export type AssistantPriorRecommendationContext = {
+  rank?: number;
+  productId: string;
+  name: string;
+  slug?: string;
+  category?: string;
+  price?: number;
+  discountPrice?: number;
+  stock?: number;
+  reasons?: string[];
+  specs?: Record<string, unknown>;
+  specsSummary?: string;
+};
+
 export type AssistantRecommendationLedgerEntry = {
   rank: number;
   productId: string;
@@ -237,6 +266,12 @@ export type AssistantMessageMetadata = {
   responseMerge?: AssistantResponseMergeTrace | null;
   activeSubgraph?: AssistantSubgraphName;
   supervisorDecision?: SupervisorDecision;
+  consultationMode?: AssistantProductConsultationMode;
+  priorRecommendationProductIds?: string[];
+  comparedProductIds?: string[];
+  recommendationContinuity?: AssistantRecommendationContinuityMetadata;
+  llmComposeStatus?: 'skipped' | 'used' | 'fallback';
+  llmComposeFallbackReason?: string;
   trace?: AssistantToolCallTrace[];
 };
 

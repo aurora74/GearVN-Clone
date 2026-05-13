@@ -42,7 +42,7 @@ describe('MemoryExtractorService', () => {
     });
   });
 
-  it('filters low-confidence fields and redacts phone/address trace values', async () => {
+  it('filters low-confidence and assistant-derived fields while redacting phone traces', async () => {
     const model = {
       invoke: jest.fn().mockResolvedValue({
         content: JSON.stringify({
@@ -78,17 +78,19 @@ describe('MemoryExtractorService', () => {
     expect(result.update).toEqual({
       preferences: ['laptop học AI'],
       phone: '0912345678',
-      address: '1 Nguyễn Huệ, Quận 1, TP.HCM',
     });
     expect(result.update).not.toHaveProperty('budgetRange');
+    expect(result.update).not.toHaveProperty('address');
     expect(JSON.stringify(result.traceEvents)).not.toContain('0912345678');
     expect(JSON.stringify(result.traceEvents)).not.toContain(
       '1 Nguyễn Huệ, Quận 1, TP.HCM',
     );
     expect(result.traceEvents[0].memory_used).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: 'phone', redactedValue: '091****678' }),
-        expect.objectContaining({ label: 'address' }),
+        expect.objectContaining({
+          label: 'phone',
+          redactedValue: '091****678',
+        }),
       ]),
     );
   });

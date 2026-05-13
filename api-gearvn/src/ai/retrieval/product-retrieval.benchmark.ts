@@ -2,6 +2,8 @@ import { ProductRetriever } from './product-retriever';
 import {
   BenchmarkCase,
   ProductRetrievalConstraints,
+  ProductRetrievalPipelineMode,
+  ProductRetrievalResult,
   ProductSearchPayload,
   RerankedProductCandidate,
 } from './product-retrieval.types';
@@ -25,15 +27,48 @@ export type ProductBenchmarkQueryResult = {
   topK: BenchmarkTopKProduct[];
   metrics: Record<'Recall@10' | 'Precision@5' | 'MRR' | 'nDCG@10', number>;
   relevantFound: boolean;
+  clarified: boolean;
+  groupCoverage: number;
   failureReason?: string;
 };
 
+export type ProductRetrievalBenchmarkSummary = Record<
+  | 'Recall@10'
+  | 'Precision@5'
+  | 'MRR'
+  | 'nDCG@10'
+  | 'Failure Rate'
+  | 'Clarification Rate'
+  | 'Group Coverage',
+  number
+>;
+
 export type ProductRetrievalBenchmarkReport = {
-  summary: Record<
-    'Recall@10' | 'Precision@5' | 'MRR' | 'nDCG@10' | 'Failure Rate',
-    number
-  >;
+  summary: ProductRetrievalBenchmarkSummary;
   results: ProductBenchmarkQueryResult[];
+};
+
+export type ProductRetrievalComparisonReport = {
+  benchmarkReport: true;
+  baselineVersion: 'phase-09.2';
+  improvedVersion: 'phase-10';
+  rewriteModel: string;
+  baseline: ProductRetrievalBenchmarkReport;
+  improved: ProductRetrievalBenchmarkReport;
+  deltas: ProductRetrievalBenchmarkSummary;
+  relativeGate: {
+    passed: boolean;
+    checks: Record<
+      | 'recallAt10Improved'
+      | 'mrrImproved'
+      | 'ndcgAt10Improved'
+      | 'failureRateLower'
+      | 'keywordRecallNotRegressed',
+      boolean
+    >;
+  };
+  failures: Array<{ caseId: string; pipeline: ProductRetrievalPipelineMode; reason: string }>;
+  secretKeysLogged: false;
 };
 
 export function recallAtK(
@@ -108,17 +143,26 @@ export function failureRate(
   );
 }
 
+export function clarificationRate(
+  results: Array<{ clarified: boolean }>,
+): number {
+  if (results.length === 0) return 0;
+  return roundMetric(
+    results.filter((result) => result.clarified).length / results.length,
+  );
+}
 type ProductRetrievalBenchmarkOptions = {
   topK?: number;
   relevanceCorpus?: ProductSearchPayload[];
+  pipeline?: ProductRetrievalPipelineMode;
+  rewriteModel?: string;
 };
-
 type BenchmarkSearchOptions = {
   topK: number;
   filters?: ProductRetrievalConstraints;
   hardConstraints?: ProductRetrievalConstraints;
+  pipeline?: ProductRetrievalPipelineMode;
 };
-
 export async function runProductRetrievalBenchmark(
   retriever: ProductRetriever,
   cases: BenchmarkCase[] = productRetrievalBenchmarkCases,
@@ -130,13 +174,16 @@ export async function runProductRetrievalBenchmark(
   const relevantLists: Set<string>[] = [];
 
   for (const benchmarkCase of cases) {
-    const searchOptions: BenchmarkSearchOptions = { topK };
+    const searchOptions: BenchmarkSearchOptions = {
+      topK,
+      pipeline: options.pipeline,
+    };
     if (benchmarkCase.hardConstraints) {
       searchOptions.filters = benchmarkCase.hardConstraints;
       searchOptions.hardConstraints = benchmarkCase.hardConstraints;
     }
 
-    const retrieval = await retriever.search(
+    const retrieval: ProductRetrievalResult = await retriever.search(
       benchmarkCase.query,
       searchOptions,
     );
@@ -152,7 +199,15 @@ export async function runProductRetrievalBenchmark(
       MRR: reciprocalRank(rankedIds, relevantIds),
       'nDCG@10': ndcgAtK(rankedIds, relevantIds, 10),
     };
-    const relevantFound = metrics['Recall@10'] > 0;
+    const clarified = Boolean(retrieval.clarification?.needed);
+    const expectedClarification = benchmarkCase.expectedClarification === true;
+    const relevantFound = expectedClarification
+      ? clarified
+      : metrics['Recall@10'] > 0;
+    const groupCoverage = retrieval.groupCoverage?.coverageRate ?? 0;
+    const failureReason = expectedClarification
+      ? 'Expected clarification was not produced'
+      : `No relevant product matched expected categories: ${benchmarkCase.expectedCategories.join(', ')}`;
 
     rankedLists.push(rankedIds);
     relevantLists.push(relevantIds);
@@ -163,10 +218,12 @@ export async function runProductRetrievalBenchmark(
       topK: ranked.map(toTopKProduct),
       metrics,
       relevantFound,
+      clarified,
+      groupCoverage,
       ...(relevantFound
         ? {}
         : {
-            failureReason: `No relevant product matched expected categories: ${benchmarkCase.expectedCategories.join(', ')}`,
+            failureReason,
           }),
     });
   }
@@ -182,9 +239,113 @@ export async function runProductRetrievalBenchmark(
       MRR: meanReciprocalRank(rankedLists, relevantLists),
       'nDCG@10': average(results.map((result) => result.metrics['nDCG@10'])),
       'Failure Rate': failureRate(results),
+      'Clarification Rate': clarificationRate(results),
+      'Group Coverage': average(results.map((result) => result.groupCoverage)),
     },
     results,
   };
+}
+
+export async function runProductRetrievalComparison(
+  retriever: ProductRetriever,
+  cases: BenchmarkCase[] = productRetrievalBenchmarkCases,
+  options: ProductRetrievalBenchmarkOptions = {},
+): Promise<ProductRetrievalComparisonReport> {
+  const baseline = await runProductRetrievalBenchmark(retriever, cases, {
+    ...options,
+    pipeline: 'phase-09.2-baseline',
+  });
+  const improved = await runProductRetrievalBenchmark(retriever, cases, {
+    ...options,
+    pipeline: 'phase-10-improved',
+  });
+  const deltas = buildSummaryDeltas(baseline.summary, improved.summary);
+  const relativeGate = buildRelativeGate(baseline, improved);
+
+  return {
+    benchmarkReport: true,
+    baselineVersion: 'phase-09.2',
+    improvedVersion: 'phase-10',
+    rewriteModel: options.rewriteModel ?? 'deepseek-v4-pro',
+    baseline,
+    improved,
+    deltas,
+    relativeGate,
+    failures: collectFailures(baseline, improved),
+    secretKeysLogged: false,
+  };
+}
+function buildSummaryDeltas(
+  baseline: ProductRetrievalBenchmarkSummary,
+  improved: ProductRetrievalBenchmarkSummary,
+): ProductRetrievalBenchmarkSummary {
+  return {
+    'Recall@10': roundMetric(improved['Recall@10'] - baseline['Recall@10']),
+    'Precision@5': roundMetric(improved['Precision@5'] - baseline['Precision@5']),
+    MRR: roundMetric(improved.MRR - baseline.MRR),
+    'nDCG@10': roundMetric(improved['nDCG@10'] - baseline['nDCG@10']),
+    'Failure Rate': roundMetric(
+      improved['Failure Rate'] - baseline['Failure Rate'],
+    ),
+    'Clarification Rate': roundMetric(
+      improved['Clarification Rate'] - baseline['Clarification Rate'],
+    ),
+    'Group Coverage': roundMetric(
+      improved['Group Coverage'] - baseline['Group Coverage'],
+    ),
+  };
+}
+
+function buildRelativeGate(
+  baseline: ProductRetrievalBenchmarkReport,
+  improved: ProductRetrievalBenchmarkReport,
+): ProductRetrievalComparisonReport['relativeGate'] {
+  const checks = {
+    recallAt10Improved: improved.summary['Recall@10'] > baseline.summary['Recall@10'],
+    mrrImproved: improved.summary.MRR > baseline.summary.MRR,
+    ndcgAt10Improved: improved.summary['nDCG@10'] > baseline.summary['nDCG@10'],
+    failureRateLower:
+      improved.summary['Failure Rate'] < baseline.summary['Failure Rate'],
+    keywordRecallNotRegressed:
+      groupMetric(improved, 'keyword', 'Recall@10') >=
+      groupMetric(baseline, 'keyword', 'Recall@10'),
+  };
+
+  return {
+    checks,
+    passed: Object.values(checks).every(Boolean),
+  };
+}
+
+function groupMetric(
+  report: ProductRetrievalBenchmarkReport,
+  group: BenchmarkCase['group'],
+  metric: keyof ProductBenchmarkQueryResult['metrics'],
+): number {
+  const results = report.results.filter((result) => result.group === group);
+  return average(results.map((result) => result.metrics[metric]));
+}
+
+function collectFailures(
+  baseline: ProductRetrievalBenchmarkReport,
+  improved: ProductRetrievalBenchmarkReport,
+): ProductRetrievalComparisonReport['failures'] {
+  return [
+    ...baseline.results.map((result) => ({
+      result,
+      pipeline: 'phase-09.2-baseline' as const,
+    })),
+    ...improved.results.map((result) => ({
+      result,
+      pipeline: 'phase-10-improved' as const,
+    })),
+  ]
+    .filter(({ result }) => !result.relevantFound)
+    .map(({ result, pipeline }) => ({
+      caseId: result.caseId,
+      pipeline,
+      reason: result.failureReason ?? 'No relevant product found',
+    }));
 }
 
 function relevantSetForCase(

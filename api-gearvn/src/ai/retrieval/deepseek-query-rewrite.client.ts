@@ -15,6 +15,7 @@ export type DeepSeekRewriteMessage = {
 export type DeepSeekRewriteInput = {
   messages: DeepSeekRewriteMessage[];
   signal?: AbortSignal;
+  timeoutMs?: number;
 };
 
 type DeepSeekChatCompletionResponse = {
@@ -54,7 +55,7 @@ export class DeepSeekQueryRewriteClient {
               messages: input.messages,
             }),
           },
-          this.config.deepSeek.timeoutMs,
+          input.timeoutMs ?? this.config.deepSeek.timeoutMs,
           input.signal,
         );
 
@@ -127,8 +128,16 @@ async function fetchWithTimeout(
   upstreamSignal?: AbortSignal,
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const abortFromUpstream = () => controller.abort();
+  let localTimeoutFired = false;
+  let upstreamAborted = upstreamSignal?.aborted === true;
+  const timeout = setTimeout(() => {
+    localTimeoutFired = true;
+    controller.abort();
+  }, timeoutMs);
+  const abortFromUpstream = () => {
+    upstreamAborted = true;
+    controller.abort();
+  };
 
   if (upstreamSignal?.aborted) {
     controller.abort();
@@ -142,6 +151,12 @@ async function fetchWithTimeout(
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
+      if (upstreamAborted || upstreamSignal?.aborted) {
+        throw new Error('DeepSeek rewrite request aborted');
+      }
+      if (!localTimeoutFired) {
+        throw error;
+      }
       throw new Error('DeepSeek rewrite request timed out');
     }
     throw error;

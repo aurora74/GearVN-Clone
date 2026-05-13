@@ -4,6 +4,8 @@ import {
   AssistantIntent,
   AssistantMemoryReference,
   AssistantMode,
+  AssistantProductCard,
+  AssistantRecommendationLedgerEntry,
   AssistantSubgraphName,
   SupervisorDecision,
 } from '../assistant.types';
@@ -21,6 +23,7 @@ import {
   extractRecommendationReference as extractRankRecommendationReference,
   isOrdinalOnlyReference,
 } from '../resolvers/recommendation-reference.util';
+import { detectProductFamilyFromText } from '../../retrieval/product-family-taxonomy';
 
 type SupervisorClassifier = {
   classify(text: string): Promise<unknown>;
@@ -43,25 +46,10 @@ type SupervisorConfig = {
 type ConversationContext = {
   contextualUserText?: string;
   productCategory?: string;
+  requestedMoreOptions?: boolean;
   reason?: string;
 };
 const SUPERVISOR_MODEL_TIMEOUT_MS = 12_000;
-
-const PRODUCT_CATEGORY_MATCHERS: Array<{ category: string; regex: RegExp }> = [
-  { category: 'laptop', regex: /\blaptop\b/g },
-  { category: 'pc', regex: /\bpc\b|may tinh/g },
-  { category: 'màn hình', regex: /man hinh|monitor/g },
-  { category: 'bàn phím', regex: /ban phim|keyboard/g },
-  { category: 'chuột', regex: /chuot|mouse/g },
-  { category: 'tai nghe', regex: /tai nghe|headphone|headset/g },
-  { category: 'ssd', regex: /\bssd\b/g },
-  { category: 'ram', regex: /\bram\b/g },
-  { category: 'cpu', regex: /\bcpu\b/g },
-  { category: 'vga', regex: /\bvga\b|card do hoa/g },
-];
-const CONVERSATION_CATEGORY_MATCHERS = PRODUCT_CATEGORY_MATCHERS.filter(
-  (matcher) => !['ssd', 'ram', 'cpu', 'vga'].includes(matcher.category),
-);
 
 const AMBIGUOUS_CART_PRODUCT_FAMILY_TERMS = [
   'acer',
@@ -121,6 +109,17 @@ export async function supervisorNode(
     });
   }
 
+  if (isCourtesyOnly(state.userText ?? '')) {
+    return supervisorUpdate(state, {
+      route: 'general',
+      confidence: 0.96,
+      intents: [AssistantIntent.UNSUPPORTED],
+      entities: {},
+      memoryRefs: [],
+      fallbackReason: 'courtesy',
+      modelName,
+    });
+  }
   const deterministicBypass = highConfidenceDeterministicBypassDecision(
     supervisorText,
     modelName,
@@ -866,9 +865,10 @@ function extractCommerceEntities(
     if (productName) entities.productName = productName;
   }
 
-  const wantsCheckoutRedirect = /thanh toan|checkout|dat hang|tao don|len don|chot don|mua hang/.test(
-    normalizedText,
-  );
+  const wantsCheckoutRedirect =
+    /thanh toan|checkout|dat hang|tao don|len don|chot don|mua hang/.test(
+      normalizedText,
+    );
   const wantsVoucher = /voucher|coupon|ma giam gia/.test(normalizedText);
   if (wantsCheckoutRedirect) {
     entities.checkoutAction = 'CHECKOUT_REDIRECT';
@@ -922,7 +922,10 @@ function extractCheckoutFieldsFromText(
     /^\s*(.+?)(?:,|\s+-\s+)?\s*(?:số điện thoại|so dien thoai|sdt|phone|địa chỉ|dia chi|address)\b/iu,
   );
   const normalizedName = nameMatch?.[1]
-    ?.replace(/^(?:tên|ten|mình tên|minh ten|tôi tên|toi ten|em tên|em ten)\s+/iu, '')
+    ?.replace(
+      /^(?:tên|ten|mình tên|minh ten|tôi tên|toi ten|em tên|em ten)\s+/iu,
+      '',
+    )
     .trim();
   const commaContact = extractPhoneCenteredContactFields(text, phoneMatch);
 
@@ -933,7 +936,12 @@ function extractCheckoutFieldsFromText(
     ...(commaContact.address ? { address: commaContact.address } : {}),
     ...(address ? { address } : {}),
     ...(!address && /dia chi|address/.test(normalizedText)
-      ? { address: text.split(/địa chỉ|dia chi|address/iu).pop()?.trim() }
+      ? {
+          address: text
+            .split(/địa chỉ|dia chi|address/iu)
+            .pop()
+            ?.trim(),
+        }
       : {}),
   };
 }
@@ -945,9 +953,7 @@ function extractPhoneCenteredContactFields(
   if (!phoneMatch?.[0] || phoneMatch.index === undefined) return {};
 
   const beforePhone = text.slice(0, phoneMatch.index).trim();
-  const afterPhone = text
-    .slice(phoneMatch.index + phoneMatch[0].length)
-    .trim();
+  const afterPhone = text.slice(phoneMatch.index + phoneMatch[0].length).trim();
   const name = cleanContactSegment(beforePhone);
   const address = cleanContactSegment(afterPhone);
   const commaSeparated =
@@ -965,7 +971,10 @@ function extractPhoneCenteredContactFields(
 function cleanContactSegment(value: string): string | undefined {
   const cleaned = value
     .replace(/^[\s,;:-]+|[\s,;:-]+$/g, '')
-    .replace(/^(?:tên|ten|mình tên|minh ten|tôi tên|toi ten|em tên|em ten)\s*[:,-]?\s*/iu, '')
+    .replace(
+      /^(?:tên|ten|mình tên|minh ten|tôi tên|toi ten|em tên|em ten)\s*[:,-]?\s*/iu,
+      '',
+    )
     .replace(/^(?:địa chỉ|dia chi|address)\s*[:,-]?\s*/iu, '')
     .trim();
   return cleaned || undefined;
@@ -983,7 +992,7 @@ function isCompleteCheckoutFields(value: unknown): boolean {
   );
 }
 function isRequestedMoreOptions(normalizedText: string): boolean {
-  return /xem them|goi y them|de xuat them|them lua chon|them san pham|them mau|lua chon khac|mau khac|san pham khac|more options|doi sang|re hon|gia thap hon|con hang|co hang/.test(
+  return /xem them|goi y them|de xuat them|them lua chon|them san pham|them mau|lua chon khac|mau khac|san pham khac|co may khac nua khong|co mau khac|co san pham khac|may khac|mau khac|more options|doi sang|re hon|gia thap hon/.test(
     normalizedText,
   );
 }
@@ -1019,7 +1028,12 @@ function applyConversationContextEntities(
   entities: Record<string, unknown>,
   context: ConversationContext,
 ): Record<string, unknown> {
-  if (!context.contextualUserText && !context.productCategory && !context.reason) return entities;
+  if (
+    !context.contextualUserText &&
+    !context.productCategory &&
+    !context.reason
+  )
+    return entities;
 
   const checkout = isRecord(entities.checkout) ? entities.checkout : undefined;
   const hasCompleteCheckout = Boolean(
@@ -1037,6 +1051,7 @@ function applyConversationContextEntities(
           ...(hasCompleteCheckout ? { checkoutReviewAccepted: true } : {}),
         }
       : {}),
+    ...(context.requestedMoreOptions ? { requestedMoreOptions: true } : {}),
     ...(context.contextualUserText
       ? {
           contextualUserText: context.contextualUserText,
@@ -1070,29 +1085,44 @@ function buildConversationContext(
   if (productCategoryFromText(normalizedCurrent) && !productInfoFollowUp) {
     return {};
   }
+  const requestedMoreOptions = isRequestedMoreOptions(normalizedCurrent);
 
-  const continuationReason = looksLikeShoppingConstraintContinuation(
-    normalizedCurrent,
-  )
-    ? 'shopping_constraint_continuation'
-    : looksLikeAffirmativeContinuation(normalizedCurrent)
-      ? 'shopping_affirmation_continuation'
-      : productInfoFollowUp
-        ? 'shopping_product_info_continuation'
-        : null;
+  const continuationReason = requestedMoreOptions
+    ? 'shopping_more_options_continuation'
+    : looksLikeShoppingConstraintContinuation(normalizedCurrent)
+      ? 'shopping_constraint_continuation'
+      : looksLikeAffirmativeContinuation(normalizedCurrent)
+        ? 'shopping_affirmation_continuation'
+        : productInfoFollowUp
+          ? 'shopping_product_info_continuation'
+          : null;
   if (!continuationReason) return {};
 
-  const productCategory = extractLastDiscussedProductCategory(hotMessages);
+  const progressiveSummary = promptContextSection(state, 'progressiveSummary');
+  const productCategory =
+    extractLastDiscussedProductCategory(hotMessages) ??
+    extractProductCategoryFromRecommendationLedger(
+      state.lastRecommendationLedger ?? [],
+    ) ??
+    extractProductCategoryFromResponseCards(state.responses ?? []) ??
+    productCategoryFromText(normalizeCommerceText(progressiveSummary));
   if (!productCategory) return {};
 
-  const priorShoppingText = extractPriorCustomerShoppingText(
-    hotMessages,
-    currentText,
-  );
+  const priorShoppingText =
+    extractPriorCustomerShoppingText(hotMessages, currentText) ??
+    extractPriorShoppingTextFromSummary(progressiveSummary, productCategory);
+  const moreOptionsResidual = requestedMoreOptions
+    ? extractMoreOptionsResidualText(currentText)
+    : undefined;
   const combinedContextText =
     continuationReason === 'shopping_affirmation_continuation'
       ? (priorShoppingText ?? productCategory)
-      : [priorShoppingText, currentText].filter(Boolean).join(' ').trim();
+      : continuationReason === 'shopping_more_options_continuation'
+        ? [priorShoppingText ?? productCategory, moreOptionsResidual]
+            .filter(Boolean)
+            .join(' ')
+            .trim()
+        : [priorShoppingText, currentText].filter(Boolean).join(' ').trim();
   const contextualUserText = ensureProductCategoryContext(
     productCategory,
     combinedContextText,
@@ -1101,6 +1131,7 @@ function buildConversationContext(
   return {
     productCategory,
     contextualUserText,
+    requestedMoreOptions,
     reason: continuationReason,
   };
 }
@@ -1159,9 +1190,54 @@ function extractLastDiscussedProductCategory(
     if (category) return category;
   }
 
-  return latestProductCategoryFromText(
-    normalizeCommerceText(hotMessages),
-    CONVERSATION_CATEGORY_MATCHERS,
+  return undefined;
+}
+
+function extractProductCategoryFromRecommendationLedger(
+  ledger: AssistantRecommendationLedgerEntry[],
+): string | undefined {
+  for (const item of ledger) {
+    const category = productCategoryFromText(
+      normalizeCommerceText([item.category, item.name].filter(Boolean).join(' ')),
+    );
+    if (category) return category;
+  }
+  return undefined;
+}
+
+function extractProductCategoryFromResponseCards(
+  responses: ShoppingAssistantStateType['responses'],
+): string | undefined {
+  for (const response of responses ?? []) {
+    const cards = Array.isArray(response.metadata?.productCards)
+      ? (response.metadata.productCards as AssistantProductCard[])
+      : [];
+    for (const card of cards) {
+      const category = productCategoryFromText(
+        normalizeCommerceText(
+          [card.name, ...(card.reasons ?? []), JSON.stringify(card.specs ?? {})].join(
+            ' ',
+          ),
+        ),
+      );
+      if (category) return category;
+    }
+  }
+  return undefined;
+}
+
+function extractPriorShoppingTextFromSummary(
+  progressiveSummary: string,
+  productCategory: string,
+): string | undefined {
+  const lines = progressiveSummary
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return (
+    lines.find((line) =>
+      mentionsProductCategory(normalizeCommerceText(line)),
+    ) ?? (lines.length > 0 ? `${productCategory} ${lines.join(' ')}` : undefined)
   );
 }
 
@@ -1176,23 +1252,6 @@ function ensureProductCategoryContext(
     : `${productCategory} ${trimmed}`.trim();
 }
 
-function latestProductCategoryFromText(
-  normalizedText: string,
-  matchers: Array<{ category: string; regex: RegExp }>,
-): string | undefined {
-  let latest: { category: string; index: number } | undefined;
-  for (const matcher of matchers) {
-    matcher.regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = matcher.regex.exec(normalizedText)) !== null) {
-      if (!latest || match.index >= latest.index) {
-        latest = { category: matcher.category, index: match.index };
-      }
-    }
-  }
-  return latest?.category;
-}
-
 function mentionsProductCategory(normalizedText: string): boolean {
   return (
     Boolean(productCategoryFromText(normalizedText)) ||
@@ -1203,9 +1262,26 @@ function mentionsProductCategory(normalizedText: string): boolean {
 function looksLikeShoppingConstraintContinuation(
   normalizedText: string,
 ): boolean {
-  return /ngan sach|tam gia|duoi|toi da|khoang|trieu|gaming|game|hoc|machine learning|\bai\b|van phong|do hoa|render|lap trinh|code|creator|hieu nang|mong nhe|pin|man hinh|ram|ssd|cpu|gpu|rtx|gtx|ryzen|intel|uu tien|doi sang|re hon|gia thap hon|con hang|co hang|lua chon khac|khac|goi y them|de xuat them|them san pham|them mau|mau khac|san pham khac|sort|sap xep|gia tu|cao xuong thap|thap len cao|giam dan|tang dan/.test(
+  return /ngan sach|tam gia|duoi|toi da|khoang|trieu|gaming|game|hoc|machine learning|\bai\b|van phong|do hoa|render|lap trinh|code|creator|hieu nang|mong nhe|pin|man hinh|ram|ssd|cpu|gpu|rtx|gtx|ryzen|intel|uu tien|doi sang|re hon|gia thap hon|con hang|co hang|lua chon khac|khac|goi y them|de xuat them|them san pham|them mau|mau khac|san pham khac|sort|sap xep|gia tu|cao xuong thap|thap len cao|giam dan|tang dan|de|dung de|phuc vu|muc dich|lam/.test(
     normalizedText,
   );
+}
+
+function extractMoreOptionsResidualText(text: string): string | undefined {
+  const cleaned = text
+    .replace(
+      /\b(?:co|có)\s+(?:may|máy|mau|mẫu|san pham|sản phẩm|lua chon|lựa chọn)?\s*(?:khac|khác)\s*(?:nua|nữa)?\b/giu,
+      ' ',
+    )
+    .replace(
+      /\b(?:xem|goi y|gợi ý|de xuat|đề xuất|them|thêm)\s+(?:lua chon|lựa chọn|san pham|sản phẩm|mau|mẫu)?\s*(?:khac|khác|nua|nữa)?\b/giu,
+      ' ',
+    )
+    .replace(/\b(?:khong|không|ko|nua|nữa)\b/giu, ' ')
+    .replace(/[ ,.;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || undefined;
 }
 
 function looksLikeCheckoutContactDetails(normalizedText: string): boolean {
@@ -1242,16 +1318,13 @@ function isShoppingContinuation(reason?: string): boolean {
   return (
     reason === 'shopping_constraint_continuation' ||
     reason === 'shopping_affirmation_continuation' ||
-    reason === 'shopping_product_info_continuation'
+    reason === 'shopping_product_info_continuation' ||
+    reason === 'shopping_more_options_continuation'
   );
 }
 
 function productCategoryFromText(normalizedText: string): string | undefined {
-  for (const matcher of PRODUCT_CATEGORY_MATCHERS) {
-    matcher.regex.lastIndex = 0;
-    if (matcher.regex.test(normalizedText)) return matcher.category;
-  }
-  return undefined;
+  return detectProductFamilyFromText(normalizedText);
 }
 function normalizeCommerceText(text: string): string {
   return text
@@ -1286,9 +1359,8 @@ function isCheckoutRequest(normalizedText: string): boolean {
 
 function isSalesProductRequest(normalizedText: string): boolean {
   const mentionsProduct =
-    /laptop|\bpc\b|gearvn|san pham|may tinh|linh kien|ban phim|chuot|man hinh|tai nghe/.test(
-      normalizedText,
-    );
+    Boolean(productCategoryFromText(normalizedText)) ||
+    /gearvn|san pham|may tinh|linh kien/.test(normalizedText);
   const asksForShopping =
     /tu van|goi y|\bcan\b|can mua|nen mua|chon|mua|co .* nao|review|danh gia/.test(
       normalizedText,
@@ -1326,7 +1398,10 @@ function sanitizeSupervisorIntentsForText(
   entities: Record<string, unknown>,
 ): AssistantIntent[] {
   const normalizedText = normalizeCommerceText(userText);
-  if (isCheckoutContinuationOrRedirect(entities) && !isExplicitOrderLookupRequest(normalizedText)) {
+  if (
+    isCheckoutContinuationOrRedirect(entities) &&
+    !isExplicitOrderLookupRequest(normalizedText)
+  ) {
     const withoutLookup = intents.filter(
       (intent) => intent !== AssistantIntent.ORDER_LOOKUP,
     );
@@ -1364,7 +1439,8 @@ function reconcileCheckoutEntitiesForText(
   entities: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!isCheckoutContinuationOrRedirect(entities)) return entities;
-  if (isExplicitOrderLookupRequest(normalizeCommerceText(userText))) return entities;
+  if (isExplicitOrderLookupRequest(normalizeCommerceText(userText)))
+    return entities;
 
   return {
     ...entities,
@@ -1423,27 +1499,27 @@ function hasCompanionShoppingRequest(normalizedText: string): boolean {
 }
 
 function isBroadProductAdviceRequest(normalizedText: string): boolean {
-  const asksForAdvice = /tu van|goi y|\bcan\b|can mua|nen mua|chon/.test(
+  const asksForAdvice = /\b(tu van|goi y|can mua|can|nen mua|chon)\b/.test(
     normalizedText,
   );
-  const mentionsGenericProduct = /laptop|\bpc\b|may tinh|san pham/.test(
+  const mentionsGenericProduct = /\b(laptop|pc|may tinh|san pham)\b/.test(
     normalizedText,
   );
   if (!asksForAdvice || !mentionsGenericProduct) return false;
 
-  const hasBudget = /\d|trieu|ngan sach|tam gia|tam |duoi|khoang/.test(
-    normalizedText,
-  );
-  const hasUseCase =
-    /gaming|game|hoc|van phong|do hoa|render|lap trinh|code|ai|creator|thiet ke/.test(
-      normalizedText,
-    );
-  const hasSpec =
-    /rtx|gtx|ram|ssd|cpu|gpu|i[3579]|ryzen|oled|inch|man hinh|mong nhe|pin|tan nhiet/.test(
-      normalizedText,
-    );
+  return !specificProductAdviceResidual(normalizedText);
+}
 
-  return !hasBudget && !hasUseCase && !hasSpec;
+function specificProductAdviceResidual(normalizedText: string): string {
+  return normalizedText
+    .replace(
+      /\b(tu van|goi y|can mua|can|nen mua|chon|ve|cho|minh|toi|em|shop|nhe|nha|giup|voi|tao|tui|to|ban|co|a|anh|chi|de)\b/g,
+      ' ',
+    )
+    .replace(/\b(laptop|pc|may tinh|san pham|mau|may|bo)\b/g, ' ')
+    .replace(/\b(pho thong|co ban|basic|entry level)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function isAmbiguousCartProductReference(normalizedText: string): boolean {
@@ -1513,7 +1589,11 @@ function extractProductNameForCart(text: string): string | null {
   if (isOrdinalOnlyReference(productName)) return null;
   const normalizedProductName = normalizeCommerceText(productName);
   if (isOrdinalOnlyReference(normalizedProductName)) return null;
-  if (/^(?:vao\s+)?(?:gio|gio hang|cart)(?:\s+(?:cho|minh|toi|em|giup|nhe|nha|ban))*$/.test(normalizedProductName)) {
+  if (
+    /^(?:vao\s+)?(?:gio|gio hang|cart)(?:\s+(?:cho|minh|toi|em|giup|nhe|nha|ban))*$/.test(
+      normalizedProductName,
+    )
+  ) {
     return null;
   }
   return productName;
@@ -1604,6 +1684,12 @@ function isHighConfidenceGreetingRequest(normalizedText: string): boolean {
   );
 }
 
+function isCourtesyOnly(text: string): boolean {
+  const normalized = normalizeCommerceText(text);
+  return /^(cam on|cam on nhe|ok cam on|ok cam on nhe|thanks|thank you|ok thanks|ok|duoc roi|tam biet|bye)$/.test(
+    normalized,
+  );
+}
 function isGreetingOnly(text: string): boolean {
   const normalized = text
     .toLowerCase()

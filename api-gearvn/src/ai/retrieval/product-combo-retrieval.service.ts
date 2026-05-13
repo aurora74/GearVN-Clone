@@ -9,6 +9,7 @@ import {
   ProductRetrievalResult,
 } from './product-retrieval.types';
 import { ProductRetriever } from './product-retriever';
+import { mergeRetrievalConstraints } from './product-reranker';
 
 type ComboRetrieverSearchOptions = {
   topK: number;
@@ -22,6 +23,7 @@ export class ProductComboRetrievalService {
   async searchCombo(input: {
     query: string;
     groups: ProductIntentComboGroup[];
+    constraints?: ProductRetrievalConstraints;
     retriever: Pick<ProductRetriever, 'search'>;
     perGroupTopK?: number;
     signal?: AbortSignal;
@@ -36,9 +38,9 @@ export class ProductComboRetrievalService {
 
     for (const group of expectedGroups) {
       const query = buildGroupQuery(input.query, group);
-      const constraints: ProductRetrievalConstraints = {
-        categoryHints: [group],
-      };
+      const constraints = mergeRetrievalConstraints(input.constraints ?? {}, {
+        categoryHints: groupCategoryHints(group),
+      });
       const searchOptions: ComboRetrieverSearchOptions = {
         topK: perGroupTopK,
         constraints,
@@ -82,13 +84,36 @@ export class ProductComboRetrievalService {
   }
 }
 
+const COMBO_GROUP_CATEGORY_HINTS: Record<ProductIntentComboGroup, string[]> = {
+  laptop: ['laptop', 'notebook', 'may tinh xach tay'],
+  monitor: ['monitor', 'man hinh', 'man hinh may tinh'],
+  keyboard: ['keyboard', 'ban phim', 'ban phim co'],
+  mouse: ['mouse', 'chuot', 'chuot gaming'],
+  webcam: ['webcam', 'camera', 'camera hoi nghi'],
+  'usb-c-hub': ['usb-c hub', 'usb c hub', 'hub chuyen doi', 'cong chuyen'],
+  headset: ['headset', 'tai nghe', 'tai nghe gaming'],
+  microphone: ['microphone', 'micro', 'micro thu am'],
+  lighting: ['lighting', 'den led', 'den livestream'],
+  storage: ['storage', 'ssd', 'o cung', 'o cung di dong'],
+  chair: ['chair', 'ghe', 'ghe gaming', 'ghe cong thai hoc'],
+  accessory: ['accessory', 'phu kien', 'phu kien may tinh'],
+  pc: ['pc', 'desktop', 'may tinh ban', 'may tinh de ban'],
+};
+
 function clampPerGroupTopK(value: number | undefined): number {
   const normalized = Math.floor(value ?? 3);
   return Math.min(3, Math.max(1, Number.isFinite(normalized) ? normalized : 3));
 }
 
-function buildGroupQuery(query: string, group: ProductIntentComboGroup): string {
+function buildGroupQuery(
+  query: string,
+  group: ProductIntentComboGroup,
+): string {
   return `${query} ${group}`.replace(/\s+/g, ' ').trim();
+}
+
+function groupCategoryHints(group: ProductIntentComboGroup): string[] {
+  return COMBO_GROUP_CATEGORY_HINTS[group] ?? [group];
 }
 
 function labelForGroup(group: ProductIntentComboGroup): string {
@@ -98,6 +123,8 @@ function labelForGroup(group: ProductIntentComboGroup): string {
     .join(' ');
 }
 
-function uniqueGroups(groups: ProductIntentComboGroup[]): ProductIntentComboGroup[] {
+function uniqueGroups(
+  groups: ProductIntentComboGroup[],
+): ProductIntentComboGroup[] {
   return Array.from(new Set(groups.filter(Boolean)));
 }

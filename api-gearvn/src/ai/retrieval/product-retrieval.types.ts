@@ -45,6 +45,7 @@ export type ProductRetrievalConstraints = ProductRetrievalFilter & {
     ramGb?: number;
     ssdGb?: number;
     gpu?: string;
+    displayResolution?: string;
     refreshRateHz?: number;
     wireless?: boolean;
   };
@@ -120,6 +121,7 @@ export type ProductRetrievalRewriteMetadata = {
     rewrite_retry_count: number;
     rewrite_latency_ms: number;
     rewritten_query: string;
+    rewrite_skipped_reason?: string;
   };
 };
 
@@ -173,9 +175,13 @@ export type BenchmarkCase = {
     | 'ambiguous';
   expectedCategories: string[];
   expectedProductIds?: string[];
+  expectedIntents?: string[];
+  expectedSpecs?: Record<string, unknown>;
+  expectedComboGroups?: string[];
+  expectedClarification?: boolean;
+  expectedFailureNotes?: string[];
   hardConstraints?: ProductRetrievalConstraints;
 };
-
 export type RetrievalBenchmarkResult = {
   query: string;
   expectedProductIds: string[];

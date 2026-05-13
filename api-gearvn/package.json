@@ -8,6 +8,13 @@
   "scripts": {
     "build": "nest build",
     "seed:admin": "node scripts/seed-admin.js",
+    "profile:crawl-products": "ts-node -r tsconfig-paths/register scripts/profile-crawl-products.ts",
+    "import:crawl-products": "ts-node -r tsconfig-paths/register scripts/import-crawl-products.ts",
+    "index:products:qdrant": "ts-node -r tsconfig-paths/register scripts/index-products-qdrant.ts",
+    "benchmark:product-retrieval": "ts-node -r tsconfig-paths/register scripts/benchmark-product-retrieval.ts",
+    "benchmark:phase10-retrieval": "ts-node -r tsconfig-paths/register scripts/benchmark-product-retrieval.ts",
+    "assistant:smoke:live": "ts-node -r tsconfig-paths/register src/ai/assistant/scripts/live-agent-smoke.ts",
+    "seed:verified-chat-customer": "ts-node -r tsconfig-paths/register scripts/seed-verified-chat-customer.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -21,6 +28,10 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@arizeai/phoenix-otel": "^1.0.1",
+    "@langchain/core": "1.1.45",
+    "@langchain/langgraph": "1.3.0",
+    "@langchain/openrouter": "0.2.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -32,11 +43,13 @@
     "@nestjs/serve-static": "^5.0.3",
     "@nestjs/swagger": "^11.2.0",
     "@nestjs/websockets": "^11.1.6",
+    "@qdrant/js-client-rest": "1.17.0",
     "argon2": "^0.43.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "cloudinary": "^2.7.0",
     "handlebars": "^4.7.8",
+    "langchain": "1.4.0",
     "mongoose": "^8.17.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
@@ -46,7 +59,9 @@
     "resend": "^6.0.3",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.1",
-    "streamifier": "^0.1.1"
+    "streamifier": "^0.1.1",
+    "zod": "4.4.3",
+    "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

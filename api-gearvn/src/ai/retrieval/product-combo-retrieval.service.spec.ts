@@ -65,7 +65,7 @@ describe('ProductComboRetrievalService', () => {
       expect.objectContaining({
         topK: 3,
         constraints: expect.objectContaining({
-          categoryHints: ['monitor'],
+          categoryHints: expect.arrayContaining(['monitor', 'man hinh']),
         }),
         pipeline: 'phase-09.2-baseline',
       }),
@@ -96,6 +96,117 @@ describe('ProductComboRetrievalService', () => {
     expect(retriever.search).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ topK: 1 }),
+    );
+  });
+
+  it('merges caller constraints with per-group Vietnamese category hints', async () => {
+    const retriever = {
+      search: jest.fn().mockResolvedValue(buildResult('microphone')),
+    };
+
+    const service = new ProductComboRetrievalService();
+    await service.searchCombo({
+      query: 'goc livestream',
+      groups: ['microphone', 'lighting', 'usb-c-hub', 'accessory'],
+      constraints: {
+        maxPrice: 2_000_000,
+        inStockOnly: true,
+        categoryHints: ['phu kien'],
+        requiredSpecs: { wireless: true },
+      },
+      retriever,
+      perGroupTopK: 2,
+    });
+
+    expect(retriever.search).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('microphone'),
+      expect.objectContaining({
+        constraints: expect.objectContaining({
+          maxPrice: 2_000_000,
+          inStockOnly: true,
+          requiredSpecs: { wireless: true },
+          categoryHints: expect.arrayContaining([
+            'phu kien',
+            'microphone',
+            'micro',
+            'micro thu am',
+          ]),
+        }),
+      }),
+    );
+    expect(retriever.search).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('lighting'),
+      expect.objectContaining({
+        constraints: expect.objectContaining({
+          categoryHints: expect.arrayContaining([
+            'phu kien',
+            'lighting',
+            'den led',
+            'den livestream',
+          ]),
+        }),
+      }),
+    );
+    expect(retriever.search).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('usb-c-hub'),
+      expect.objectContaining({
+        constraints: expect.objectContaining({
+          categoryHints: expect.arrayContaining([
+            'phu kien',
+            'usb-c hub',
+            'hub chuyen doi',
+            'cong chuyen',
+          ]),
+        }),
+      }),
+    );
+    expect(retriever.search).toHaveBeenNthCalledWith(
+      4,
+      expect.stringContaining('accessory'),
+      expect.objectContaining({
+        constraints: expect.objectContaining({
+          categoryHints: expect.arrayContaining([
+            'phu kien',
+            'accessory',
+            'phu kien may tinh',
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('uses realistic aliases for storage and chair combo groups', async () => {
+    const retriever = {
+      search: jest.fn().mockResolvedValue(buildResult('chair')),
+    };
+
+    const service = new ProductComboRetrievalService();
+    await service.searchCombo({
+      query: 'setup creator',
+      groups: ['storage', 'chair'],
+      retriever,
+    });
+
+    expect(retriever.search).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      expect.objectContaining({
+        constraints: expect.objectContaining({
+          categoryHints: expect.arrayContaining(['storage', 'ssd', 'o cung']),
+        }),
+      }),
+    );
+    expect(retriever.search).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.objectContaining({
+        constraints: expect.objectContaining({
+          categoryHints: expect.arrayContaining(['chair', 'ghe', 'ghe gaming']),
+        }),
+      }),
     );
   });
 });

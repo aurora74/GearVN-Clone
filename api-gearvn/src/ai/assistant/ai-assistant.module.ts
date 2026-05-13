@@ -6,7 +6,10 @@ import { Order, OrderSchema } from '../../order/order.schema';
 import { Voucher, VoucherSchema } from '../../voucher/voucher.schema';
 import { SupportTicketModule } from '../../support-ticket/support-ticket.module';
 import { OpenRouterBgeM3Client } from '../embeddings/openrouter-bge-m3.client';
+import { DeepSeekQueryRewriteClient } from '../retrieval/deepseek-query-rewrite.client';
+import { ProductComboRetrievalService } from '../retrieval/product-combo-retrieval.service';
 import { ProductLexicalSearchService } from '../retrieval/product-lexical-search.service';
+import { ProductQueryRewriteService } from '../retrieval/product-query-rewrite.service';
 import { ProductRetriever } from '../retrieval/product-retriever';
 import { QdrantProductsClient } from '../vector/qdrant-products.client';
 import {
@@ -61,17 +64,31 @@ import { ProductContextResolver } from './resolvers/product-context.resolver';
     OpenRouterBgeM3Client,
     QdrantProductsClient,
     ProductLexicalSearchService,
+    DeepSeekQueryRewriteClient,
+    ProductQueryRewriteService,
+    ProductComboRetrievalService,
     {
       provide: ProductRetriever,
       useFactory: (
         embedder: OpenRouterBgeM3Client,
         vector: QdrantProductsClient,
         lexical: ProductLexicalSearchService,
-      ) => new ProductRetriever(embedder, vector, lexical),
+        queryRewrite: ProductQueryRewriteService,
+        comboRetrieval: ProductComboRetrievalService,
+      ) =>
+        new ProductRetriever(
+          embedder,
+          vector,
+          lexical,
+          queryRewrite,
+          comboRetrieval,
+        ),
       inject: [
         OpenRouterBgeM3Client,
         QdrantProductsClient,
         ProductLexicalSearchService,
+        ProductQueryRewriteService,
+        ProductComboRetrievalService,
       ],
     },
     {

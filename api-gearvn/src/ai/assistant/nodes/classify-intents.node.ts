@@ -261,7 +261,7 @@ function extractCommerceEntities(text: string): Record<string, unknown> {
   }
 
   if (
-    /xem them|xem thêm|them lua chon|thêm lựa chọn|lua chon khac|lựa chọn khác|more options/.test(
+    /xem them|xem thêm|them lua chon|thêm lựa chọn|lua chon khac|lựa chọn khác|có máy khác nữa không|co may khac nua khong|máy khác|may khac|mẫu khác|mau khac|sản phẩm khác|san pham khac|more options/.test(
       normalized,
     )
   ) {
@@ -327,28 +327,41 @@ function isGreetingOnly(text: string): boolean {
 }
 
 function isBroadProductAdviceRequest(text: string): boolean {
-  const asksForAdvice =
-    /tu van|tư vấn|goi y|gợi ý|can mua|cần mua|nen mua|nên mua|chon|chọn/.test(
-      text,
-    );
-  const mentionsGenericProduct =
-    /laptop|pc|may tinh|máy tính|san pham|sản phẩm/.test(text);
+  const normalized = normalizeProductAdviceText(text);
+  const asksForAdvice = /\b(tu van|goi y|can mua|can|nen mua|chon)\b/.test(
+    normalized,
+  );
+  const mentionsGenericProduct = /\b(laptop|pc|may tinh|san pham)\b/.test(
+    normalized,
+  );
   if (!asksForAdvice || !mentionsGenericProduct) return false;
 
-  const hasBudget =
-    /\d|trieu|triệu|ngan sach|ngân sách|tam gia|tầm giá|tam|tầm|duoi|dưới|khoang|khoảng/.test(
-      text,
-    );
-  const hasUseCase =
-    /gaming|game|hoc|học|van phong|văn phòng|do hoa|đồ họa|render|lap trinh|lập trình|code|ai|creator|thiet ke|thiết kế/.test(
-      text,
-    );
-  const hasSpec =
-    /rtx|gtx|ram|ssd|cpu|gpu|i[3579]|ryzen|oled|inch|man hinh|màn hình|mong nhe|mỏng nhẹ|pin|tan nhiet|tản nhiệt/.test(
-      text,
-    );
+  return !specificProductAdviceResidual(normalized);
+}
 
-  return !hasBudget && !hasUseCase && !hasSpec;
+function normalizeProductAdviceText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\blaptp\b/g, 'laptop')
+    .replace(/\blap\s+tp\b/g, 'laptop')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function specificProductAdviceResidual(normalized: string): string {
+  return normalized
+    .replace(
+      /\b(tu van|goi y|can mua|can|nen mua|chon|ve|cho|minh|toi|em|shop|nhe|nha|giup|voi|tao|tui|to|ban|co|a|anh|chi|de)\b/g,
+      ' ',
+    )
+    .replace(/\b(laptop|pc|may tinh|san pham|mau|may|bo)\b/g, ' ')
+    .replace(/\b(pho thong|co ban|basic|entry level)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function unsupportedClassification(reason: string): ClassifyIntentsResult {

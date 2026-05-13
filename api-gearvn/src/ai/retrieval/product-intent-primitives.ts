@@ -8,6 +8,7 @@ export const TEACHER_INTENT_PRIMITIVE_IDS = [
   'GIFT',
   'STUDENT',
   'CONTENT_CREATION',
+  'ENGINEERING_CAD',
   'EYE_COMFORT',
 ] as const;
 
@@ -65,7 +66,13 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
     ],
     productGroups: ['laptop', 'pc', 'monitor', 'keyboard', 'mouse', 'headset'],
     hardCriteria: {},
-    softSignals: ['fps cao', 'tản nhiệt', 'tan nhiet', 'hiệu năng', 'hieu nang'],
+    softSignals: [
+      'fps cao',
+      'tản nhiệt',
+      'tan nhiet',
+      'hiệu năng',
+      'hieu nang',
+    ],
     expandedKeywords: [
       'gaming',
       'RTX',
@@ -112,7 +119,7 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
       'sinh viên IT',
       'machine learning',
     ],
-    comboGroups: ['laptop', 'storage'],
+    comboGroups: [],
   },
   WORK_FROM_HOME: {
     id: 'WORK_FROM_HOME',
@@ -127,9 +134,22 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
       'bộ làm việc tại nhà',
       'bo lam viec tai nha',
     ],
-    productGroups: ['laptop', 'monitor', 'keyboard', 'mouse', 'webcam', 'usb-c-hub'],
+    productGroups: [
+      'laptop',
+      'monitor',
+      'keyboard',
+      'mouse',
+      'webcam',
+      'usb-c-hub',
+    ],
     hardCriteria: {},
-    softSignals: ['ergonomic', 'văn phòng', 'van phong', 'video call', 'đa nhiệm'],
+    softSignals: [
+      'ergonomic',
+      'văn phòng',
+      'van phong',
+      'video call',
+      'đa nhiệm',
+    ],
     expandedKeywords: [
       'work from home',
       'văn phòng',
@@ -172,7 +192,14 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
   },
   STUDENT: {
     id: 'STUDENT',
-    terms: ['sinh viên', 'sinh vien', 'student', 'học tập', 'hoc tap', 'đi học'],
+    terms: [
+      'sinh viên',
+      'sinh vien',
+      'student',
+      'học tập',
+      'hoc tap',
+      'đi học',
+    ],
     productGroups: ['laptop'],
     hardCriteria: {
       categoryHints: ['laptop'],
@@ -220,6 +247,27 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
     ],
     comboGroups: ['laptop', 'monitor', 'storage'],
   },
+  ENGINEERING_CAD: {
+    id: 'ENGINEERING_CAD',
+    terms: ['cad', 'autocad', 'kỹ thuật', 'ky thuat', 'solidworks', 'revit'],
+    productGroups: ['pc', 'laptop'],
+    hardCriteria: {
+      requiredSpecs: {
+        ramGb: 16,
+        gpu: 'nvidia',
+      },
+    },
+    softSignals: ['workstation', 'render', 'ổn định', 'on dinh'],
+    expandedKeywords: [
+      'CAD',
+      'AutoCAD',
+      'workstation',
+      'RTX',
+      'NVIDIA',
+      'RAM 16GB',
+    ],
+    comboGroups: [],
+  },
   EYE_COMFORT: {
     id: 'EYE_COMFORT',
     terms: [
@@ -266,18 +314,37 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
   },
   PORTABLE_WORK: {
     id: 'PORTABLE_WORK',
-    terms: ['mỏng nhẹ', 'mong nhe', 'di động', 'di dong', 'portable', 'ultrabook'],
+    terms: [
+      'mỏng nhẹ',
+      'mong nhe',
+      'di động',
+      'di dong',
+      'portable',
+      'ultrabook',
+    ],
     productGroups: ['laptop'],
     hardCriteria: {
       categoryHints: ['laptop'],
     },
     softSignals: ['pin tốt', 'nhẹ', 'thin light', 'usb-c'],
-    expandedKeywords: ['mỏng nhẹ', 'thin light', 'ultrabook', 'pin tốt', 'USB-C'],
+    expandedKeywords: [
+      'mỏng nhẹ',
+      'thin light',
+      'ultrabook',
+      'pin tốt',
+      'USB-C',
+    ],
     comboGroups: ['laptop', 'usb-c-hub'],
   },
   LIVE_STREAMING: {
     id: 'LIVE_STREAMING',
-    terms: ['góc livestream', 'goc livestream', 'livestream', 'streaming', 'streamer'],
+    terms: [
+      'góc livestream',
+      'goc livestream',
+      'livestream',
+      'streaming',
+      'streamer',
+    ],
     productGroups: ['webcam', 'microphone', 'lighting', 'headset'],
     hardCriteria: {},
     softSignals: ['âm thanh rõ', 'ánh sáng', 'video call', 'creator'],
@@ -294,16 +361,30 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
   },
   VALUE_PERFORMANCE: {
     id: 'VALUE_PERFORMANCE',
-    terms: ['máy mạnh giá tốt', 'may manh gia tot', 'giá tốt', 'gia tot', 'best value'],
+    terms: [
+      'máy mạnh giá tốt',
+      'may manh gia tot',
+      'giá tốt',
+      'gia tot',
+      'best value',
+    ],
     productGroups: ['laptop', 'pc'],
     hardCriteria: {},
     softSignals: ['hiệu năng', 'hieu nang', 'khuyến mãi', 'p/p tốt'],
-    expandedKeywords: ['hiệu năng', 'giá tốt', 'best value', 'khuyến mãi', 'sale'],
+    expandedKeywords: [
+      'hiệu năng',
+      'giá tốt',
+      'best value',
+      'khuyến mãi',
+      'sale',
+    ],
     comboGroups: ['laptop', 'pc'],
   },
 };
 
-export function detectIntentPrimitives(query: string): ProductIntentPrimitive[] {
+export function detectIntentPrimitives(
+  query: string,
+): ProductIntentPrimitive[] {
   const normalized = normalizeDictionaryText(query);
   if (!normalized) return [];
 
@@ -322,7 +403,6 @@ export function expandWithIntentPrimitives(query: string): string[] {
     primitive.productGroups.forEach((term) => expansions.add(term));
     primitive.softSignals.forEach((term) => expansions.add(term));
     primitive.expandedKeywords.forEach((term) => expansions.add(term));
-    primitive.comboGroups.forEach((term) => expansions.add(term));
   }
 
   return uniqueStrings(Array.from(expansions));
@@ -374,7 +454,10 @@ function mergePrimitiveConstraints(
       ...(left.semanticTags ?? []),
       ...(right.semanticTags ?? []),
     ]),
-    useCases: uniqueStrings([...(left.useCases ?? []), ...(right.useCases ?? [])]),
+    useCases: uniqueStrings([
+      ...(left.useCases ?? []),
+      ...(right.useCases ?? []),
+    ]),
     targetUsers: uniqueStrings([
       ...(left.targetUsers ?? []),
       ...(right.targetUsers ?? []),

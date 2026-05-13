@@ -305,6 +305,20 @@ function responseUpdate(
         crag_retry: traceCragRetry(response.metadata?.crag_retry),
         productIds: response.metadata?.productIds,
         catalog_detail_latency_ms: response.metadata?.catalog_detail_latency_ms,
+        rewrite_provider: traceString(response.metadata?.rewrite_provider),
+        rewrite_model: traceString(response.metadata?.rewrite_model),
+        rewrite_status: traceString(response.metadata?.rewrite_status),
+        rewrite_retry_count: traceNumber(response.metadata?.rewrite_retry_count),
+        rewrite_latency_ms: traceNumber(response.metadata?.rewrite_latency_ms),
+        rewritten_query: traceString(response.metadata?.rewritten_query),
+        combo_group_count: traceNumber(response.metadata?.combo_group_count),
+        group_coverage: traceObject(response.metadata?.group_coverage),
+        needsClarification: traceBoolean(response.metadata?.needsClarification),
+        consultationMode: traceString(response.metadata?.consultationMode),
+        llmComposeStatus: traceString(response.metadata?.llmComposeStatus),
+        llmComposeFallbackReason: traceString(
+          response.metadata?.llmComposeFallbackReason,
+        ),
         fallback_reason: traceString(response.metadata?.fallback_reason),
       },
     ],
@@ -313,6 +327,20 @@ function responseUpdate(
 
 function traceToolCalls(value: unknown): AssistantToolCallTrace[] | undefined {
   return Array.isArray(value) ? (value as AssistantToolCallTrace[]) : undefined;
+}
+
+function traceNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function traceBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function traceObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function traceString(value: unknown): string | undefined {

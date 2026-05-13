@@ -3,15 +3,23 @@ import {
   ProductCatalogSnapshot,
 } from '../adapters/product-catalog.adapter';
 import { ProductRetriever } from '../../retrieval/product-retriever';
-import { productCandidateSatisfiesHardConstraints } from '../../retrieval/product-reranker';
 import {
+  extractHardConstraints,
+  mergeRetrievalConstraints,
+  productCandidateSatisfiesHardConstraints,
+} from '../../retrieval/product-reranker';
+import {
+  ProductGroupCoverage,
   ProductRetrievalConstraints,
   ProductRetrievalResult,
-  ProductRerankReason,
+  ProductRetrievalRewriteMetadata,
   RerankedProductCandidate,
 } from '../../retrieval/product-retrieval.types';
+import { detectProductFamilyFromText } from '../../retrieval/product-family-taxonomy';
 import type {
+  AssistantPriorRecommendationContext,
   AssistantProductCard,
+  AssistantProductConsultationMode,
   AssistantRecommendationLedgerEntry,
 } from '../assistant.types';
 import { readAssistantRecommendationConfig } from '../config/assistant-recommendation.config';
@@ -29,6 +37,7 @@ type ProductAdviceState = {
     requestedMoreOptions?: boolean;
     contextualUserText?: unknown;
     priceSort?: unknown;
+    contextResolutionReason?: unknown;
   };
   parsedEntities?: Record<string, unknown>;
   requestedMoreOptions?: boolean;
@@ -42,9 +51,29 @@ type ProductAdviceConfig = {
   roomId?: string;
   promptContext?: unknown;
   abortSignal?: AbortSignal;
+  composeTimeoutMs?: number;
+  rewriteTimeoutMs?: number;
 };
 
 type ProductAdviceCard = AssistantProductCard;
+
+type ProductAdviceProductGroup = {
+  groupId: string;
+  label: string;
+  productCards: ProductAdviceCard[];
+};
+
+type ProductAdviceComposeResult = {
+  text: string | null;
+  fallbackReason?: string;
+};
+
+type ProductAdviceComposeMetadata = {
+  text: string;
+  llmComposed: boolean;
+  llmComposeStatus: 'skipped' | 'used' | 'fallback';
+  llmComposeFallbackReason?: string;
+};
 
 type ProductAdviceToolResults = {
   search_products: {
@@ -70,6 +99,9 @@ type ProductAdviceResult = {
     retrieval_query?: string;
     crag_retry?: unknown;
     productIds?: string[];
+    productGroups?: ProductAdviceProductGroup[];
+    group_coverage?: ProductGroupCoverage;
+    combo_group_count?: number;
     active_subgraph?: 'sales';
     tool_calls?: ReturnType<typeof buildProductToolCalls>;
     tool_results?: ProductAdviceToolResults;
@@ -77,11 +109,31 @@ type ProductAdviceResult = {
     applied_recommendation_limit?: number;
     product_card_count?: number;
     price_sort?: PriceSortDirection;
+    consultationMode?: AssistantProductConsultationMode;
+    priorRecommendationProductIds?: string[];
+    comparedProductIds?: string[];
+    recommendationContinuity?: {
+      mode: AssistantProductConsultationMode;
+      hasPriorRecommendations: boolean;
+      priorRecommendationProductIds: string[];
+      comparedProductIds: string[];
+      preferenceDelta?: string;
+    };
+    rewrite_provider?: string;
+    rewrite_model?: string;
+    rewrite_status?: string;
+    rewrite_retry_count?: number;
+    rewrite_latency_ms?: number;
+    rewritten_query?: string;
+    rewrite_skipped_reason?: string;
     llmComposed: boolean;
+    llmComposeStatus?: 'skipped' | 'used' | 'fallback';
+    llmComposeFallbackReason?: string;
   };
 };
 
-const PRODUCT_ADVICE_COMPOSE_TIMEOUT_MS = 18_000;
+const PRODUCT_ADVICE_COMPOSE_TIMEOUT_MS = 42_000;
+const PRODUCT_ADVICE_REWRITE_TIMEOUT_MS = 12_000;
 
 const PRODUCT_COUNT_NOUN_PATTERN =
   'mau|san pham|the san pham|model|models|lua chon|goi y|recommendation|recommendations|option|options|product|products|laptop|laptops|may tinh|may|con';
@@ -107,6 +159,10 @@ const PRODUCT_ADVICE_FOLLOW_UP_QUESTIONS = [
   'Bạn dùng chính để học/làm việc, chơi game, đồ họa hay di chuyển nhiều?',
   'Bạn ưu tiên màn hình, hiệu năng, pin hay mỏng nhẹ?',
 ];
+const PHASE_10_CLARIFICATION_QUESTIONS = [
+  'Bạn ưu tiên laptop, PC hay phụ kiện?',
+  'Ngân sách khoảng bao nhiêu?',
+];
 
 export async function productAdviceNode(
   state: ProductAdviceState,
@@ -121,15 +177,25 @@ export async function productAdviceNode(
   const followUpQuestions = broadNeed ? PRODUCT_ADVICE_FOLLOW_UP_QUESTIONS : [];
 
   if (broadNeed && !requestedMoreOptions) {
+    const clarification = await composeProductClarificationText(config, {
+      userText: sanitizeCustomerFacingRequest(state.userText),
+      followUpQuestions,
+    });
     return {
       intent: 'PRODUCT_ADVICE',
       nodeName: 'product_advice',
-      text: buildClarificationText(followUpQuestions),
+      text: clarification.text,
       metadata: {
         productCards: [],
         followUpQuestions,
         needsClarification: true,
-        llmComposed: false,
+        llmComposed: clarification.llmComposed,
+        llmComposeStatus: clarification.llmComposeStatus,
+        ...(clarification.llmComposeFallbackReason
+          ? {
+              llmComposeFallbackReason: clarification.llmComposeFallbackReason,
+            }
+          : {}),
       },
     };
   }
@@ -164,9 +230,11 @@ export async function productAdviceNode(
       const ledgerLimit = requestedRecommendationLimit
         ? Math.min(requestedRecommendationLimit, recommendationConfig.maxLimit)
         : Math.min(ledger.length, recommendationConfig.maxLimit);
-      const productCards = sortLedgerByRequestedPrice(ledger, priceSort)
-        .slice(0, ledgerLimit)
-        .map(productCardFromLedger);
+      const productCards = uniqueProductCardsByProductId(
+        sortLedgerByRequestedPrice(ledger, priceSort).map(
+          productCardFromLedger,
+        ),
+      ).slice(0, ledgerLimit);
       const productIds = productCards.map((card) => card.productId);
 
       if (productCards.length > 0) {
@@ -176,11 +244,21 @@ export async function productAdviceNode(
         );
         throwIfAborted(config.abortSignal);
       }
+      const priorRecommendations = priorRecommendationsFromLedger(ledger);
+      const preferenceDelta = sanitizeCustomerFacingRequest(state.userText);
+      const advice = await composeGroundedProductAdviceText(config, {
+        userText: preferenceDelta,
+        productCards,
+        followUpQuestions,
+        priorRecommendations,
+        preferenceDelta,
+        consultationMode: 'price_sort',
+      });
 
       return {
         intent: 'PRODUCT_ADVICE',
         nodeName: 'product_advice',
-        text: buildPriorRecommendationSortText(productCards, priceSort),
+        text: advice.text,
         metadata: {
           productCards,
           followUpQuestions,
@@ -200,7 +278,17 @@ export async function productAdviceNode(
           applied_recommendation_limit: productCards.length,
           price_sort: priceSort,
           product_card_count: productCards.length,
-          llmComposed: false,
+          ...continuityMetadata({
+            mode: 'price_sort',
+            priorRecommendations,
+            comparedProductIds: productIds,
+            preferenceDelta,
+          }),
+          llmComposed: advice.llmComposed,
+          llmComposeStatus: advice.llmComposeStatus,
+          ...(advice.llmComposeFallbackReason
+            ? { llmComposeFallbackReason: advice.llmComposeFallbackReason }
+            : {}),
         },
       };
     }
@@ -212,29 +300,222 @@ export async function productAdviceNode(
     throw new Error('productAdviceNode requires ProductRetriever');
   }
 
-  const retrievalLimit = priceSort
-    ? Math.max(cardLimit, recommendationConfig.maxLimit)
-    : cardLimit;
   const customerFacingText = stripProductAdviceControlPhrases(
     normalizeProductSearchQuery(productCustomerText(state)),
   );
   const searchQuery = stripProductAdviceControlPhrases(
     normalizeProductSearchQuery(productSearchText(state)),
   );
-  const responseUserText = customerFacingText || searchQuery;
+  const responseUserText = sanitizeCustomerFacingRequest(
+    customerFacingText || searchQuery,
+  );
+  const hardConstraints = productAdviceHardConstraints(state, searchQuery);
+  const requestedConsultationMode = productConsultationModeFromState(
+    state,
+    requestedMoreOptions,
+    priorRecommendationSort,
+  );
+  const priorRecommendations = await priorRecommendationsForMode(
+    config,
+    roomId,
+    requestedConsultationMode,
+  );
+  throwIfAborted(config.abortSignal);
+  const consultationMode = effectiveConsultationMode(
+    requestedConsultationMode,
+    priorRecommendations,
+  );
+  const preferenceDelta = sanitizeCustomerFacingRequest(state.userText);
+  const excludedProductIds = requestedMoreOptions
+    ? priorRecommendations.map((item) => item.productId)
+    : [];
+  throwIfAborted(config.abortSignal);
+  const excludedProductIdSet = new Set(excludedProductIds);
+  const retrievalLimit = priceSort
+    ? Math.max(cardLimit, recommendationConfig.maxLimit)
+    : requestedMoreOptions
+      ? Math.min(
+          recommendationConfig.maxLimit,
+          cardLimit + excludedProductIdSet.size,
+        )
+      : cardLimit;
   const useFastCatalogSearch =
     !requestedMoreOptions &&
     shouldUseFastCatalogSearch(searchQuery) &&
     typeof config.catalogAdapter?.searchProductsFast === 'function';
+  const allowDeterministicRewriteShortCircuit =
+    !requestedMoreOptions &&
+    !useFastCatalogSearch &&
+    priceSort === undefined &&
+    !isSetupOrComboProductAdvice(`${state.userText} ${searchQuery}`);
   const retrieval = await searchProductCatalog(
     config,
     productRetriever,
     searchQuery,
     useFastCatalogSearch,
     retrievalLimit,
+    {
+      query: searchQuery,
+      originalQuery: state.userText,
+      clarificationAnswer: asString(state.intentPlan?.contextualUserText),
+      hardConstraints,
+      allowDeterministicShortCircuit: allowDeterministicRewriteShortCircuit,
+    },
   );
   throwIfAborted(config.abortSignal);
-  const candidateResults = retrieval.results;
+  const visibleConstraints = mergeActiveRetrievalConstraints(
+    retrieval.query.constraints,
+    hardConstraints,
+  );
+  if (retrieval.clarification?.needed === true) {
+    const followUpQuestions = PHASE_10_CLARIFICATION_QUESTIONS.slice(0, 2);
+    const clarification = await composeProductClarificationText(config, {
+      userText: responseUserText,
+      followUpQuestions,
+    });
+    return {
+      intent: 'PRODUCT_ADVICE',
+      nodeName: 'product_advice',
+      text: clarification.text,
+      metadata: {
+        productCards: [],
+        followUpQuestions,
+        needsClarification: true,
+        retrievalQuery: retrieval.query,
+        retrieval_query: retrieval.effectiveQuery ?? searchQuery,
+        productIds: [],
+        active_subgraph: 'sales',
+        ...rewriteTraceMetadata(retrieval),
+        requested_recommendation_limit: requestedRecommendationLimit,
+        applied_recommendation_limit: 0,
+        product_card_count: 0,
+        llmComposed: clarification.llmComposed,
+        llmComposeStatus: clarification.llmComposeStatus,
+        ...(clarification.llmComposeFallbackReason
+          ? {
+              llmComposeFallbackReason: clarification.llmComposeFallbackReason,
+            }
+          : {}),
+      },
+    };
+  }
+  if (retrieval.comboGroups?.length) {
+    const groupResults = retrieval.comboGroups.map((group) => ({
+      groupId: group.id,
+      label: group.label,
+      results: group.results.slice(0, 3),
+    }));
+    const candidateResults = uniqueResultsByProductId(
+      groupResults.flatMap((group) => group.results),
+    );
+    const candidateProductIds = candidateResults.map(
+      (result) => result.productId,
+    );
+    const snapshots: ProductCatalogSnapshot[] =
+      (await config.catalogAdapter?.getSnapshotsByIds(candidateProductIds)) ??
+      candidateResults.map(snapshotFromResult);
+    throwIfAborted(config.abortSignal);
+    const snapshotById = new Map<string, ProductCatalogSnapshot>(
+      snapshots.map((snapshot) => [snapshot.productId, snapshot] as const),
+    );
+    const productGroups: ProductAdviceProductGroup[] =
+      uniqueProductGroupsByProductId(
+        groupResults
+          .map((group) => ({
+            groupId: group.groupId,
+            label: group.label,
+            productCards: group.results
+              .filter((result) => {
+                if (excludedProductIdSet.has(result.productId)) return false;
+                const snapshot = snapshotById.get(result.productId);
+                return snapshot
+                  ? resultSatisfiesVisibleConstraints(
+                      result,
+                      snapshot,
+                      visibleConstraints,
+                    )
+                  : false;
+              })
+              .slice(0, 3)
+              .map((result) =>
+                toProductCard(result, snapshotById.get(result.productId)!),
+              ),
+          }))
+          .filter((group) => group.productCards.length > 0),
+      );
+    const productCards = productGroups.flatMap((group) => group.productCards);
+    const productIds = productCards.map((card) => card.productId);
+
+    throwIfAborted(config.abortSignal);
+    if (roomId && productCards.length > 0) {
+      await config.sessionService?.saveRecommendationLedger(
+        roomId,
+        productCards,
+      );
+    }
+    throwIfAborted(config.abortSignal);
+
+    const advice = await composeGroundedProductAdviceText(config, {
+      userText: responseUserText,
+      productCards,
+      followUpQuestions,
+      priorRecommendations,
+      preferenceDelta,
+      consultationMode: productCards.length > 0 ? 'combo_advice' : consultationMode,
+    });
+
+    return {
+      intent: 'PRODUCT_ADVICE',
+      nodeName: 'product_advice',
+      text:
+        productCards.length > 0 ? advice.text : minimalNoResultText(retrieval),
+      metadata: {
+        productCards,
+        productGroups,
+        followUpQuestions,
+        retrievalQuery: retrieval.query,
+        retrieval_query: retrieval.effectiveQuery ?? searchQuery,
+        crag_retry: retrieval.cragRetry ?? retrieval.crag_retry,
+        productIds,
+        group_coverage: retrieval.groupCoverage,
+        combo_group_count: retrieval.comboGroups.length,
+        active_subgraph: 'sales',
+        tool_calls: buildProductToolCalls(retrieval, productIds),
+        tool_results: {
+          search_products: {
+            retrieval_query: retrieval.effectiveQuery ?? searchQuery,
+            crag_retry: retrieval.cragRetry ?? retrieval.crag_retry,
+            productIds,
+          },
+          get_product_snapshot: {
+            productIds,
+            count: productCards.length,
+          },
+        },
+        ...rewriteTraceMetadata(retrieval),
+        requested_recommendation_limit: requestedRecommendationLimit,
+        applied_recommendation_limit: productCards.length,
+        price_sort: priceSort,
+        product_card_count: productCards.length,
+        ...continuityMetadata({
+          mode: productCards.length > 0 ? 'combo_advice' : consultationMode,
+          priorRecommendations,
+          comparedProductIds: productIds,
+          preferenceDelta,
+        }),
+        llmComposed: productCards.length > 0 ? advice.llmComposed : false,
+        llmComposeStatus:
+          productCards.length > 0 ? advice.llmComposeStatus : 'skipped',
+        ...(productCards.length > 0 && advice.llmComposeFallbackReason
+          ? { llmComposeFallbackReason: advice.llmComposeFallbackReason }
+          : {}),
+      },
+    };
+  }
+
+  const candidateResults = retrieval.results.filter(
+    (result) => !excludedProductIdSet.has(result.productId),
+  );
   const candidateProductIds = candidateResults.map(
     (result) => result.productId,
   );
@@ -262,37 +543,32 @@ export async function productAdviceNode(
   const filteredResults = candidateResults.filter((result) => {
     const snapshot = snapshotById.get(result.productId);
     return snapshot
-      ? resultSatisfiesVisibleConstraints(
-          result,
-          snapshot,
-          retrieval.query.constraints,
-        )
+      ? resultSatisfiesVisibleConstraints(result, snapshot, visibleConstraints)
       : false;
   });
   const constrainedResults = sortResultsByRequestedPrice(
-    filteredResults,
+    uniqueResultsByProductId(filteredResults),
     snapshotById,
     priceSort,
   ).slice(0, cardLimit);
-  const productIds = constrainedResults.map((result) => result.productId);
-
-  const productCards: ProductAdviceCard[] = constrainedResults.map((result) => {
+  const freshProductCards: ProductAdviceCard[] = constrainedResults.map((result) => {
     const snapshot = snapshotById.get(result.productId)!;
     return toProductCard(result, snapshot);
   });
-
-  throwIfAborted(config.abortSignal);
-  if (roomId && productCards.length > 0) {
-    await config.sessionService?.saveRecommendationLedger(roomId, productCards);
-  }
+  const productCards = productCardsForConsultationMode({
+    consultationMode,
+    priorRecommendations,
+    freshProductCards,
+    maxCards: recommendationConfig.maxLimit,
+  });
+  const productIds = productCards.map((card) => card.productId);
   throwIfAborted(config.abortSignal);
 
   if (productCards.length === 0) {
-    const text = emptyGroundedProductText(retrieval);
     return {
       intent: 'PRODUCT_ADVICE',
       nodeName: 'product_advice',
-      text,
+      text: minimalNoResultText(retrieval),
       metadata: {
         productCards,
         followUpQuestions,
@@ -313,40 +589,45 @@ export async function productAdviceNode(
             count: 0,
           },
         },
+        ...rewriteTraceMetadata(retrieval),
         requested_recommendation_limit: requestedRecommendationLimit,
         applied_recommendation_limit: cardLimit,
         price_sort: priceSort,
         product_card_count: productCards.length,
+        ...continuityMetadata({
+          mode: consultationMode,
+          priorRecommendations,
+          comparedProductIds: productIds,
+          preferenceDelta,
+        }),
         llmComposed: false,
+        llmComposeStatus: 'skipped',
+        llmComposeFallbackReason: 'no_product_cards',
       },
     };
   }
 
-  const groundedInfoText = buildGroundedProductInfoText(
-    responseUserText,
+  const advice = await composeGroundedProductAdviceText(config, {
+    userText: responseUserText,
     productCards,
-  );
-  const composedText = groundedInfoText
-    ? null
-    : await composeProductAdviceText(config, {
-        userText: responseUserText,
-        productCards,
-        followUpQuestions,
-      });
-  const usableComposedText = isUsableComposedAdviceText(
-    composedText,
-    productCards.length,
-  )
-    ? composedText
-    : null;
-  const fallbackText =
-    groundedInfoText ??
-    buildProductAdviceFallbackText(responseUserText, productCards);
+    followUpQuestions,
+    priorRecommendations,
+    preferenceDelta,
+    consultationMode,
+  });
 
+  if (
+    roomId &&
+    productCards.length > 0 &&
+    (consultationMode !== 'refinement' || advice.llmComposed)
+  ) {
+    await config.sessionService?.saveRecommendationLedger(roomId, productCards);
+    throwIfAborted(config.abortSignal);
+  }
   return {
     intent: 'PRODUCT_ADVICE',
     nodeName: 'product_advice',
-    text: usableComposedText ?? fallbackText,
+    text: advice.text,
     metadata: {
       productCards,
       followUpQuestions,
@@ -367,111 +648,136 @@ export async function productAdviceNode(
           count: productCards.length,
         },
       },
+      ...rewriteTraceMetadata(retrieval),
       requested_recommendation_limit: requestedRecommendationLimit,
       applied_recommendation_limit: cardLimit,
       price_sort: priceSort,
       product_card_count: productCards.length,
-      llmComposed: Boolean(usableComposedText),
+      ...continuityMetadata({
+        mode: consultationMode,
+        priorRecommendations,
+        comparedProductIds: productIds,
+        preferenceDelta,
+      }),
+      llmComposed: advice.llmComposed,
+      llmComposeStatus: advice.llmComposeStatus,
+      ...(advice.llmComposeFallbackReason
+        ? { llmComposeFallbackReason: advice.llmComposeFallbackReason }
+        : {}),
     },
   };
 }
 
 function buildClarificationText(followUpQuestions: string[]): string {
-  return [
-    'Mình có thể tư vấn laptop sát nhu cầu hơn nếu bạn cho mình thêm vài thông tin.',
-    ...followUpQuestions,
-  ].join(' ');
+  return followUpQuestions.join(' ');
 }
-async function composeProductAdviceText(
+
+async function composeProductClarificationText(
   config: ProductAdviceConfig,
   input: {
     userText: string;
-    productCards: ProductAdviceCard[];
     followUpQuestions: string[];
   },
-): Promise<string | null> {
+): Promise<ProductAdviceComposeMetadata> {
   try {
+    if (!config.responseComposer) {
+      return {
+        text: buildClarificationText(input.followUpQuestions),
+        llmComposed: false,
+        llmComposeStatus: 'fallback',
+        llmComposeFallbackReason: 'composer_unavailable',
+      };
+    }
     const controller = new AbortController();
     const composeSignal = combineAbortSignals(
       config.abortSignal,
       controller.signal,
     );
-    const composePromise = config.responseComposer?.composeProductAdvice({
+    const composePromise = config.responseComposer.composeProductClarification({
       ...input,
       promptContext: config.promptContext,
       signal: composeSignal,
     });
-    return composePromise
-      ? await withTimeout(
-          composePromise,
-          PRODUCT_ADVICE_COMPOSE_TIMEOUT_MS,
-          () => controller.abort(),
-        )
-      : null;
-  } catch {
-    return null;
+    const text = await withTimeout(
+      composePromise,
+      config.composeTimeoutMs ?? PRODUCT_ADVICE_COMPOSE_TIMEOUT_MS,
+      () => controller.abort(),
+    );
+    const usableText = isCompleteAdviceText(text) ? text : null;
+    return {
+      text: usableText ?? buildClarificationText(input.followUpQuestions),
+      llmComposed: Boolean(usableText),
+      llmComposeStatus: usableText ? 'used' : 'fallback',
+      ...(usableText
+        ? {}
+        : {
+            llmComposeFallbackReason: text
+              ? 'unusable_composed_text'
+              : 'composer_returned_empty',
+          }),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    return {
+      text: buildClarificationText(input.followUpQuestions),
+      llmComposed: false,
+      llmComposeStatus: 'fallback',
+      llmComposeFallbackReason:
+        message === 'product_advice_compose_timeout'
+          ? 'composer_timeout'
+          : 'composer_failed',
+    };
   }
 }
 
-function isUsableComposedAdviceText(
-  text: string | null,
-  productCardCount: number,
-): text is string {
-  return (
-    isCompleteAdviceText(text) &&
-    !hasConflictingProductCountClaim(text, productCardCount)
-  );
+async function composeGroundedProductAdviceText(
+  config: ProductAdviceConfig,
+  input: {
+    userText: string;
+    productCards: ProductAdviceCard[];
+    followUpQuestions: string[];
+    priorRecommendations?: AssistantPriorRecommendationContext[];
+    preferenceDelta?: string;
+    consultationMode?: AssistantProductConsultationMode;
+  },
+): Promise<ProductAdviceComposeMetadata> {
+  const composeResult = await composeProductAdviceText(config, input);
+  const composedText = composeResult.text;
+  const fallbackReason = validateComposedAdviceText(composedText, input);
+  const usableComposedText = fallbackReason ? null : composedText;
+
+  if (usableComposedText) {
+    return {
+      text: usableComposedText,
+      llmComposed: true,
+      llmComposeStatus: 'used',
+    };
+  }
+
+  const effectiveFallbackReason =
+    composeResult.fallbackReason ?? fallbackReason ?? 'composer_unavailable';
+  return {
+    text: productAdviceFallbackText(input),
+    llmComposed: false,
+    llmComposeStatus: 'fallback',
+    llmComposeFallbackReason: effectiveFallbackReason,
+  };
 }
 
-function isCompleteAdviceText(text: string | null): text is string {
-  if (!text) return false;
-  return /[.!?…]$/.test(text.trim());
-}
-
-function hasConflictingProductCountClaim(
+function isGroundedComposedAdviceText(
   text: string,
-  productCardCount: number,
+  input: {
+    userText: string;
+    productCards: ProductAdviceCard[];
+  },
 ): boolean {
-  const claimedCounts = extractProductCountClaims(text);
-  return claimedCounts.some((count) => count !== productCardCount);
+  if (!isWarrantyQuestion(input.userText)) return true;
+  if (hasExplicitWarrantyFact(input.productCards)) return true;
+  return !hasUnsupportedWarrantyClaim(text);
 }
 
-function extractProductCountClaims(text: string): number[] {
-  const normalized = normalizeAdviceIntentText(text);
-  if (!normalized) return [];
-
-  const counts = new Set<number>();
-  const numericPattern = new RegExp(
-    `\\b(\\d{1,2})\\s+(?:${PRODUCT_COUNT_NOUN_PATTERN})\\b`,
-    'g',
-  );
-  let numericMatch: RegExpExecArray | null;
-  while ((numericMatch = numericPattern.exec(normalized)) !== null) {
-    const count = Number(numericMatch[1]);
-    if (Number.isInteger(count)) counts.add(count);
-  }
-
-  const wordPattern = new RegExp(
-    `\\b(${PRODUCT_COUNT_WORD_PATTERN})\\s+(?:${PRODUCT_COUNT_NOUN_PATTERN})\\b`,
-    'g',
-  );
-  let wordMatch: RegExpExecArray | null;
-  while ((wordMatch = wordPattern.exec(normalized)) !== null) {
-    const count = PRODUCT_COUNT_WORDS[wordMatch[1]];
-    if (Number.isInteger(count)) counts.add(count);
-  }
-
-  return [...counts];
-}
-function buildGroundedProductInfoText(
-  userText: string,
-  productCards: ProductAdviceCard[],
-): string | null {
-  if (isWarrantyQuestion(userText) && !hasExplicitWarrantyFact(productCards)) {
-    return defaultWarrantyInfoText(productCards);
-  }
-
-  return null;
+function isWarrantyQuestion(text: string): boolean {
+  return /bao hanh|warranty|chinh sach/.test(normalizeAdviceIntentText(text));
 }
 
 function hasExplicitWarrantyFact(productCards: ProductAdviceCard[]): boolean {
@@ -486,143 +792,304 @@ function hasExplicitWarrantyFact(productCards: ProductAdviceCard[]): boolean {
   });
 }
 
-function buildProductAdviceFallbackText(
-  userText: string,
-  productCards: ProductAdviceCard[],
-): string {
-  if (isWarrantyQuestion(userText)) {
-    return defaultWarrantyInfoText(productCards);
+function hasUnsupportedWarrantyClaim(text: string): boolean {
+  const normalized = normalizeAdviceIntentText(text);
+  if (
+    /khong co|khong thay|chua co|chua thay|catalog.*khong|catalog.*chua/.test(
+      normalized,
+    )
+  ) {
+    return false;
   }
-
-  return defaultProductAdviceText(productCards, userText);
-}
-
-function isWarrantyQuestion(text: string): boolean {
-  return /bao hanh|warranty/.test(normalizeAdviceIntentText(text));
-}
-
-function defaultWarrantyInfoText(productCards: ProductAdviceCard[]): string {
-  const productLines = productCards.slice(0, 3).map((card, index) => {
-    const price = card.discountPrice ?? card.price;
-    const priceText = Number.isFinite(price)
-      ? ` - ${formatCurrency(Number(price))}`
-      : '';
-    return `${index + 1}. ${card.name}${priceText}.`;
-  });
-
-  return [
-    'Mình chưa thấy dữ liệu thời hạn bảo hành trong catalog cho các mẫu đang lọc, nên chưa thể khẳng định số năm bảo hành.',
-    ...productLines,
-    'Bạn có thể mở trang chi tiết sản phẩm hoặc để nhân viên tư vấn xác nhận chính sách bảo hành chính xác cho mẫu bạn chọn.',
-  ].join(' ');
-}
-
-function defaultProductAdviceText(
-  productCards: ProductAdviceCard[],
-  userText = '',
-): string {
-  if (productCards.length === 0) {
-    return 'Mình chưa tìm thấy sản phẩm phù hợp. Bạn có thể nới ngân sách hoặc nói rõ nhu cầu chính không?';
-  }
-
-  const productLines = productCards.map((card, index) => {
-    const price = card.discountPrice ?? card.price;
-    const priceText = Number.isFinite(price)
-      ? ` - ${formatCurrency(Number(price))}`
-      : '';
-    const stockText = Number(card.stock ?? 0) > 0 ? ' còn hàng' : ' hết hàng';
-    return `${index + 1}. ${card.name}${priceText}${stockText}.`;
-  });
-
-  const contextIntro = productAdviceContextIntro(userText);
-  return [
-    contextIntro ?? 'Mình tìm thấy một số sản phẩm phù hợp từ catalog GearVN:',
-    ...productLines,
-    'Bạn muốn mình lọc tiếp theo nhu cầu sử dụng, thương hiệu, màn hình hay pin không?',
-  ].join(' ');
-}
-
-function buildPriorRecommendationSortText(
-  productCards: ProductAdviceCard[],
-  direction: PriceSortDirection,
-): string {
-  const orderText = direction === 'desc' ? 'cao xuống thấp' : 'thấp lên cao';
-  const productLines = productCards.map((card, index) => {
-    const price = card.discountPrice ?? card.price;
-    const priceText = Number.isFinite(price)
-      ? ` - ${formatCurrency(Number(price))}`
-      : '';
-    const stockText = Number(card.stock ?? 0) > 0 ? ' còn hàng' : ' hết hàng';
-    return `${index + 1}. ${card.name}${priceText}${stockText}.`;
-  });
-
-  return [
-    `Mình sắp xếp lại các sản phẩm vừa hiển thị theo giá từ ${orderText}:`,
-    ...productLines,
-    'Bạn muốn xem chi tiết mẫu nào?',
-  ].join(' ');
-}
-
-function productAdviceContextIntro(userText: string): string | null {
-  const normalized = normalizeAdviceIntentText(userText);
-  const contextParts: string[] = [];
-
-  const category = extractAdviceCategory(normalized);
-  if (category) contextParts.push(`nhóm ${category}`);
-
-  const budgetMatch = normalized.match(
-    /(?:ngan sach|tam gia|khoang|duoi|toi da)?\s*(\d{1,3})\s*(?:trieu|tr)\b/,
+  return /bao hanh|warranty|chinh hang|nha san xuat|\b\d{1,2}\s*(thang|nam)\b/.test(
+    normalized,
   );
-  if (budgetMatch) {
-    contextParts.push(`ngân sách khoảng ${budgetMatch[1]} triệu`);
+}
+
+async function composeProductAdviceText(
+  config: ProductAdviceConfig,
+  input: {
+    userText: string;
+    productCards: ProductAdviceCard[];
+    followUpQuestions: string[];
+    priorRecommendations?: AssistantPriorRecommendationContext[];
+    preferenceDelta?: string;
+    consultationMode?: AssistantProductConsultationMode;
+  },
+): Promise<ProductAdviceComposeResult> {
+  try {
+    if (!config.responseComposer) {
+      return {
+        text: null,
+        fallbackReason: 'composer_unavailable',
+      };
+    }
+    const controller = new AbortController();
+    const composeSignal = combineAbortSignals(
+      config.abortSignal,
+      controller.signal,
+    );
+    const composePromise = config.responseComposer.composeProductAdvice({
+      ...input,
+      promptContext: config.promptContext,
+      signal: composeSignal,
+    });
+    const text = await withTimeout(
+      composePromise,
+      config.composeTimeoutMs ?? PRODUCT_ADVICE_COMPOSE_TIMEOUT_MS,
+      () => controller.abort(),
+    );
+    return {
+      text,
+      fallbackReason: text ? undefined : 'composer_returned_empty',
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    return {
+      text: null,
+      fallbackReason:
+        message === 'product_advice_compose_timeout'
+          ? 'composer_timeout'
+          : 'composer_failed',
+    };
+  }
+}
+
+function validateComposedAdviceText(
+  text: string | null,
+  input: {
+    userText: string;
+    productCards: ProductAdviceCard[];
+  },
+): string | undefined {
+  if (!isCompleteAdviceText(text)) return 'incomplete_composed_text';
+  if (hasConflictingProductCountClaim(text, input.productCards.length)) {
+    return 'count_claim_mismatch';
+  }
+  if (
+    isWarrantyQuestion(input.userText) &&
+    !hasExplicitWarrantyFact(input.productCards) &&
+    hasUnsupportedWarrantyClaim(text)
+  ) {
+    return 'unsupported_warranty_claim';
+  }
+  return undefined;
+}
+
+function isCompleteAdviceText(text: string | null): text is string {
+  if (!text) return false;
+  return /[.!?…]$/.test(text.trim());
+}
+
+function hasConflictingProductCountClaim(
+  text: string,
+  productCardCount: number,
+): boolean {
+  const normalized = normalizeAdviceIntentText(text);
+  const claimedCounts = extractProductCountClaims(normalized);
+  return claimedCounts.some(
+    (claim) =>
+      claim.count !== productCardCount &&
+      isExhaustiveProductCountClaim(normalized, claim.index),
+  );
+}
+
+function extractProductCountClaims(
+  normalizedText: string,
+): Array<{ count: number; index: number }> {
+  if (!normalizedText) return [];
+
+  const claims: Array<{ count: number; index: number }> = [];
+  const numericPattern = new RegExp(
+    `\\b(\\d{1,2})\\s+(?:${PRODUCT_COUNT_NOUN_PATTERN})\\b`,
+    'g',
+  );
+  let numericMatch: RegExpExecArray | null;
+  while ((numericMatch = numericPattern.exec(normalizedText)) !== null) {
+    const count = Number(numericMatch[1]);
+    if (Number.isInteger(count)) {
+      claims.push({ count, index: numericMatch.index });
+    }
   }
 
-  const useCase = extractAdviceUseCase(userText);
-  if (useCase) contextParts.push(`nhu cầu ${useCase}`);
-
-  if (contextParts.length === 0) return null;
-  return `Mình dựa trên ${contextParts.join(', ')} bạn vừa nêu; dưới đây là các lựa chọn trong catalog GearVN:`;
-}
-
-function extractAdviceCategory(normalizedText: string): string | null {
-  const categories: Array<[RegExp, string]> = [
-    [/\blaptop\b/, 'laptop'],
-    [/\bpc\b/, 'PC'],
-    [/\bmay tinh\b/, 'máy tính'],
-    [/\bman hinh\b/, 'màn hình'],
-    [/\bban phim\b/, 'bàn phím'],
-    [/\bchuot\b/, 'chuột'],
-    [/\btai nghe\b/, 'tai nghe'],
-    [/\bssd\b/, 'SSD'],
-    [/\bram\b/, 'RAM'],
-    [/\bcpu\b/, 'CPU'],
-    [/\bgpu\b|\bvga\b/, 'GPU'],
-  ];
-
-  return categories.find(([pattern]) => pattern.test(normalizedText))?.[1] ?? null;
-}
-
-
-function extractAdviceUseCase(text: string): string | null {
-  const explicitMatch = text.match(
-    /(?:để|de|dùng để|dung de|phục vụ|phuc vu)\s+([^.,;!?]{3,80})/iu,
+  const wordPattern = new RegExp(
+    `\\b(${PRODUCT_COUNT_WORD_PATTERN})\\s+(?:${PRODUCT_COUNT_NOUN_PATTERN})\\b`,
+    'g',
   );
-  const explicitValue = explicitMatch?.[1]
-    ?.replace(/\s+(?:thì|thi|nhé|nhe|nha)$/iu, '')
+  let wordMatch: RegExpExecArray | null;
+  while ((wordMatch = wordPattern.exec(normalizedText)) !== null) {
+    const count = PRODUCT_COUNT_WORDS[wordMatch[1]];
+    if (Number.isInteger(count)) {
+      claims.push({ count, index: wordMatch.index });
+    }
+  }
+
+  return claims;
+}
+
+function isExhaustiveProductCountClaim(
+  normalizedText: string,
+  claimIndex: number,
+): boolean {
+  const context = normalizedText.slice(
+    Math.max(0, claimIndex - 40),
+    claimIndex + 80,
+  );
+  return /tim thay|hien co|co tong|tong cong|tat ca|gom|bao gom|duoc gui/.test(
+    context,
+  );
+}
+function minimalProductCardsText(_productCards: ProductAdviceCard[]): string {
+  return 'Mình đã gửi các lựa chọn khớp nhất vào thẻ sản phẩm bên dưới để bạn xem nhanh.';
+}
+
+function productAdviceFallbackText(input: {
+  productCards: ProductAdviceCard[];
+  priorRecommendations?: AssistantPriorRecommendationContext[];
+  preferenceDelta?: string;
+  consultationMode?: AssistantProductConsultationMode;
+}): string {
+  if (input.consultationMode === 'refinement') {
+    return continuityAwareRefinementFallbackText(input);
+  }
+
+  const cardSummaries = productCardFactSummaries(input.productCards);
+  if (cardSummaries.length === 0) return minimalProductCardsText(input.productCards);
+
+  const leadSummary = cardSummaries[0];
+  const comparisonText = cardSummaries.slice(1, 3).join('; ');
+  const suffix = comparisonText
+    ? ` Bạn có thể so thêm ${comparisonText} trong các thẻ sản phẩm bên dưới.`
+    : ' Bạn có thể mở thẻ sản phẩm bên dưới để xem chi tiết cấu hình, giá và tình trạng hàng.';
+
+  switch (input.consultationMode) {
+    case 'more_options':
+      return `Mình đã lọc thêm lựa chọn khác ngoài nhóm vừa tư vấn, nổi bật là ${leadSummary}.${suffix}`;
+    case 'price_sort':
+      return `Mình đã sắp xếp lại nhóm đã tư vấn theo yêu cầu, bắt đầu với ${leadSummary}.${suffix}`;
+    case 'combo_advice':
+      return `Mình đã gom các lựa chọn theo từng nhóm nhu cầu, trong đó có ${leadSummary}.${suffix}`;
+    case 'initial_advice':
+    default:
+      return `Mình tìm thấy lựa chọn phù hợp để bạn cân nhắc, nổi bật là ${leadSummary}.${suffix}`;
+  }
+}
+
+function continuityAwareRefinementFallbackText(input: {
+  productCards: ProductAdviceCard[];
+  priorRecommendations?: AssistantPriorRecommendationContext[];
+  preferenceDelta?: string;
+}): string {
+  const priorRecommendations = input.priorRecommendations ?? [];
+  const priorIds = new Set(priorRecommendations.map((item) => item.productId));
+  const priorLead = priorRecommendations[0];
+  const currentCandidates = input.productCards.filter(
+    (card) => !priorIds.has(card.productId),
+  );
+  const comparisonNames = listProductNames(
+    currentCandidates.length > 0 ? currentCandidates : input.productCards.slice(1),
+  );
+  const priorLeadText = priorLead?.name
+    ? `Mình vẫn giữ ${priorLead.name} trong nhóm so sánh vì đây là lựa chọn đã tư vấn trước đó`
+    : 'Mình vẫn giữ các lựa chọn đã tư vấn trước đó trong nhóm so sánh';
+  const preferenceText = input.preferenceDelta
+    ? ` theo ưu tiên mới "${input.preferenceDelta}"`
+    : ' theo ưu tiên mới của bạn';
+  const comparisonText = comparisonNames
+    ? `, đồng thời đưa thêm ${comparisonNames} để bạn cân độ phù hợp, giá và tình trạng hàng.`
+    : ', rồi cân lại độ phù hợp, giá và tình trạng hàng trên từng thẻ sản phẩm.';
+
+  return `${priorLeadText}${preferenceText}${comparisonText} Với tiêu chí ưu tiên mới, bạn nên xem kỹ các cấu hình chính, mức giá và tình trạng hàng trong từng thẻ trước khi chốt mẫu phù hợp nhất.`;
+}
+
+function productCardFactSummaries(productCards: ProductAdviceCard[]): string[] {
+  return productCards
+    .map((card) => {
+      const facts = [
+        card.name,
+        formatProductCardPrice(card),
+        typeof card.stock === 'number'
+          ? card.stock > 0
+            ? `còn ${card.stock} sản phẩm`
+            : 'đang hết hàng'
+          : undefined,
+        card.reasons?.find(Boolean),
+      ].filter((fact): fact is string => Boolean(fact));
+      return facts.slice(0, 3).join(' - ');
+    })
+    .filter(Boolean);
+}
+
+function formatProductCardPrice(card: ProductAdviceCard): string | undefined {
+  const price = card.discountPrice ?? card.price;
+  return typeof price === 'number' && Number.isFinite(price)
+    ? `${price.toLocaleString('vi-VN')}đ`
+    : undefined;
+}
+
+function listProductNames(productCards: ProductAdviceCard[], limit = 2): string {
+  const names = productCards
+    .map((card) => card.name)
+    .filter((name): name is string => Boolean(name))
+    .slice(0, limit);
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} và ${names[names.length - 1]}`;
+}
+
+function productCardsForConsultationMode(input: {
+  consultationMode: AssistantProductConsultationMode;
+  priorRecommendations: AssistantPriorRecommendationContext[];
+  freshProductCards: ProductAdviceCard[];
+  maxCards: number;
+}): ProductAdviceCard[] {
+  if (input.consultationMode !== 'refinement') return input.freshProductCards;
+  return uniqueProductCardsByProductId([
+    ...input.priorRecommendations.map(productCardFromPriorRecommendation),
+    ...input.freshProductCards,
+  ]).slice(0, input.maxCards);
+}
+
+function productCardFromPriorRecommendation(
+  item: AssistantPriorRecommendationContext,
+): ProductAdviceCard {
+  const stock = typeof item.stock === 'number' ? item.stock : undefined;
+  const addable = stock === undefined || stock > 0;
+  const effectivePrice = item.discountPrice ?? item.price;
+  return {
+    productId: item.productId,
+    name: item.name,
+    slug: item.slug,
+    detailHref: item.slug ? `/products/${item.slug}` : `/products/${item.productId}`,
+    price: item.price,
+    discountPrice: item.discountPrice,
+    stock,
+    reasons: uniqueAdviceStrings([
+      ...(item.reasons ?? []),
+      item.specsSummary,
+      item.category ? `Danh mục: ${item.category}` : undefined,
+      'Nằm trong danh sách vừa tư vấn.',
+    ]),
+    availability: {
+      status: addable ? 'available' : 'out_of_stock',
+      addable,
+    },
+    actionPayload: {
+      productId: item.productId,
+      actions: ['VIEW_PRODUCT', ...(effectivePrice ? ['ADD_TO_CART'] : [])],
+    },
+    specs: item.specs ?? (item.specsSummary ? { summary: item.specsSummary } : {}),
+  };
+}
+
+function sanitizeCustomerFacingRequest(text: string): string {
+  return text
+    .replace(/\bcho\s+(?:tao|tui|tớ)\b/giu, 'cho mình')
+    .replace(/\b(?:tao|tui|tớ)\s+(cần|muốn|đang)\b/giu, 'mình $1')
+    .replace(/\b(?:tao|tui|tớ)\b/giu, 'mình')
+    .replace(/\bđê\b/giu, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;!?])/g, '$1')
     .trim();
-  if (explicitValue) return explicitValue;
-
-  const commaAfterBudgetMatch = text.match(
-    /\b\d{1,3}\s*(?:triệu|trieu|tr)\b(?:\s*(?:đổ xuống|do xuong|trở xuống|tro xuong|dưới|duoi|tối đa|toi da))?\s*[,;]\s*([^.,;!?]{3,80})/iu,
-  );
-  const commaValue = commaAfterBudgetMatch?.[1]
-    ?.replace(/\s+(?:thì|thi|nhé|nhe|nha)$/iu, '')
-    .trim();
-  return commaValue || null;
-}
-
-function formatCurrency(value: number): string {
-  return `${new Intl.NumberFormat('vi-VN').format(value)}₫`;
 }
 
 async function withTimeout<T>(
@@ -668,9 +1135,18 @@ function productSearchText(state: ProductAdviceState): string {
 
 function productCustomerText(state: ProductAdviceState): string {
   const productCategory = asString(state.parsedEntities?.productCategory);
+  const requestedMoreOptions =
+    state.intentPlan?.requestedMoreOptions === true ||
+    state.parsedEntities?.requestedMoreOptions === true ||
+    state.requestedMoreOptions === true;
   const contextualUserText = asString(state.intentPlan?.contextualUserText);
   if (contextualUserText) {
-    return ensureProductCategorySearchText(contextualUserText, productCategory);
+    return ensureProductCategorySearchText(
+      requestedMoreOptions
+        ? stripMoreOptionsContinuationPhrases(contextualUserText)
+        : contextualUserText,
+      productCategory,
+    );
   }
 
   const entityContextualUserText = asString(
@@ -678,7 +1154,9 @@ function productCustomerText(state: ProductAdviceState): string {
   );
   if (entityContextualUserText) {
     return ensureProductCategorySearchText(
-      entityContextualUserText,
+      requestedMoreOptions
+        ? stripMoreOptionsContinuationPhrases(entityContextualUserText)
+        : entityContextualUserText,
       productCategory,
     );
   }
@@ -690,8 +1168,275 @@ function productCustomerText(state: ProductAdviceState): string {
   return state.userText;
 }
 
+function stripMoreOptionsContinuationPhrases(text: string): string {
+  const cleaned = text
+    .replace(
+      /\b(?:co|có)\s+(?:may|máy|mau|mẫu|san pham|sản phẩm|lua chon|lựa chọn)?\s*(?:khac|khác)\s*(?:nua|nữa)?\s*(?:khong|không|ko|k)?\b/giu,
+      ' ',
+    )
+    .replace(
+      /\b(?:may|máy|mau|mẫu|san pham|sản phẩm|lua chon|lựa chọn)\s+(?:khac|khác)(?:\s+(?:nua|nữa))?\b/giu,
+      ' ',
+    )
+    .replace(/[ ,.;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || text;
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+async function priorRecommendationsForMode(
+  config: ProductAdviceConfig,
+  roomId: string | undefined,
+  mode: AssistantProductConsultationMode,
+): Promise<AssistantPriorRecommendationContext[]> {
+  if (!roomId || (mode !== 'refinement' && mode !== 'more_options')) {
+    return [];
+  }
+  const ledger =
+    (await config.sessionService?.getLastRecommendationLedger(roomId)) ?? [];
+  return priorRecommendationsFromLedger(ledger);
+}
+
+function priorRecommendationsFromLedger(
+  ledger: AssistantRecommendationLedgerEntry[],
+): AssistantPriorRecommendationContext[] {
+  return uniquePriorRecommendations(
+    ledger.map((item) => ({
+      rank: item.rank,
+      productId: item.productId,
+      name: item.name,
+      slug: item.slug,
+      category: item.category,
+      price: item.price,
+      discountPrice: item.discountPrice,
+      stock: item.stock,
+      specsSummary: item.specsSummary,
+      specs: item.specsSummary ? { summary: item.specsSummary } : {},
+      reasons: [
+        item.specsSummary,
+        item.category ? `Danh mục: ${item.category}` : undefined,
+      ].filter((reason): reason is string => Boolean(reason)),
+    })),
+  );
+}
+
+function uniquePriorRecommendations(
+  recommendations: AssistantPriorRecommendationContext[],
+): AssistantPriorRecommendationContext[] {
+  const seen = new Set<string>();
+  return recommendations.filter((item) => {
+    if (!item.productId || seen.has(item.productId)) return false;
+    seen.add(item.productId);
+    return true;
+  });
+}
+
+function productConsultationModeFromState(
+  state: ProductAdviceState,
+  requestedMoreOptions: boolean,
+  priorRecommendationSort: boolean | undefined,
+): AssistantProductConsultationMode {
+  if (requestedMoreOptions) return 'more_options';
+  if (priorRecommendationSort) return 'price_sort';
+  const reason =
+    asString(state.intentPlan?.contextResolutionReason) ??
+    asString(state.parsedEntities?.contextResolutionReason);
+  return reason === 'shopping_constraint_continuation'
+    ? 'refinement'
+    : 'initial_advice';
+}
+
+function effectiveConsultationMode(
+  requestedMode: AssistantProductConsultationMode,
+  priorRecommendations: AssistantPriorRecommendationContext[],
+): AssistantProductConsultationMode {
+  return requestedMode === 'refinement' && priorRecommendations.length === 0
+    ? 'initial_advice'
+    : requestedMode;
+}
+
+function continuityMetadata(input: {
+  mode: AssistantProductConsultationMode;
+  priorRecommendations: AssistantPriorRecommendationContext[];
+  comparedProductIds: string[];
+  preferenceDelta?: string;
+}): Pick<
+  ProductAdviceResult['metadata'],
+  | 'consultationMode'
+  | 'priorRecommendationProductIds'
+  | 'comparedProductIds'
+  | 'recommendationContinuity'
+> {
+  const priorRecommendationProductIds = input.priorRecommendations.map(
+    (item) => item.productId,
+  );
+  const includeContinuity =
+    input.mode !== 'initial_advice' || priorRecommendationProductIds.length > 0;
+  if (!includeContinuity) return {};
+
+  return {
+    consultationMode: input.mode,
+    priorRecommendationProductIds,
+    comparedProductIds: input.comparedProductIds,
+    recommendationContinuity: {
+      mode: input.mode,
+      hasPriorRecommendations: priorRecommendationProductIds.length > 0,
+      priorRecommendationProductIds,
+      comparedProductIds: input.comparedProductIds,
+      ...(input.preferenceDelta ? { preferenceDelta: input.preferenceDelta } : {}),
+    },
+  };
+}
+
+function productAdviceHardConstraints(
+  state: ProductAdviceState,
+  searchQuery: string,
+): ProductRetrievalConstraints | undefined {
+  const contextualUserText =
+    asString(state.intentPlan?.contextualUserText) ??
+    asString(state.parsedEntities?.contextualUserText);
+  const sourceTexts = [state.userText, contextualUserText].filter(
+    (text): text is string => Boolean(text),
+  );
+  const extractedConstraints = [
+    ...sourceTexts,
+    searchQuery,
+  ].reduce<ProductRetrievalConstraints>(
+    (constraints, text) =>
+      mergeRetrievalConstraints(constraints, extractHardConstraints(text)),
+    {},
+  );
+  const category =
+    normalizedHardCategory(asString(state.parsedEntities?.productCategory)) ??
+    explicitHardCategoryFromText(state.userText) ??
+    (contextualUserText
+      ? explicitHardCategoryFromText(contextualUserText)
+      : undefined) ??
+    explicitHardCategoryFromText(searchQuery);
+  const categoryConstraints = category
+    ? { categoryHints: [category] }
+    : undefined;
+  const merged = mergeRetrievalConstraints(
+    extractedConstraints,
+    categoryConstraints,
+  );
+  if (!category) delete merged.categoryHints;
+  const cleaned = cleanProductAdviceHardConstraints(
+    merged,
+    sourceTexts.join(' '),
+  );
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+}
+
+function explicitHardCategoryFromText(text: string): string | undefined {
+  return detectProductFamilyFromText(text);
+}
+
+function normalizedHardCategory(value?: string): string | undefined {
+  return value ? detectProductFamilyFromText(value) : undefined;
+}
+function cleanProductAdviceHardConstraints(
+  constraints: ProductRetrievalConstraints,
+  explicitText: string,
+): ProductRetrievalConstraints {
+  const cleaned: ProductRetrievalConstraints = {};
+  if (constraints.category) cleaned.category = constraints.category;
+  if (constraints.categoryPath?.length)
+    cleaned.categoryPath = constraints.categoryPath;
+  if (constraints.categoryHints?.length)
+    cleaned.categoryHints = constraints.categoryHints;
+  const requiredSpecs = explicitRequiredSpecsOnly(
+    constraints.requiredSpecs,
+    explicitText,
+  );
+  const hasExplicitSpecs = Object.keys(requiredSpecs).length > 0;
+  if (hasExplicitSpecs && typeof constraints.minPrice === 'number') {
+    cleaned.minPrice = constraints.minPrice;
+  }
+  if (hasExplicitSpecs && typeof constraints.maxPrice === 'number') {
+    cleaned.maxPrice = constraints.maxPrice;
+  }
+  if (constraints.inStockOnly === true) cleaned.inStockOnly = true;
+  if (hasExplicitSpecs) cleaned.requiredSpecs = requiredSpecs;
+  return cleaned;
+}
+
+function explicitRequiredSpecsOnly(
+  specs: ProductRetrievalConstraints['requiredSpecs'],
+  explicitText: string,
+): NonNullable<ProductRetrievalConstraints['requiredSpecs']> {
+  if (!specs) return {};
+  const normalized = normalizeAdviceIntentText(explicitText);
+  const explicit: NonNullable<ProductRetrievalConstraints['requiredSpecs']> =
+    {};
+  if (specs.ramGb && /\bram\s*\d{1,3}\s*gb\b/.test(normalized)) {
+    explicit.ramGb = specs.ramGb;
+  }
+  if (specs.ssdGb && /\bssd\s*\d{3,4}\s*gb\b/.test(normalized)) {
+    explicit.ssdGb = specs.ssdGb;
+  }
+  if (
+    specs.gpu &&
+    /\b(?:nvidia|gpu\s+nvidia|rtx\s*\d{3,4}|gtx\s*\d{3,4})\b/.test(normalized)
+  ) {
+    explicit.gpu = specs.gpu;
+  }
+  if (
+    specs.displayResolution &&
+    /\b(?:2\s*k|4\s*k|8\s*k|qhd|wqhd|uhd|\d{4}\s*x\s*\d{4}|1440p|2160p|4320p)\b/.test(
+      normalized,
+    )
+  ) {
+    explicit.displayResolution = specs.displayResolution;
+  }
+  if (specs.refreshRateHz && /\b\d{2,3}\s*hz\b/.test(normalized)) {
+    explicit.refreshRateHz = specs.refreshRateHz;
+  }
+  if (specs.wireless && /\b(wireless|khong day)\b/.test(normalized)) {
+    explicit.wireless = true;
+  }
+  return explicit;
+}
+
+function mergeActiveRetrievalConstraints(
+  constraints: ProductRetrievalConstraints,
+  hardConstraints?: ProductRetrievalConstraints,
+): ProductRetrievalConstraints {
+  if (!hardConstraints) {
+    const withoutRequiredSpecs = { ...constraints };
+    delete withoutRequiredSpecs.requiredSpecs;
+    return withoutRequiredSpecs;
+  }
+
+  const hardCategoryHints = uniqueAdviceStrings([
+    ...(hardConstraints.categoryHints ?? []),
+    hardConstraints.category,
+  ]);
+
+  const merged: ProductRetrievalConstraints = {
+    ...constraints,
+    ...hardConstraints,
+    categoryHints:
+      hardCategoryHints.length > 0
+        ? hardCategoryHints
+        : uniqueAdviceStrings(constraints.categoryHints ?? []),
+    categoryPath: uniqueAdviceStrings([
+      ...(constraints.categoryPath ?? []),
+      ...(hardConstraints.categoryPath ?? []),
+    ]),
+  };
+  if (!hardConstraints.requiredSpecs) delete merged.requiredSpecs;
+  return merged;
+}
+
+function uniqueAdviceStrings(values: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(values.filter((value): value is string => Boolean(value))),
+  );
 }
 
 function resultSatisfiesVisibleConstraints(
@@ -702,6 +1447,7 @@ function resultSatisfiesVisibleConstraints(
   return productCandidateSatisfiesHardConstraints(
     resultWithSnapshotPayload(result, snapshot),
     constraints,
+    { enforceRequiredSpecs: true },
   );
 }
 
@@ -724,10 +1470,22 @@ function resultWithSnapshotPayload(
       stock: Number(snapshot.stock ?? result.payload.stock),
       isPublished: snapshot.isPublished ?? result.payload.isPublished,
       isArchived: snapshot.isArchived ?? result.payload.isArchived,
+      normalizedSpecs:
+        snapshotNormalizedSpecs(snapshot) ?? result.payload.normalizedSpecs,
     },
   };
 }
 
+function snapshotNormalizedSpecs(
+  snapshot: ProductCatalogSnapshot,
+): Record<string, unknown> | undefined {
+  const normalizedSpecs = snapshot.searchMetadata?.normalizedSpecs;
+  return normalizedSpecs &&
+    typeof normalizedSpecs === 'object' &&
+    !Array.isArray(normalizedSpecs)
+    ? (normalizedSpecs as Record<string, unknown>)
+    : undefined;
+}
 function snapshotCategoryPath(
   snapshot: ProductCatalogSnapshot,
   fallback: string[],
@@ -748,10 +1506,20 @@ function ensureProductCategorySearchText(
 }
 
 function mentionsCatalogProduct(text: string): boolean {
-  return /\blaptop\b|\bpc\b|máy tính|may tinh|sản phẩm|san pham|màn hình|man hinh|bàn phím|ban phim|chuột|chuot|tai nghe|ssd|ram|cpu|vga/i.test(
-    normalizeProductSearchQuery(text),
+  return (
+    Boolean(detectProductFamilyFromText(text)) ||
+    /máy tính|may tinh|sản phẩm|san pham/i.test(
+      normalizeProductSearchQuery(text),
+    )
   );
 }
+function isSetupOrComboProductAdvice(text: string): boolean {
+  const normalized = normalizeAdviceIntentText(text);
+  return /\b(setup|set up|combo|full set|build pc|build may|lap rap|rap may|rig|dan may|dan pc|bo may|bo pc|bo gear|tron bo|ca bo)\b/.test(
+    normalized,
+  );
+}
+
 function expandPerformanceLaptopSearchText(text: string): string {
   const normalized = normalizeAdviceIntentText(text);
   const needsGpuExpansion =
@@ -926,37 +1694,112 @@ async function searchProductCatalog(
   query: string,
   useFastCatalogSearch: boolean,
   topK: number,
+  rewriteContext: {
+    query: string;
+    originalQuery: string;
+    clarificationAnswer?: string;
+    hardConstraints?: ProductRetrievalConstraints;
+    allowDeterministicShortCircuit?: boolean;
+  },
 ): Promise<ProductRetrievalResult> {
   if (
     useFastCatalogSearch &&
     typeof config.catalogAdapter?.searchProductsFast === 'function'
   ) {
-    return config.catalogAdapter.searchProductsFast(query, { topK });
+    const fastResult = await config.catalogAdapter.searchProductsFast(query, {
+      topK,
+    });
+    return {
+      ...fastResult,
+      rewrite: skippedRewriteMetadata(query, 'fast_catalog_exact_lookup'),
+    };
   }
 
-  if (typeof config.catalogAdapter?.searchProducts === 'function') {
-    return config.catalogAdapter.searchProducts(query, { topK });
-  }
+  return productRetriever.search(query, {
+    topK,
+    hardConstraints: rewriteContext.hardConstraints,
+    pipeline: 'phase-10-improved',
+    rewriteContext: {
+      ...rewriteContext,
+      query,
+      signal: config.abortSignal,
+      timeoutMs: config.rewriteTimeoutMs ?? PRODUCT_ADVICE_REWRITE_TIMEOUT_MS,
+      allowDeterministicShortCircuit:
+        rewriteContext.allowDeterministicShortCircuit === true,
+    },
+  });
+}
 
-  return productRetriever.search(query, { topK });
+function skippedRewriteMetadata(
+  query: string,
+  reason: string,
+): ProductRetrievalRewriteMetadata {
+  return {
+    rewrittenQuery: query,
+    detectedIntents: [],
+    productGroups: [],
+    hardConstraints: {},
+    softSignals: [],
+    expandedKeywords: [],
+    comboGroups: [],
+    metadata: {
+      rewrite_provider: 'deepseek',
+      rewrite_model: 'not_called',
+      rewrite_status: 'skipped',
+      rewrite_retry_count: 0,
+      rewrite_latency_ms: 0,
+      rewritten_query: query,
+      rewrite_skipped_reason: reason,
+    },
+  };
 }
 
 function shouldUseFastCatalogSearch(text: string): boolean {
   const normalized = normalizeAdviceIntentText(text);
-  const mentionsCatalogProduct =
-    /\blaptop\b|\bpc\b|may tinh|man hinh|ban phim|chuot|tai nghe|ssd|ram/.test(
+  if (!mentionsCatalogProduct(normalized)) return false;
+  if (!asksForSimpleCatalogLookup(normalized)) return false;
+  if (hasAdviceOrPurposeGrammar(normalized)) return false;
+
+  const residual = stripSimpleCatalogLookupTokens(normalized);
+  return !residual || hasExactLookupSignal(normalized);
+}
+
+function asksForSimpleCatalogLookup(normalized: string): boolean {
+  return (
+    /\b(co|con|tim|kiem|mua)\b.*\b(nao|khong|ko|k)\b/.test(normalized) ||
+    /\b(nao|duoi|toi da|tam gia|ngan sach|gia|con hang|co hang)\b/.test(
       normalized,
-    );
-  const asksForAvailabilityOrBudget =
-    /\b(co|con|tim|kiem|mua)\b.*\b(nao|khong|ko)\b/.test(normalized) ||
-    /\b(nao|duoi|toi da|tam gia|ngan sach|gia)\b/.test(normalized) ||
-    /\d{1,3}\s*(trieu|tr)\b/.test(normalized);
-  const asksForDeepAdvice = /\b(tu van|goi y|nen mua|chon|so sanh)\b/.test(
+    ) ||
+    /\d{1,3}\s*(trieu|tr)\b/.test(normalized) ||
+    hasExactLookupSignal(normalized)
+  );
+}
+
+function hasAdviceOrPurposeGrammar(normalized: string): boolean {
+  return /\b(tu van|goi y|nen mua|chon|so sanh|phu hop|uu tien|nhu cau|de|dung de|phuc vu|muc dich|lam)\b/.test(
     normalized,
   );
+}
 
+function stripSimpleCatalogLookupTokens(normalized: string): string {
+  return normalized
+    .replace(
+      /\b(laptop|pc|may tinh|man hinh|ban phim|chuot|tai nghe|ssd|ram|cpu|vga|linh kien|san pham|mau|may|bo)\b/g,
+      ' ',
+    )
+    .replace(
+      /\b(co|con|tim|kiem|mua|nao|khong|ko|k|duoi|toi da|tam gia|ngan sach|gia|con hang|co hang|trieu|tr|ban|minh|toi|em|shop|nhe|nha|giup|voi|cho)\b/g,
+      ' ',
+    )
+    .replace(/\b\d{1,3}\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasExactLookupSignal(normalized: string): boolean {
   return (
-    mentionsCatalogProduct && asksForAvailabilityOrBudget && !asksForDeepAdvice
+    /\b[A-Za-z]*\d[A-Za-z0-9-]{3,}\b/.test(normalized) ||
+    /\b(?:sku|ma|model)\b/.test(normalized)
   );
 }
 
@@ -973,45 +1816,98 @@ function normalizeAdviceIntentText(text: string): string {
 
 function isBroadProductAdviceRequest(text: string): boolean {
   const normalized = normalizeAdviceIntentText(text);
-  const asksForAdvice = /tu van|goi y|\bcan\b|can mua|nen mua|chon/.test(
+  const asksForAdvice = /\b(tu van|goi y|can mua|can|nen mua|chon)\b/.test(
     normalized,
   );
-  const mentionsGenericProduct = /laptop|\bpc\b|may tinh|san pham/.test(
+  const mentionsGenericProduct = /\b(laptop|pc|may tinh|san pham)\b/.test(
     normalized,
   );
   if (!asksForAdvice || !mentionsGenericProduct) return false;
 
-  const hasBudget = /\d|trieu|ngan sach|tam gia|tam |duoi|khoang/.test(
-    normalized,
-  );
-  const hasUseCase =
-    /gaming|game|hoc|van phong|do hoa|render|lap trinh|code|ai|creator|thiet ke/.test(
-      normalized,
-    );
-  const hasSpec =
-    /rtx|gtx|ram|ssd|cpu|gpu|i[3579]|ryzen|oled|inch|man hinh|mong nhe|pin|tan nhiet/.test(
-      normalized,
-    );
-
-  return !hasBudget && !hasUseCase && !hasSpec;
+  return !specificProductAdviceResidual(normalized);
 }
 
-function emptyGroundedProductText(retrieval: {
-  explanation?: string;
-  cragRetry?: { relaxedConstraints?: string[] };
-  crag_retry?: { relaxedConstraints?: string[] };
-}): string {
-  const relaxed =
-    retrieval.cragRetry?.relaxedConstraints ??
-    retrieval.crag_retry?.relaxedConstraints ??
-    [];
-  if (relaxed.includes('rtx_4090')) {
-    return 'Mình chưa tìm thấy laptop RTX 4090 phù hợp với ngân sách này trong catalog. Bạn có muốn mình nới yêu cầu GPU sang RTX 4060/4070 hoặc tăng ngân sách để tìm lựa chọn sát hơn không?';
+function specificProductAdviceResidual(normalized: string): string {
+  return normalized
+    .replace(
+      /\b(tu van|goi y|can mua|can|nen mua|chon|ve|cho|minh|toi|em|shop|nhe|nha|giup|voi|tao|tui|to|ban|co|a|anh|chi|de)\b/g,
+      ' ',
+    )
+    .replace(/\b(laptop|pc|may tinh|san pham|mau|may|bo)\b/g, ' ')
+    .replace(/\b(pho thong|co ban|basic|entry level)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function snapshotFromResult(
+  result: RerankedProductCandidate,
+): ProductCatalogSnapshot {
+  return {
+    productId: result.payload.productId,
+    name: result.payload.name,
+    slug: result.payload.slug,
+    price: result.payload.price,
+    discountPrice: result.payload.discountPrice,
+    stock: result.payload.stock,
+    category: result.payload.category,
+    searchMetadata: {
+      categoryPath: result.payload.categoryPath,
+      normalizedSpecs: result.payload.normalizedSpecs,
+    },
+    isPublished: result.payload.isPublished,
+    isArchived: result.payload.isArchived,
+  };
+}
+
+function uniqueResultsByProductId(
+  results: RerankedProductCandidate[],
+): RerankedProductCandidate[] {
+  const byId = new Map<string, RerankedProductCandidate>();
+  for (const result of results) {
+    if (!byId.has(result.productId)) {
+      byId.set(result.productId, result);
+    }
   }
+  return [...byId.values()];
+}
+
+function uniqueProductCardsByProductId(
+  productCards: ProductAdviceCard[],
+): ProductAdviceCard[] {
+  const byId = new Map<string, ProductAdviceCard>();
+  for (const card of productCards) {
+    if (card.productId && !byId.has(card.productId)) {
+      byId.set(card.productId, card);
+    }
+  }
+  return [...byId.values()];
+}
+
+function uniqueProductGroupsByProductId(
+  groups: ProductAdviceProductGroup[],
+): ProductAdviceProductGroup[] {
+  const seen = new Set<string>();
+  return groups
+    .map((group) => ({
+      ...group,
+      productCards: group.productCards.filter((card) => {
+        if (!card.productId || seen.has(card.productId)) return false;
+        seen.add(card.productId);
+        return true;
+      }),
+    }))
+    .filter((group) => group.productCards.length > 0);
+}
+
+function minimalNoResultText(retrieval: { explanation?: string }): string {
   return (
     retrieval.explanation ??
-    'Mình chưa tìm thấy sản phẩm đủ dữ liệu trong catalog. Bạn có thể nới ngân sách hoặc nói rõ nhu cầu chính để mình tìm lại không?'
+    'Catalog hiện chưa có sản phẩm đủ dữ liệu cho yêu cầu này. Bạn có thể nới ngân sách hoặc bổ sung tiêu chí để mình tìm lại.'
   );
+}
+
+function rewriteTraceMetadata(retrieval: ProductRetrievalResult) {
+  return retrieval.rewrite?.metadata ?? {};
 }
 
 function buildProductToolCalls(
@@ -1068,9 +1964,7 @@ function toProductCard(
   const actions = ['VIEW_PRODUCT'];
   if (addable) actions.push('ADD_TO_CART');
 
-  const reasons = result.reasons
-    .map((reason) => presentableReason(reason))
-    .filter((message): message is string => Boolean(message));
+  const reasons: string[] = [];
 
   return {
     productId: snapshot.productId,
@@ -1083,7 +1977,7 @@ function toProductCard(
       ? `/products/${snapshot.slug}`
       : `/products/${snapshot.productId}`,
     image: snapshot.image ?? snapshot.images?.[0],
-    reasons: reasons.length > 0 ? reasons : ['Phù hợp với nhu cầu đã nêu.'],
+    reasons,
     availability: {
       status,
       addable,
@@ -1096,31 +1990,6 @@ function toProductCard(
   };
 }
 
-function presentableReason(reason: ProductRerankReason): string | null {
-  switch (reason.code) {
-    case 'vector_score':
-    case 'bm25_score':
-    case 'keyword_match':
-      return null;
-    case 'exact_match':
-      return 'Tên sản phẩm khớp với nhu cầu tìm kiếm.';
-    case 'category_match':
-      return 'Đúng nhóm sản phẩm bạn đang tìm.';
-    case 'spec_match':
-      return 'Thông số phù hợp với yêu cầu kỹ thuật.';
-    case 'price_compatible':
-      return 'Nằm trong ngân sách đã nêu.';
-    case 'in_stock':
-      return 'Đang còn hàng.';
-    case 'need_match':
-      return 'Phù hợp với nhu cầu sử dụng đã nêu.';
-    case 'target_user_match':
-      return 'Phù hợp với nhóm người dùng mục tiêu.';
-    default:
-      return null;
-  }
-}
-
 function specsFromSnapshot(snapshot: {
   searchMetadata?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
@@ -1128,6 +1997,10 @@ function specsFromSnapshot(snapshot: {
   const normalizedSpecs = snapshot.searchMetadata?.normalizedSpecs;
   if (normalizedSpecs && typeof normalizedSpecs === 'object') {
     return normalizedSpecs as Record<string, unknown>;
+  }
+  const specsSummary = snapshot.searchMetadata?.specsSummary;
+  if (typeof specsSummary === 'string' && specsSummary.trim()) {
+    return { specsSummary: specsSummary.trim() };
   }
   return snapshot.attributes ?? {};
 }

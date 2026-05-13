@@ -120,10 +120,22 @@ describe('DeepSeekQueryRewriteClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('retries request aborts once before returning timeout-safe errors', async () => {
-    fetchMock
-      .mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'))
-      .mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'));
+  it('retries local request timeouts once before returning timeout-safe errors', async () => {
+    fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      return new Promise((_resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+
+        signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    });
     const client = new DeepSeekQueryRewriteClient({
       deepSeek: {
         apiKey: 'configured',
@@ -139,5 +151,45 @@ describe('DeepSeekQueryRewriteClient', () => {
         messages: [{ role: 'user', content: 'laptop' }],
       }),
     ).rejects.toThrow('DeepSeek rewrite request timed out');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry upstream caller aborts as timeouts', async () => {
+    fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      return new Promise((_resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+
+        signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    });
+    const client = new DeepSeekQueryRewriteClient({
+      deepSeek: {
+        apiKey: 'configured',
+        apiKeyPresent: true,
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-v4-pro',
+        timeoutMs: 90_000,
+      },
+    });
+    const upstreamController = new AbortController();
+
+    const rewritePromise = client.rewriteJson({
+      messages: [{ role: 'user', content: 'laptop' }],
+      signal: upstreamController.signal,
+    });
+    upstreamController.abort();
+
+    await expect(rewritePromise).rejects.toThrow(
+      'DeepSeek rewrite request aborted',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,8 +4,8 @@ export const ASSISTANT_MODEL_ENV_KEYS = {
   openRouterChatMaxTokens: 'OPENROUTER_CHAT_MAX_TOKENS',
 } as const;
 
-const DEFAULT_ASSISTANT_CHAT_MODEL = 'openai/gpt-4o-mini';
-const DEFAULT_ASSISTANT_MAX_TOKENS = 1600;
+const DEFAULT_ASSISTANT_CHAT_MODEL = 'deepseek-v4-pro';
+const DEFAULT_ASSISTANT_MAX_TOKENS = 2200;
 const MIN_ASSISTANT_MAX_TOKENS = 256;
 const MAX_ASSISTANT_MAX_TOKENS = 4000;
 
@@ -36,8 +36,7 @@ export function readAssistantModelConfig(): AssistantModelConfig {
 
   const openRouter: AssistantModelConfig['openRouter'] = {
     apiKeyPresent: Boolean(apiKey),
-    chatModel:
-      process.env.OPENROUTER_CHAT_MODEL || DEFAULT_ASSISTANT_CHAT_MODEL,
+    chatModel: normalizeAssistantChatModel(process.env.OPENROUTER_CHAT_MODEL),
     temperature: 0.1,
     maxTokens: readPositiveIntegerEnv(
       process.env.OPENROUTER_CHAT_MAX_TOKENS,
@@ -60,6 +59,15 @@ export function readAssistantModelConfig(): AssistantModelConfig {
   });
 
   return { openRouter };
+}
+
+function normalizeAssistantChatModel(value?: string): string {
+  const model = value?.trim();
+  if (!model) return DEFAULT_ASSISTANT_CHAT_MODEL;
+  if (model === 'deepseek-chat' || model === 'deepseek-reasoner') {
+    return DEFAULT_ASSISTANT_CHAT_MODEL;
+  }
+  return model;
 }
 
 function readPositiveIntegerEnv(

@@ -44,8 +44,20 @@ export const ALLOWED_TRACE_KEYS = [
   'deterministic_bypass',
   'bypass_confidence',
   'product_context_resolver',
+  'rewrite_provider',
+  'rewrite_model',
+  'rewrite_status',
+  'rewrite_retry_count',
+  'rewrite_latency_ms',
+  'rewritten_query',
+  'rewrite_skipped_reason',
+  'combo_group_count',
+  'group_coverage',
+  'needsClarification',
+  'consultationMode',
+  'llmComposeStatus',
+  'llmComposeFallbackReason',
 ] as const;
-
 type AllowedTraceKey = (typeof ALLOWED_TRACE_KEYS)[number];
 
 export type RedactedAssistantTraceMetadata = Partial<

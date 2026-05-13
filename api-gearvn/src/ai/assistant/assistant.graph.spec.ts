@@ -332,7 +332,7 @@ describe('shoppingAssistantGraph', () => {
           requestedMoreOptions: true,
           pricePreference: 'cheaper',
           stockRequired: true,
-          contextResolutionReason: 'shopping_constraint_continuation',
+          contextResolutionReason: 'shopping_more_options_continuation',
         }),
       }),
     );
@@ -371,7 +371,7 @@ describe('shoppingAssistantGraph', () => {
           productCategory: 'laptop',
           requestedMoreOptions: true,
           priceSort: 'desc',
-          contextResolutionReason: 'shopping_constraint_continuation',
+          contextResolutionReason: 'shopping_more_options_continuation',
           contextualUserText: expect.stringContaining('40 triệu, học AI/ML'),
         }),
         intentPlan: expect.objectContaining({

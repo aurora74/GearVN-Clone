@@ -1,13 +1,24 @@
 import { OpenRouterBgeM3Client } from '../embeddings/openrouter-bge-m3.client';
 import { QdrantProductsClient } from '../vector/qdrant-products.client';
 import { ProductLexicalSearchService } from './product-lexical-search.service';
+import type { ProductComboRetrievalService } from './product-combo-retrieval.service';
+import type { ProductIntentComboGroup } from './product-intent-primitives';
+import type {
+  ProductQueryRewriteContext,
+  ProductQueryRewriteResult,
+  ProductQueryRewriteService,
+} from './product-query-rewrite.service';
 import {
   ProductCandidate,
+  ProductComboGroupResult,
   ProductCragRetryMetadata,
+  ProductGroupCoverage,
   ProductRetrievalConstraints,
   ProductRetrievalFilter,
+  ProductRetrievalPipelineMode,
   ProductRetrievalQuery,
   ProductRetrievalResult,
+  ProductRetrievalRewriteMetadata,
   RerankedProductCandidate,
 } from './product-retrieval.types';
 import {
@@ -26,6 +37,8 @@ export type ProductRetrieverSearchOptions = {
   filters?: ProductRetrievalFilter;
   constraints?: ProductRetrievalConstraints;
   hardConstraints?: ProductRetrievalConstraints;
+  pipeline?: ProductRetrievalPipelineMode;
+  rewriteContext?: ProductQueryRewriteContext;
 };
 
 type HybridSearchPass = {
@@ -42,6 +55,14 @@ export class ProductRetriever {
     private readonly embedder: ProductEmbedder,
     private readonly vector: ProductVectorSearcher,
     private readonly lexical?: ProductLexicalSearcher,
+    private readonly queryRewriteService?: Pick<
+      ProductQueryRewriteService,
+      'rewrite'
+    >,
+    private readonly comboRetrievalService?: Pick<
+      ProductComboRetrievalService,
+      'searchCombo'
+    >,
   ) {}
 
   async search(
@@ -54,7 +75,25 @@ export class ProductRetriever {
       options.constraints,
       options.hardConstraints,
     );
-    const firstPass = await this.runHybridSearch(query, callerConstraints, topK);
+    const pipeline = options.pipeline ?? 'phase-09.2-baseline';
+
+    if (pipeline === 'phase-10-improved' && this.queryRewriteService) {
+      return this.searchImproved(query, callerConstraints, topK, options);
+    }
+
+    return this.searchBaseline(query, callerConstraints, topK);
+  }
+
+  private async searchBaseline(
+    query: string,
+    callerConstraints: ProductRetrievalConstraints,
+    topK: number,
+  ): Promise<ProductRetrievalResult> {
+    const firstPass = await this.runHybridSearch(
+      query,
+      callerConstraints,
+      topK,
+    );
     const retryDecision = shouldRunCragRetry(query, firstPass, topK);
 
     if (!retryDecision.triggered) {
@@ -74,19 +113,139 @@ export class ProductRetriever {
     return buildRetrievalResult(
       retryPass.results.length > 0 ? retryPass : firstPass,
       cragRetry,
-      buildCragExplanation(query, rewrite.relaxedConstraints),
+      buildCragExplanation(),
       query,
     );
+  }
+
+  private async searchImproved(
+    query: string,
+    callerConstraints: ProductRetrievalConstraints,
+    topK: number,
+    options: ProductRetrieverSearchOptions,
+  ): Promise<ProductRetrievalResult> {
+    const queryRewriteService = this.queryRewriteService;
+    if (!queryRewriteService) {
+      return this.searchBaseline(query, callerConstraints, topK);
+    }
+    const rewriteContext = {
+      ...(options.rewriteContext ?? {}),
+      query,
+      hardConstraints: callerConstraints,
+    };
+    const rewrite = await queryRewriteService.rewrite(rewriteContext);
+    const comboGroups = isExplicitComboRetrievalRequest(rewriteContext)
+      ? rewrite.comboGroups
+      : [];
+    const rewriteMetadata = toRetrievalRewriteMetadata({
+      ...rewrite,
+      comboGroups,
+    });
+    const mergedConstraints = mergeAuthoritativeSearchConstraints(
+      rewrite.hardConstraints,
+      callerConstraints,
+    );
+
+    if (rewrite.clarificationNeeded) {
+      return buildImprovedShortcutResult({
+        originalQuery: query,
+        effectiveQuery: rewrite.rewrittenQuery,
+        constraints: mergedConstraints,
+        rewrite: rewriteMetadata,
+        clarificationReason: rewrite.clarificationReason,
+      });
+    }
+
+    if (comboGroups.length > 0 && this.comboRetrievalService) {
+      const combo = await this.comboRetrievalService.searchCombo({
+        query: rewrite.rewrittenQuery,
+        groups: comboGroups as ProductIntentComboGroup[],
+        constraints: mergedConstraints,
+        retriever: this,
+        perGroupTopK: Math.min(3, topK),
+        signal: rewriteContext.signal,
+      });
+
+      return buildImprovedComboResult({
+        originalQuery: query,
+        effectiveQuery: rewrite.rewrittenQuery,
+        constraints: mergedConstraints,
+        rewrite: rewriteMetadata,
+        comboGroups: combo.groups,
+        groupCoverage: combo.groupCoverage,
+      });
+    }
+
+    const firstPass = await this.runHybridSearch(
+      rewrite.rewrittenQuery,
+      mergedConstraints,
+      topK,
+      { additionalExpanded: rewrite.expandedKeywords },
+    );
+    const retryDecision = shouldRunCragRetry(
+      rewrite.rewrittenQuery,
+      firstPass,
+      topK,
+    );
+
+    if (!retryDecision.triggered) {
+      const cragRetry = buildCragRetryMetadata(
+        rewrite.rewrittenQuery,
+        undefined,
+        retryDecision,
+      );
+      return {
+        ...buildRetrievalResult(firstPass, cragRetry, undefined, query),
+        pipelineVersion: 'phase-10-improved',
+        rewrite: rewriteMetadata,
+      };
+    }
+
+    const cragRewrite = rewriteProductQueryForCragRetry(rewrite.rewrittenQuery);
+    const retryPass = await this.runHybridSearch(
+      cragRewrite.rewrittenQuery,
+      mergedConstraints,
+      topK,
+      {
+        enforceRequiredSpecs: false,
+        additionalExpanded: rewrite.expandedKeywords,
+      },
+    );
+    const cragRetry = buildCragRetryMetadata(
+      rewrite.rewrittenQuery,
+      cragRewrite,
+      retryDecision,
+    );
+
+    return {
+      ...buildRetrievalResult(
+        retryPass.results.length > 0 ? retryPass : firstPass,
+        cragRetry,
+        buildCragExplanation(),
+        query,
+      ),
+      pipelineVersion: 'phase-10-improved',
+      rewrite: rewriteMetadata,
+    };
   }
 
   private async runHybridSearch(
     query: string,
     callerConstraints: ProductRetrievalConstraints,
     topK: number,
-    options: { enforceRequiredSpecs?: boolean } = {},
+    options: {
+      enforceRequiredSpecs?: boolean;
+      additionalExpanded?: string[];
+    } = {},
   ): Promise<HybridSearchPass> {
-    const retrievalQuery = buildRetrievalQuery(query, callerConstraints);
-    const embedding = await this.embedder.embedQuery(retrievalQuery.expandedText);
+    const retrievalQuery = buildRetrievalQuery(
+      query,
+      callerConstraints,
+      options.additionalExpanded,
+    );
+    const embedding = await this.embedder.embedQuery(
+      retrievalQuery.expandedText,
+    );
     const vectorValues = Array.isArray(embedding)
       ? embedding
       : (embedding.vectors[0] ?? []);
@@ -100,7 +259,10 @@ export class ProductRetriever {
         constraints: retrievalQuery.constraints,
       }) ?? Promise.resolve([]),
     ]);
-    const normalizedVectorCandidates = normalizeCandidates(vectorCandidates, 'vector');
+    const normalizedVectorCandidates = normalizeCandidates(
+      vectorCandidates,
+      'vector',
+    );
     const normalizedLexicalCandidates = normalizeCandidates(
       lexicalCandidates,
       'lexical',
@@ -128,9 +290,13 @@ export class ProductRetriever {
 function buildRetrievalQuery(
   query: string,
   providedConstraints?: ProductRetrievalConstraints,
+  additionalExpanded: string[] = [],
 ): ProductRetrievalQuery {
-  const expanded = expandProductQuery(query);
-  const constraints = mergeRetrievalConstraints(
+  const expanded = uniqueStrings([
+    ...expandProductQuery(query),
+    ...additionalExpanded,
+  ]);
+  const constraints = mergeAuthoritativeSearchConstraints(
     extractHardConstraints(query),
     providedConstraints,
   );
@@ -143,6 +309,83 @@ function buildRetrievalQuery(
   };
 }
 
+function toRetrievalRewriteMetadata(
+  rewrite: ProductQueryRewriteResult,
+): ProductRetrievalRewriteMetadata {
+  return {
+    rewrittenQuery: rewrite.rewrittenQuery,
+    detectedIntents: rewrite.detectedIntents,
+    productGroups: rewrite.productGroups,
+    hardConstraints: rewrite.hardConstraints,
+    softSignals: rewrite.softSignals,
+    expandedKeywords: rewrite.expandedKeywords,
+    comboGroups: rewrite.comboGroups,
+    confidence: rewrite.confidence,
+    metadata: rewrite.metadata,
+  };
+}
+
+function buildImprovedShortcutResult(input: {
+  originalQuery: string;
+  effectiveQuery: string;
+  constraints: ProductRetrievalConstraints;
+  rewrite: ProductRetrievalRewriteMetadata;
+  clarificationReason: string | null;
+}): ProductRetrievalResult {
+  return {
+    pipelineVersion: 'phase-10-improved',
+    query: {
+      original: input.originalQuery,
+      expanded: [],
+      expandedText: input.effectiveQuery,
+      constraints: input.constraints,
+    },
+    effectiveQuery: input.effectiveQuery,
+    candidates: [],
+    vectorCandidates: [],
+    lexicalCandidates: [],
+    results: [],
+    rewrite: input.rewrite,
+    clarification: {
+      needed: true,
+      reason: input.clarificationReason,
+    },
+  };
+}
+
+function buildImprovedComboResult(input: {
+  originalQuery: string;
+  effectiveQuery: string;
+  constraints: ProductRetrievalConstraints;
+  rewrite: ProductRetrievalRewriteMetadata;
+  comboGroups: ProductComboGroupResult[];
+  groupCoverage: ProductGroupCoverage;
+}): ProductRetrievalResult {
+  const results = uniqueResultsByProductId(
+    input.comboGroups.flatMap((group) => group.results),
+  );
+  return {
+    pipelineVersion: 'phase-10-improved',
+    query: {
+      original: input.originalQuery,
+      expanded: input.rewrite.expandedKeywords,
+      expandedText: [
+        input.effectiveQuery,
+        ...input.rewrite.expandedKeywords,
+      ].join(' | '),
+      constraints: input.constraints,
+    },
+    effectiveQuery: input.effectiveQuery,
+    candidates: results,
+    vectorCandidates: [],
+    lexicalCandidates: [],
+    results,
+    rewrite: input.rewrite,
+    comboGroups: input.comboGroups,
+    groupCoverage: input.groupCoverage,
+  };
+}
+
 function mergeSearchConstraints(
   ...constraints: Array<ProductRetrievalConstraints | undefined>
 ): ProductRetrievalConstraints {
@@ -151,7 +394,45 @@ function mergeSearchConstraints(
     {},
   );
 }
+function mergeAuthoritativeSearchConstraints(
+  extracted?: ProductRetrievalConstraints,
+  provided?: ProductRetrievalConstraints,
+): ProductRetrievalConstraints {
+  const merged = mergeSearchConstraints(extracted, provided);
+  if (!provided || !hasCategorySignal(provided)) return merged;
 
+  if (!provided.category) delete merged.category;
+  if (!provided.categoryPath?.length) delete merged.categoryPath;
+
+  const categoryHints = uniqueConstraintStrings([
+    ...(provided.categoryHints ?? []),
+    provided.category,
+  ]);
+  if (categoryHints.length > 0) merged.categoryHints = categoryHints;
+
+  return merged;
+}
+
+function hasCategorySignal(constraints: ProductRetrievalConstraints): boolean {
+  return Boolean(
+    constraints.category ||
+      constraints.categoryPath?.length ||
+      constraints.categoryHints?.length,
+  );
+}
+
+function uniqueConstraintStrings(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    const key = normalizeRetrievalIntentText(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(text);
+  }
+  return result;
+}
 function vectorFilters(
   constraints: ProductRetrievalConstraints,
 ): ProductRetrievalFilter {
@@ -244,13 +525,7 @@ function buildRetrievalResult(
   };
 }
 
-function buildCragExplanation(
-  query: string,
-  relaxedConstraints: string[],
-): string | undefined {
-  if (relaxedConstraints.includes('rtx_4090')) {
-    return `Không tìm thấy cấu hình RTX 4090 phù hợp với ràng buộc trong "${query}", nên hệ thống nới riêng yêu cầu RTX 4090 và giữ lại ngân sách/danh mục để tìm lựa chọn gần nhất.`;
-  }
+function buildCragExplanation(): string | undefined {
   return undefined;
 }
 
@@ -275,7 +550,9 @@ function normalizeCandidates(
   }));
 }
 
-function dedupeHybridCandidates(candidates: ProductCandidate[]): ProductCandidate[] {
+function dedupeHybridCandidates(
+  candidates: ProductCandidate[],
+): ProductCandidate[] {
   const byId = new Map<string, ProductCandidate>();
   for (const candidate of candidates) {
     const productId = candidate.productId || candidate.payload.productId;
@@ -287,7 +564,10 @@ function dedupeHybridCandidates(candidates: ProductCandidate[]): ProductCandidat
     byId.set(productId, {
       ...existing,
       score: Math.max(existing.score, candidate.score),
-      lexicalScore: Math.max(existing.lexicalScore ?? 0, candidate.lexicalScore ?? 0),
+      lexicalScore: Math.max(
+        existing.lexicalScore ?? 0,
+        candidate.lexicalScore ?? 0,
+      ),
       matchedTerms: uniqueStrings([
         ...(existing.matchedTerms ?? []),
         ...(candidate.matchedTerms ?? []),
@@ -300,6 +580,67 @@ function dedupeHybridCandidates(candidates: ProductCandidate[]): ProductCandidat
     });
   }
   return Array.from(byId.values());
+}
+
+function isExplicitComboRetrievalRequest(context: ProductQueryRewriteContext): boolean {
+  const text = [
+    context.originalQuery,
+    context.query,
+    context.previousQuery,
+    context.clarificationAnswer,
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ');
+  const normalized = normalizeRetrievalIntentText(text);
+  if (!normalized) return false;
+
+  if (
+    /\b(setup|set up|combo|full set|build pc|build may|lap rap|rap may|rig|goc|dan|dan may|dan pc|bo|bo lam|bo may|bo pc|bo gear|bo gaming|dong bo|tron bo|ca bo|mot bo)\b/.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  return countProductGroupMentions(normalized) >= 2;
+}
+
+function countProductGroupMentions(normalized: string): number {
+  const patterns = [
+    /\blaptop\b|notebook|may tinh xach tay/,
+    /\bpc\b|desktop|may tinh ban/,
+    /man hinh|monitor/,
+    /ban phim|keyboard/,
+    /chuot|mouse/,
+    /tai nghe|headset|headphone/,
+    /webcam|camera/,
+    /microphone|\bmicro\b/,
+    /\bssd\b|o cung|storage/,
+    /\bram\b/,
+  ];
+  return patterns.filter((pattern) => pattern.test(normalized)).length;
+}
+
+function normalizeRetrievalIntentText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function uniqueResultsByProductId(
+  results: RerankedProductCandidate[],
+): RerankedProductCandidate[] {
+  const byId = new Map<string, RerankedProductCandidate>();
+  for (const result of results) {
+    const productId = result.productId || result.payload.productId;
+    if (productId && !byId.has(productId)) byId.set(productId, result);
+  }
+  return [...byId.values()];
 }
 
 function uniqueStrings(values: string[]): string[] {

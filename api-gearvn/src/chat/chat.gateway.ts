@@ -46,6 +46,7 @@ export class ChatGateway implements OnGatewayConnection {
 
   private onlineUsers = new Map<string, boolean>();
   private assistantInvocationQueues = new Map<string, Promise<void>>();
+  private assistantInvocationGenerations = new Map<string, number>();
 
   private getActor(socket: Socket): OwnershipActor {
     return socket.data.actor;
@@ -467,12 +468,16 @@ export class ChatGateway implements OnGatewayConnection {
       this.emitMessageToRoom(socket, message.roomId, populatedMessage);
 
       if (sender === UserRole.CUSTOMER) {
+        const assistantGeneration =
+          (this.assistantInvocationGenerations.get(message.roomId) ?? 0) + 1;
+        this.assistantInvocationGenerations.set(message.roomId, assistantGeneration);
         await this.invokeAssistantIfActive({
           socket,
           roomId: message.roomId,
           roomOwnerId,
           text: message.text,
           attachments: message.attachments,
+          assistantGeneration,
         });
       }
     } catch (error) {
@@ -486,12 +491,14 @@ export class ChatGateway implements OnGatewayConnection {
     roomOwnerId,
     text,
     attachments,
+    assistantGeneration,
   }: {
     socket: Socket;
     roomId: string;
     roomOwnerId: string;
     text: string;
     attachments?: string[];
+    assistantGeneration: number;
   }) {
     await this.enqueueAssistantInvocation(roomId, async () => {
       const mode = await this.assistantSessionService.getMode(roomId);
@@ -505,7 +512,12 @@ export class ChatGateway implements OnGatewayConnection {
       });
 
       if (!result.text) return;
-
+      if (
+        result.status === 'assistant_unavailable' &&
+        this.assistantInvocationGenerations.get(roomId) !== assistantGeneration
+      ) {
+        return;
+      }
       const savedAssistantMessage = await this.chatService.createInternalMessage({
         roomId,
         userId: roomOwnerId,

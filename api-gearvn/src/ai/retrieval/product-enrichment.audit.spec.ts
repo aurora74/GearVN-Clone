@@ -31,6 +31,7 @@ describe('product enrichment audit', () => {
     expect(report.checked).toBe(1);
     expect(report.missingByField).toEqual({
       categoryPath: 0,
+      normalizedSpecs: 1,
       specsSummary: 0,
       semanticTags: 0,
       useCases: 0,
@@ -39,6 +40,7 @@ describe('product enrichment audit', () => {
     });
     expect(report.emptyByField).toEqual({
       categoryPath: 1,
+      normalizedSpecs: 0,
       specsSummary: 1,
       semanticTags: 0,
       useCases: 1,
@@ -51,6 +53,12 @@ describe('product enrichment audit', () => {
           productId: 'product-1',
           name: 'Laptop Gaming ABC',
           field: 'targetUsers',
+          reason: 'missing',
+        },
+        {
+          productId: 'product-1',
+          name: 'Laptop Gaming ABC',
+          field: 'normalizedSpecs',
           reason: 'missing',
         },
         {
@@ -104,6 +112,40 @@ describe('product enrichment audit', () => {
     });
   });
 
+  it('falls back to product attributes when stored normalized specs are empty', () => {
+    const product = {
+      _id: 'product-empty-normalized-specs',
+      name: 'Laptop Creator 16',
+      slug: 'laptop-creator-16',
+      category: 'laptop',
+      description: 'Laptop creator can man hinh dep',
+      attributes: { ram: '16GB', ssd: '512GB' },
+      searchMetadata: {
+        categoryPath: ['Laptop'],
+        normalizedSpecs: {},
+        specsSummary: '',
+        semanticTags: ['creator'],
+        useCases: ['do hoa'],
+        targetUsers: ['designer'],
+        searchText: 'stale text',
+      },
+    };
+
+    const improved = buildImprovedProductSearchMetadata(product);
+    const report = auditProductEnrichment([product]);
+
+    expect(improved.normalizedSpecs).toEqual({ ram: '16GB', ssd: '512GB' });
+    expect(improved.specsSummary).toContain('ram: 16GB');
+    expect(improved.specsSummary).toContain('ssd: 512GB');
+    expect(report.emptyByField.normalizedSpecs).toBe(1);
+    expect(
+      report.recommendedUpdates[0]?.searchMetadata.normalizedSpecs,
+    ).toEqual({
+      ram: '16GB',
+      ssd: '512GB',
+    });
+  });
+
   it('does not require refresh when stored enrichment matches derived metadata', () => {
     const product: {
       _id: string;
@@ -114,6 +156,7 @@ describe('product enrichment audit', () => {
       attributes: Record<string, unknown>;
       searchMetadata: {
         categoryPath: string[];
+        normalizedSpecs: Record<string, unknown>;
         specsSummary: string;
         semanticTags: string[];
         useCases: string[];
@@ -129,6 +172,7 @@ describe('product enrichment audit', () => {
       attributes: { switch: 'blue' },
       searchMetadata: {
         categoryPath: ['Ban phim'],
+        normalizedSpecs: { switch: 'blue' },
         specsSummary: 'switch: blue',
         semanticTags: ['gaming'],
         useCases: ['gaming'],

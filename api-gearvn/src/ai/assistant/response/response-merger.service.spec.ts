@@ -26,6 +26,31 @@ describe('ResponseMergerService', () => {
     expect(result.metadata.productCards).toEqual([{ productId: 'p1' }]);
   });
 
+  it('dedupes product cards by productId during single-response metadata bypass', async () => {
+    const service = new ResponseMergerService();
+    const result = await service.mergeAssistantResponses({
+      responses: [
+        {
+          intent: AssistantIntent.PRODUCT_ADVICE,
+          nodeName: 'product_advice',
+          text: 'Mình tìm thấy sản phẩm phù hợp.',
+          metadata: {
+            productCards: [
+              { productId: 'p1', name: 'Laptop Alpha' },
+              { productId: 'p1', name: 'Laptop Alpha duplicate' },
+              { productId: 'p2', name: 'Laptop Beta' },
+            ],
+          },
+        },
+      ],
+      locale: 'vi-VN',
+    });
+
+    expect(result.metadata.productCards).toEqual([
+      { productId: 'p1', name: 'Laptop Alpha' },
+      { productId: 'p2', name: 'Laptop Beta' },
+    ]);
+  });
   it('uses the planner for multiple responses and preserves structured metadata from sources', async () => {
     const service = new ResponseMergerService();
     const productCards = [{ productId: 'p1', name: 'Laptop Alpha' }];
@@ -79,6 +104,71 @@ describe('ResponseMergerService', () => {
         droppedDuplicateResponseIds: [],
       }),
     );
+  });
+
+  it('preserves product consultation metadata during multi-response merge', async () => {
+    const service = new ResponseMergerService();
+    const model = {
+      invoke: jest.fn().mockResolvedValue({
+        content: JSON.stringify({
+          finalMessage: 'Mình đã lọc lại sản phẩm và chuẩn bị thao tác giỏ hàng.',
+          priorityOrder: ['product_advice', 'cart_action'],
+          selectedResponseIds: ['product_advice', 'cart_action'],
+          droppedDuplicateResponseIds: [],
+          metadataPreserved: ['productCards', 'actionDrafts'],
+          factSources: ['product_advice.productCards'],
+          unsupportedReason: null,
+          confidence: 0.9,
+        }),
+      }),
+    };
+
+    const result = await service.mergeAssistantResponses(
+      {
+        responses: [
+          {
+            intent: AssistantIntent.PRODUCT_ADVICE,
+            nodeName: 'product_advice',
+            text: 'Mình đã lọc thêm lựa chọn khác.',
+            metadata: {
+              productCards: [{ productId: 'p2', name: 'Laptop Beta' }],
+              consultationMode: 'more_options',
+              priorRecommendationProductIds: ['p1'],
+              comparedProductIds: ['p2'],
+              recommendationContinuity: {
+                mode: 'more_options',
+                hasPriorRecommendations: true,
+                priorRecommendationProductIds: ['p1'],
+                comparedProductIds: ['p2'],
+                preferenceDelta: 'ưu tiên pin hơn',
+              },
+              llmComposeStatus: 'fallback',
+              llmComposeFallbackReason: 'composer_returned_empty',
+            },
+          },
+          {
+            intent: AssistantIntent.CART_ACTION,
+            nodeName: 'cart_action',
+            text: 'Mình đã chuẩn bị thao tác thêm vào giỏ.',
+            metadata: { actionDrafts: [{ draftId: 'd1', kind: 'CART_ADD' }] },
+          },
+        ],
+        locale: 'vi-VN',
+      },
+      model,
+    );
+
+    expect(result.metadata).toMatchObject({
+      consultationMode: 'more_options',
+      priorRecommendationProductIds: ['p1'],
+      comparedProductIds: ['p2'],
+      recommendationContinuity: expect.objectContaining({
+        mode: 'more_options',
+        preferenceDelta: 'ưu tiên pin hơn',
+      }),
+      llmComposeStatus: 'fallback',
+      llmComposeFallbackReason: 'composer_returned_empty',
+    });
   });
 
   it('preserves structured metadata even when the planner selects only prose', async () => {

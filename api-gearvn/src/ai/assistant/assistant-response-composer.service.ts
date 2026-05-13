@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ChatOpenRouter } from '@langchain/openrouter';
 
-import { AssistantProductCard } from './assistant.types';
+import {
+  AssistantPriorRecommendationContext,
+  AssistantProductCard,
+  AssistantProductConsultationMode,
+} from './assistant.types';
 import { readAssistantModelConfig } from './config/assistant-model.config';
 
 export type ProductAdviceCompositionInput = {
@@ -9,6 +13,9 @@ export type ProductAdviceCompositionInput = {
   productCards: AssistantProductCard[];
   followUpQuestions: string[];
   promptContext?: unknown;
+  priorRecommendations?: AssistantPriorRecommendationContext[];
+  preferenceDelta?: string;
+  consultationMode?: AssistantProductConsultationMode;
   signal?: AbortSignal;
 };
 
@@ -33,7 +40,7 @@ export class AssistantResponseComposer {
         apiKey,
         model: config.chatModel,
         temperature: config.temperature,
-        maxTokens: config.maxTokens,
+        maxTokens: productAdviceMaxTokens(config.maxTokens),
         provider: config.provider,
       });
       const response = await model.invoke(
@@ -41,15 +48,14 @@ export class AssistantResponseComposer {
           {
             role: 'system',
             content: [
-              'You are GearVN AI, a practical Vietnamese shopping consultant.',
-              'Answer in natural accented Vietnamese and use the conversation context to continue the customer journey.',
-              'Use only the provided product cards and follow-up questions.',
-              'The productCards array is authoritative; ignore older products or prices in conversationContext when they conflict, and never cite products outside productCards.',
-              'Do not invent stock, warranty, discounts, benchmark scores, or specs not present in the cards.',
-              'For warranty or policy questions, answer duration or policy only when a product card explicitly includes that fact; if absent, say the catalog does not include it and avoid claims like official warranty, standard warranty, manufacturer terms, or hotline policy.',
-              'If product cards are present, briefly explain why the top options fit, using card specs/reasons to make a consultative comparison instead of a template.',
-              'If the cards only partially match the customer need, state the tradeoff plainly from the provided cards and offer the most useful next step.',
-              'Keep the response concise because product cards render separately.',
+              'You are GearVN AI, a concise Vietnamese shopping consultant.',
+              'Return only strict JSON with a string field named "message".',
+              'Write the message in natural accented Vietnamese using only supplied productCards and priorRecommendations facts.',
+              'When consultationMode is refinement, continue the prior consultation: compare the current productCards with priorRecommendations, explain what changed because of preferenceDelta, and do not pretend this is a new isolated request.',
+              'Product cards render separately; do not claim a total number of products.',
+              'Use 3-4 short sentences, no table, no markdown.',
+              'Mention one grounded tradeoff only if useful, and ask at most one follow-up question.',
+              'Do not invent stock, warranty, discounts, benchmarks, or specs.',
             ].join(' '),
           },
           {
@@ -57,16 +63,31 @@ export class AssistantResponseComposer {
             content: JSON.stringify({
               customerRequest: redactCustomerPii(input.userText),
               conversationContext: formatPromptContext(input.promptContext),
-              productCards: input.productCards.map(toPromptProductCard),
+              productCards: input.productCards
+                .slice(0, 3)
+                .map((product) => toPromptProductCard(product, input.userText)),
+              priorRecommendations: (input.priorRecommendations ?? [])
+                .slice(0, 5)
+                .map((product) =>
+                  toPromptPriorRecommendation(product, input.userText),
+                ),
+              preferenceDelta: input.preferenceDelta
+                ? redactCustomerPii(input.preferenceDelta)
+                : undefined,
+              consultationMode: input.consultationMode ?? 'initial_advice',
               followUpQuestions: input.followUpQuestions,
               responseGuidance: buildResponseGuidance(input.userText),
+              outputSchema: { message: 'Vietnamese advice text' },
             }),
           },
         ],
-        input.signal ? { signal: input.signal } : undefined,
+        {
+          ...(input.signal ? { signal: input.signal } : {}),
+          response_format: { type: 'json_object' },
+        },
       );
 
-      return normalizeModelText(response);
+      return extractProductAdviceMessage(response);
     } catch {
       return null;
     }
@@ -119,16 +140,61 @@ export class AssistantResponseComposer {
   }
 }
 
-function toPromptProductCard(product: AssistantProductCard) {
+function toPromptProductCard(
+  product: AssistantProductCard,
+  customerRequest?: string,
+) {
   return {
+    productId: product.productId,
     name: product.name,
     price: product.price,
     discountPrice: product.discountPrice,
     stock: product.stock,
     availability: product.availability,
-    reasons: product.reasons,
-    specs: product.specs,
+    reasons: product.reasons.slice(0, 3),
+    specs: compactPromptSpecs(product.specs, customerRequest),
   };
+}
+
+function toPromptPriorRecommendation(
+  product: AssistantPriorRecommendationContext,
+  customerRequest?: string,
+) {
+  return {
+    rank: product.rank,
+    productId: product.productId,
+    name: product.name,
+    category: product.category,
+    price: product.price,
+    discountPrice: product.discountPrice,
+    stock: product.stock,
+    reasons: (product.reasons ?? []).slice(0, 3),
+    specsSummary: product.specsSummary,
+    specs: compactPromptSpecs(product.specs, customerRequest),
+  };
+}
+
+function compactPromptSpecs(
+  specs: Record<string, unknown> | undefined,
+  customerRequest?: string,
+) {
+  if (!specs || typeof specs !== 'object') return {};
+  const entries = Object.entries(specs).filter(
+    ([, value]) => value !== undefined && value !== null && String(value).trim(),
+  );
+  const normalizedRequest = normalizeAdviceText(customerRequest ?? '');
+  const priority = entries.filter(([key]) =>
+    isQueryRelevantSpecKey(key, normalizedRequest),
+  );
+  const remaining = entries.filter(
+    ([key]) => !isQueryRelevantSpecKey(key, normalizedRequest),
+  );
+
+  return Object.fromEntries(
+    [...priority, ...remaining]
+      .slice(0, 8)
+      .map(([key, value]) => [key, String(value).slice(0, 120)]),
+  );
 }
 
 function buildResponseGuidance(userText: string): string | undefined {
@@ -155,21 +221,108 @@ function normalizeAdviceText(text: string): string {
     .trim();
 }
 
-function normalizeModelText(response: unknown): string | null {
-  const finishReason = finishReasonFromResponse(response);
-  if (finishReason === 'length' || finishReason === 'max_tokens') return null;
-  const content = contentFromModelResponse(response);
-  const text =
-    typeof content === 'string'
-      ? content
-      : Array.isArray(content)
-        ? content.map(contentPartText).join('')
-        : '';
+function extractProductAdviceMessage(response: unknown): string | null {
+  const structuredMessage = productAdviceMessageFromStructured(response);
+  if (structuredMessage) return structuredMessage;
 
-  const trimmed = text.trim();
+  const finishReason = finishReasonFromResponse(response);
+  for (const candidate of productAdviceTextCandidates(response)) {
+    const text = stripJsonFence(candidate.trim());
+    if (!text) continue;
+
+    const parsed = parseJsonObject(text);
+    const parsedMessage = parsed ? productAdviceMessageFromParsed(parsed) : null;
+    if (parsedMessage) return parsedMessage;
+
+    if (looksLikeJson(text)) continue;
+
+    const completeText = trimToCompleteSentence(text, 900);
+    if (completeText) return completeText;
+    if (finishReason === 'length' || finishReason === 'max_tokens') continue;
+  }
+
+  return null;
+}
+
+function productAdviceMessageFromStructured(response: unknown): string | null {
+  if (!isRecord(response)) return null;
+
+  const directMessage = productAdviceMessageFromParsed(response);
+  if (directMessage) return directMessage;
+
+  const wrappedCandidates = [
+    response.parsed,
+    response.response_metadata,
+    response.additional_kwargs,
+    response.generationInfo,
+    response.kwargs,
+  ];
+
+  for (const candidate of wrappedCandidates) {
+    if (!isRecord(candidate)) continue;
+    const message = productAdviceMessageFromParsed(candidate);
+    if (message) return message;
+    if (isRecord(candidate.parsed)) {
+      const parsedMessage = productAdviceMessageFromParsed(candidate.parsed);
+      if (parsedMessage) return parsedMessage;
+    }
+  }
+
+  return null;
+}
+
+function productAdviceMessageFromParsed(parsed: Record<string, unknown>): string | null {
+  const message =
+    typeof parsed.message === 'string'
+      ? parsed.message
+      : Array.isArray(parsed.sentences)
+        ? parsed.sentences
+            .filter((sentence): sentence is string => typeof sentence === 'string')
+            .join(' ')
+        : '';
+  const trimmed = message.trim();
   if (!trimmed) return null;
-  const completeText = trimToCompleteSentence(trimmed, 2400);
+
+  return trimToCompleteSentence(trimmed, 900) || null;
+}
+
+function productAdviceTextCandidates(response: unknown): string[] {
+  const candidates: string[] = [];
+  const content = contentFromModelResponse(response);
+  const contentText = textFromModelContent(content);
+  if (contentText) candidates.push(contentText);
+
+  if (typeof response === 'string' && response !== contentText) {
+    candidates.push(response);
+  }
+
+  return uniqueTextCandidates(candidates);
+}
+
+function normalizeModelText(response: unknown): string | null {
+  const trimmed = rawModelText(response).trim();
+  if (!trimmed) return null;
+
+  const finishReason = finishReasonFromResponse(response);
+  const completeText = trimToCompleteSentence(trimmed, 1400);
+  if (finishReason === 'length' || finishReason === 'max_tokens') {
+    return completeText || null;
+  }
   return completeText || null;
+}
+
+function rawModelText(response: unknown): string {
+  return textFromModelContent(contentFromModelResponse(response));
+}
+
+function textFromModelContent(content: unknown): string {
+  return typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.map(contentPartText).join('')
+      : isRecord(content)
+        ? productAdviceMessageFromParsed(content) ?? ''
+        : '';
 }
 
 function contentFromModelResponse(response: unknown): unknown {
@@ -199,13 +352,20 @@ function finishReasonFromResponse(response: unknown): string | undefined {
   return undefined;
 }
 
+function productAdviceMaxTokens(configuredMaxTokens: number): number {
+  return Math.min(Math.max(configuredMaxTokens, 450), 700);
+}
+
 function trimToCompleteSentence(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  const candidate = text.slice(0, maxChars);
+  const candidate = (text.length <= maxChars ? text : text.slice(0, maxChars)).trim();
+  if (!candidate) return '';
+  if (/[.!?…]$/.test(candidate)) return candidate;
+
   const sentenceEnd = Math.max(
     candidate.lastIndexOf('.'),
     candidate.lastIndexOf('!'),
     candidate.lastIndexOf('?'),
+    candidate.lastIndexOf('…'),
     candidate.lastIndexOf('\n'),
   );
   if (sentenceEnd <= 160) return '';
@@ -214,6 +374,70 @@ function trimToCompleteSentence(text: string, maxChars: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function stripJsonFence(text: string): string {
+  const trimmed = text.trim();
+  return trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function looksLikeJson(text: string): boolean {
+  return /^[\[{]/.test(text.trim());
+}
+
+function uniqueTextCandidates(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function isQueryRelevantSpecKey(key: string, normalizedRequest: string): boolean {
+  const normalizedKey = normalizeAdviceText(key);
+  if (!normalizedKey) return false;
+  const wantsBattery = /pin|battery|wh/.test(normalizedRequest);
+  const wantsPerformance = /gaming|game|ai|machine learning|ml|rtx|gpu|vga|do hoa/.test(
+    normalizedRequest,
+  );
+  const wantsMonitor = /man hinh|monitor|2k|qhd|ips|oled|hz|tan so|do phan giai/.test(
+    normalizedRequest,
+  );
+  const wantsThinLight = /mong nhe|thin|light|di chuyen|can nang|weight/.test(
+    normalizedRequest,
+  );
+
+  return (
+    (wantsBattery && /pin|battery|wh/.test(normalizedKey)) ||
+    (wantsPerformance &&
+      /gpu|vga|card|graphics|cpu|processor|chip|ram|memory|ssd|storage|o cung/.test(
+        normalizedKey,
+      )) ||
+    (wantsMonitor &&
+      /resolution|do phan giai|panel|tam nen|ips|oled|hz|tan so|inch|kich thuoc/.test(
+        normalizedKey,
+      )) ||
+    (wantsThinLight &&
+      /weight|can nang|kg|dimension|kich thuoc|do mong|mong/.test(
+        normalizedKey,
+      ))
+  );
 }
 
 function formatPromptContext(promptContext: unknown): string {
@@ -236,7 +460,7 @@ function formatPromptContext(promptContext: unknown): string {
     })
     .filter(Boolean)
     .join('\n\n')
-    .slice(0, 2400);
+    .slice(0, 500);
 }
 
 function promptContextSections(

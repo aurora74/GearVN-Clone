@@ -12,6 +12,7 @@ import {
   expandWithTechDictionary,
   normalizeDictionaryText,
 } from './product-domain-dictionary';
+import { productFamilyCategoryAliases } from './product-family-taxonomy';
 
 type ProductLexicalRecord = {
   _id: unknown;
@@ -63,7 +64,10 @@ export class ProductLexicalSearchService {
     query: string,
     options: LexicalSearchOptions = {},
   ): Promise<ProductCandidate[]> {
-    const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
+    const limit = Math.min(
+      Math.max(options.limit ?? DEFAULT_LIMIT, 1),
+      MAX_LIMIT,
+    );
     const terms = uniqueTerms([
       ...splitTerms(query),
       ...expandWithTechDictionary(query).flatMap(splitTerms),
@@ -84,7 +88,9 @@ export class ProductLexicalSearchService {
     return records
       .map((record) => scoreRecord(record as ProductLexicalRecord, terms))
       .filter((candidate): candidate is ProductCandidate => Boolean(candidate))
-      .sort((left, right) => (right.lexicalScore ?? 0) - (left.lexicalScore ?? 0))
+      .sort(
+        (left, right) => (right.lexicalScore ?? 0) - (left.lexicalScore ?? 0),
+      )
       .slice(0, limit);
   }
 }
@@ -93,7 +99,9 @@ function buildMongoFilter(
   terms: string[],
   constraints?: ProductRetrievalConstraints,
 ): FilterQuery<ProductDocument> {
-  const regexes = terms.slice(0, 12).map((term) => new RegExp(escapeRegex(term), 'i'));
+  const regexes = terms
+    .slice(0, 12)
+    .map((term) => new RegExp(escapeRegex(term), 'i'));
   const searchFields = [
     'name',
     'category',
@@ -112,10 +120,18 @@ function buildMongoFilter(
     ),
   };
 
-  if (constraints?.category) filter.category = new RegExp(escapeRegex(constraints.category), 'i');
+  const categoryFilter = categoryConstraintFilter([
+    constraints?.category,
+    ...(constraints?.categoryHints ?? []),
+  ]);
+  if (categoryFilter) filter.$and = [...(filter.$and ?? []), categoryFilter];
   if (constraints?.inStockOnly) filter.stock = { $gt: 0 };
-  if (typeof constraints?.minPrice === 'number' || typeof constraints?.maxPrice === 'number') {
+  if (
+    typeof constraints?.minPrice === 'number' ||
+    typeof constraints?.maxPrice === 'number'
+  ) {
     filter.$and = [
+      ...(filter.$and ?? []),
       {
         $or: [
           priceRangeFilter('discountPrice', constraints),
@@ -128,10 +144,84 @@ function buildMongoFilter(
   return filter;
 }
 
-function priceRangeFilter(field: 'price' | 'discountPrice', constraints: ProductRetrievalConstraints) {
+function categoryConstraintFilter(
+  categories?: Array<string | undefined>,
+): FilterQuery<ProductDocument> | null {
+  const normalizedCategories = uniqueTerms(
+    (categories ?? []).filter((category): category is string =>
+      Boolean(category),
+    ),
+  );
+  if (normalizedCategories.length === 0) return null;
+
+  const aliases = uniqueAliases(
+    normalizedCategories.flatMap((category) =>
+      productFamilyCategoryAliases(category),
+    ),
+  );
+  const regexes = aliases.map(categoryAliasRegex);
+  const fields = [
+    'name',
+    'category',
+    'searchMetadata.categoryPath',
+    'searchMetadata.semanticTags',
+    'searchMetadata.useCases',
+    'searchMetadata.targetUsers',
+  ];
+  const categoryMatch = {
+    $or: fields.flatMap((field) =>
+      regexes.map((regex) => ({ [field]: regex })),
+    ),
+  };
+
+  if (!normalizedCategories.includes('pc')) return categoryMatch;
+
+  return {
+    $and: [
+      categoryMatch,
+      {
+        name: {
+          $not: /(^|[^a-z0-9])(?:laptop|macbook|notebook)(?=$|[^a-z0-9])/i,
+        },
+      },
+      {
+        category: {
+          $not: /(^|[^a-z0-9])(?:laptop|macbook|notebook)(?=$|[^a-z0-9])/i,
+        },
+      },
+      {
+        'searchMetadata.categoryPath': {
+          $not: /(^|[^a-z0-9])(?:laptop|macbook|notebook)(?=$|[^a-z0-9])/i,
+        },
+      },
+    ],
+  };
+}
+
+const CATEGORY_ALIAS_BOUNDARY = '[^a-z0-9À-ỹ]';
+
+function categoryAliasRegex(alias: string): RegExp {
+  return new RegExp(
+    `(^|${CATEGORY_ALIAS_BOUNDARY})${escapeRegex(alias)}(?=$|${CATEGORY_ALIAS_BOUNDARY})`,
+    'i',
+  );
+}
+
+function uniqueAliases(aliases: string[]): string[] {
+  return Array.from(
+    new Set(aliases.map((alias) => alias.trim()).filter(Boolean)),
+  );
+}
+
+function priceRangeFilter(
+  field: 'price' | 'discountPrice',
+  constraints: ProductRetrievalConstraints,
+) {
   const range: Record<string, number> = {};
-  if (typeof constraints.minPrice === 'number') range.$gte = constraints.minPrice;
-  if (typeof constraints.maxPrice === 'number') range.$lte = constraints.maxPrice;
+  if (typeof constraints.minPrice === 'number')
+    range.$gte = constraints.minPrice;
+  if (typeof constraints.maxPrice === 'number')
+    range.$lte = constraints.maxPrice;
   return { [field]: range };
 }
 
@@ -172,12 +262,22 @@ function recordFieldText(record: ProductLexicalRecord): Record<string, string> {
   return {
     name: normalizeDictionaryText(record.name),
     category: normalizeDictionaryText(record.category),
-    attributes: normalizeDictionaryText(JSON.stringify(record.attributes ?? {})),
-    categoryPath: normalizeDictionaryText((metadata.categoryPath ?? []).join(' ')),
-    normalizedSpecs: normalizeDictionaryText(JSON.stringify(metadata.normalizedSpecs ?? {})),
-    semanticTags: normalizeDictionaryText((metadata.semanticTags ?? []).join(' ')),
+    attributes: normalizeDictionaryText(
+      JSON.stringify(record.attributes ?? {}),
+    ),
+    categoryPath: normalizeDictionaryText(
+      (metadata.categoryPath ?? []).join(' '),
+    ),
+    normalizedSpecs: normalizeDictionaryText(
+      JSON.stringify(metadata.normalizedSpecs ?? {}),
+    ),
+    semanticTags: normalizeDictionaryText(
+      (metadata.semanticTags ?? []).join(' '),
+    ),
     useCases: normalizeDictionaryText((metadata.useCases ?? []).join(' ')),
-    targetUsers: normalizeDictionaryText((metadata.targetUsers ?? []).join(' ')),
+    targetUsers: normalizeDictionaryText(
+      (metadata.targetUsers ?? []).join(' '),
+    ),
   };
 }
 
@@ -209,7 +309,9 @@ function splitTerms(value: string): string[] {
 }
 
 function uniqueTerms(terms: string[]): string[] {
-  return Array.from(new Set(terms.map(normalizeDictionaryText).filter(Boolean)));
+  return Array.from(
+    new Set(terms.map(normalizeDictionaryText).filter(Boolean)),
+  );
 }
 
 function escapeRegex(value: string): string {

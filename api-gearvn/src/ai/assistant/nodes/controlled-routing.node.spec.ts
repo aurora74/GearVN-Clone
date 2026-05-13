@@ -114,6 +114,51 @@ describe('controlled assistant routing nodes', () => {
     });
     expect(classifier.classify).not.toHaveBeenCalled();
   });
+
+  it('marks slangy generic laptop advice as broad so the product node can clarify first', async () => {
+    const classifier = {
+      classify: jest.fn().mockResolvedValue({
+        primaryIntent: AssistantIntent.UNSUPPORTED,
+        intents: [AssistantIntent.UNSUPPORTED],
+      }),
+    };
+
+    const result = await classifyIntentsNode(
+      { userText: 'tư vấn laptop cho tao đê' },
+      { configurable: { classifier } },
+    );
+
+    expect(result).toMatchObject({
+      primaryIntent: AssistantIntent.PRODUCT_ADVICE,
+      intents: [AssistantIntent.PRODUCT_ADVICE],
+      entities: expect.objectContaining({ broadNeed: true }),
+      reason: 'deterministic_commerce_flow',
+    });
+    expect(classifier.classify).not.toHaveBeenCalled();
+  });
+
+  it('routes specific purpose laptop advice without broad clarification', async () => {
+    const classifier = {
+      classify: jest.fn().mockResolvedValue({
+        primaryIntent: AssistantIntent.UNSUPPORTED,
+        intents: [AssistantIntent.UNSUPPORTED],
+      }),
+    };
+
+    const result = await classifyIntentsNode(
+      { userText: 'mình cần tư vấn laptop xem phim giải trí' },
+      { configurable: { classifier } },
+    );
+
+    expect(result).toMatchObject({
+      primaryIntent: AssistantIntent.PRODUCT_ADVICE,
+      intents: [AssistantIntent.PRODUCT_ADVICE],
+      reason: 'deterministic_commerce_flow',
+    });
+    expect(result.entities).not.toMatchObject({ broadNeed: true });
+    expect(classifier.classify).not.toHaveBeenCalled();
+  });
+
   it('answers shopping memory recall from same-room prompt context', () => {
     const result = unsupportedNode({
       userText: 'bạn có nhớ gì về mình không?',
@@ -122,7 +167,7 @@ describe('controlled assistant routing nodes', () => {
           {
             kind: 'hotMessages',
             content: [
-              'customer: mình cần laptop học AI tầm 25 triệu',
+              'customer: mình cần laptop học machine learning tầm 25 triệu',
               'assistant: Mình gợi ý vài laptop còn hàng trong ngân sách.',
             ].join('\n'),
           },
@@ -131,11 +176,51 @@ describe('controlled assistant routing nodes', () => {
     });
 
     expect(result.text).toContain('Mình nhớ');
-    expect(result.text).toContain('laptop học AI');
+    expect(result.text).toContain('laptop học machine learning');
+    expect(result.text).toContain('25 triệu');
+    expect(result.text).not.toContain('gợi ý vài laptop');
     expect(result.metadata).toMatchObject({
       memoryRecall: true,
       memory_used: [expect.objectContaining({ label: 'conversation_context' })],
     });
+  });
+
+  it('recalls progressive and cart context without quoting assistant confirmations', () => {
+    const result = unsupportedNode({
+      userText: 'bạn nhớ nhu cầu mua sắm của mình không?',
+      promptContext: {
+        sections: [
+          {
+            kind: 'progressiveSummary',
+            content: [
+              'laptop 30 triệu học machine learning',
+              'ưu tiên GPU/RTX',
+            ].join('\n'),
+          },
+          {
+            kind: 'cartContext',
+            content: 'giỏ hàng vừa có Laptop Gaming RTX 4060',
+          },
+          {
+            kind: 'hotMessages',
+            content: 'assistant: Mình đã thêm sản phẩm vào giỏ hàng.',
+          },
+        ],
+      },
+    });
+
+    expect(result.text).toContain('laptop học machine learning');
+    expect(result.text).toContain('giỏ hàng');
+    expect(result.text).not.toContain('Mình đã thêm');
+  });
+  it('answers courtesy-only replies with a friendly no-op response', () => {
+    const result = unsupportedNode({ userText: 'ok cảm ơn' });
+
+    expect(result.text).toContain('luôn sẵn sàng');
+    expect(result.metadata).toMatchObject({
+      courtesy: true,
+    });
+    expect(result.metadata).not.toHaveProperty('unsupportedReason');
   });
 
   it('only parallelizes read-only whitelisted multi-intent pairs', () => {
