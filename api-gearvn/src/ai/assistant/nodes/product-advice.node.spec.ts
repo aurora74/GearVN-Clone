@@ -548,9 +548,9 @@ describe('productAdviceNode', () => {
       llmComposeStatus: 'fallback',
       llmComposeFallbackReason: 'composer_returned_empty',
     });
-    expect(result.metadata.productCards.map((card) => card.productId)).not.toContain(
-      '64f100000000000000000001',
-    );
+    expect(
+      result.metadata.productCards.map((card) => card.productId),
+    ).not.toContain('64f100000000000000000001');
   });
 
   it('does not return unrelated cards for an impossible concrete GPU constraint', async () => {
@@ -974,7 +974,7 @@ describe('productAdviceNode', () => {
 
     const result = await productAdviceNode(
       {
-        userText: 'góc livestream',
+        userText: 'góc livestream webcam micro',
         intentPlan: { needsProductRetrieval: true, broadNeed: false },
       },
       { productRetriever, catalogAdapter },
@@ -995,6 +995,551 @@ describe('productAdviceNode', () => {
     expect(result.metadata.llmComposeStatus).toBe('fallback');
   });
 
+  it('fast-clarifies broad livestream setup before heavy retrieval or advice composition', async () => {
+    const responseComposer = {
+      composeProductAdvice: jest.fn(),
+      composeProductClarification: jest.fn(),
+    };
+
+    const result = await productAdviceNode(
+      {
+        userText: 'mình cần tư vấn setup góc làm việc cho livestream',
+        intentPlan: { needsProductRetrieval: true, broadNeed: false },
+      },
+      {
+        productRetriever,
+        catalogAdapter,
+        responseComposer: responseComposer as any,
+      },
+    );
+
+    expect(productRetriever.search).not.toHaveBeenCalled();
+    expect(catalogAdapter.getSnapshotsByIds).not.toHaveBeenCalled();
+    expect(responseComposer.composeProductAdvice).not.toHaveBeenCalled();
+    expect(responseComposer.composeProductClarification).not.toHaveBeenCalled();
+    expect(result.metadata.needsClarification).toBe(true);
+    expect(result.metadata.followUpQuestions).toEqual([
+      'Bạn muốn dùng PC để bàn hay laptop?',
+      'Ngân sách tổng cho góc setup khoảng bao nhiêu?',
+      'Bạn cần gồm những món nào: bàn, ghế, micro, camera, đèn hay màn hình?',
+    ]);
+    expect(result.metadata.llmComposeFallbackReason).toBe(
+      'setup_fast_clarification',
+    );
+  });
+
+  it('clarifies PC correction in setup context without laptop battery questions or cards', async () => {
+    const result = await productAdviceNode(
+      {
+        userText: 'mình cần pc cơ',
+        intentPlan: {
+          needsProductRetrieval: true,
+          broadNeed: false,
+          contextualUserText:
+            'mình cần tư vấn setup góc làm việc cho livestream mình cần pc cơ',
+        },
+      },
+      { productRetriever, catalogAdapter },
+    );
+
+    expect(productRetriever.search).not.toHaveBeenCalled();
+    expect(result.metadata.productCards).toEqual([]);
+    expect(result.metadata.followUpQuestions).toEqual([
+      'Bạn muốn mua PC bộ lắp sẵn hay build theo linh kiện?',
+      'Ngân sách cho riêng PC khoảng bao nhiêu?',
+    ]);
+    expect(result.text).not.toMatch(/pin|mỏng nhẹ|mong nhe/i);
+  });
+
+  it('keeps desk and chair cards when assembled desktop slot has a catalog gap', async () => {
+    const deskSnapshot = {
+      productId: 'desk-live-001',
+      name: 'Bàn gaming livestream 120cm',
+      price: 2_490_000,
+      discountPrice: 2_190_000,
+      stock: 5,
+      slug: 'ban-gaming-livestream-120cm',
+      category: 'Bàn ghế gaming',
+      searchMetadata: { categoryPath: ['Bàn ghế gaming', 'Bàn gaming'] },
+    };
+    const chairSnapshot = {
+      productId: 'chair-live-001',
+      name: 'Ghế gaming công thái học',
+      price: 3_490_000,
+      discountPrice: 2_990_000,
+      stock: 7,
+      slug: 'ghe-gaming-cong-thai-hoc',
+      category: 'Bàn ghế gaming',
+      searchMetadata: { categoryPath: ['Bàn ghế gaming', 'Ghế gaming'] },
+    };
+    const toCandidate = (snapshot: typeof deskSnapshot) => ({
+      ...retrievalResult.results[0],
+      productId: snapshot.productId,
+      payload: {
+        ...retrievalResult.results[0].payload,
+        productId: snapshot.productId,
+        name: snapshot.name,
+        slug: snapshot.slug,
+        category: snapshot.category,
+        categoryPath: snapshot.searchMetadata.categoryPath,
+        price: snapshot.price,
+        discountPrice: snapshot.discountPrice,
+        stock: snapshot.stock,
+      },
+    });
+    productRetriever.search.mockResolvedValueOnce({
+      ...retrievalResult,
+      query: { ...retrievalResult.query, constraints: {} },
+      results: [],
+      comboGroups: [
+        {
+          id: 'desktop_pc',
+          label: 'Desktop PC',
+          query: 'combo pc bàn ghế livestream desktop_pc',
+          results: [],
+        },
+        {
+          id: 'desk',
+          label: 'Desk',
+          query: 'combo pc bàn ghế livestream desk',
+          results: [toCandidate(deskSnapshot)],
+        },
+        {
+          id: 'chair',
+          label: 'Chair',
+          query: 'combo pc bàn ghế livestream chair',
+          results: [toCandidate(chairSnapshot)],
+        },
+      ],
+      groupCoverage: {
+        expectedGroups: ['desktop_pc', 'desk', 'chair'],
+        coveredGroups: ['desk', 'chair'],
+        missingGroups: ['desktop_pc'],
+        coverageRate: 2 / 3,
+      },
+      rewrite: {
+        rewrittenQuery: 'combo pc bàn ghế livestream',
+        detectedIntents: ['LIVE_STREAMING'],
+        productGroups: ['pc', 'desk', 'chair'],
+        hardConstraints: {},
+        softSignals: ['livestream'],
+        expandedKeywords: [],
+        comboGroups: ['desktop_pc', 'desk', 'chair'],
+        confidence: 0.8,
+        metadata: {
+          rewrite_provider: 'deepseek',
+          rewrite_model: 'deepseek-v4-pro',
+          rewrite_status: 'fallback_timeout',
+          rewrite_retry_count: 0,
+          rewrite_latency_ms: 12_000,
+          rewritten_query: 'combo pc bàn ghế livestream',
+        },
+      },
+    });
+    catalogAdapter.getSnapshotsByIds.mockResolvedValueOnce([
+      deskSnapshot,
+      chairSnapshot,
+    ]);
+
+    const result = await productAdviceNode(
+      {
+        userText: 'combo pc bàn ghế livestream',
+        intentPlan: { needsProductRetrieval: true, broadNeed: false },
+      },
+      { productRetriever, catalogAdapter },
+    );
+
+    expect(result.metadata.productCards.map((card) => card.name)).toEqual([
+      'Bàn gaming livestream 120cm',
+      'Ghế gaming công thái học',
+    ]);
+    expect(result.metadata.setup_slot_coverage).toEqual({
+      requestedSlots: ['desktop_pc', 'desk', 'chair'],
+      coveredSlots: ['desk', 'chair'],
+      missingSlots: ['desktop_pc'],
+    });
+    expect(result.metadata.group_coverage).toMatchObject({
+      coveredGroups: ['desk', 'chair'],
+      missingGroups: ['desktop_pc'],
+    });
+    expect(result.text).toMatch(
+      /catalog chưa có lựa chọn phù hợp cho PC bộ\/desktop PC/i,
+    );
+    expect(result.text).toMatch(/không thay PC bộ bằng linh kiện rời/i);
+    expect(
+      result.metadata.productCards.map((card) => card.name).join(' '),
+    ).not.toMatch(/CPU|iPhone|điện thoại/i);
+  });
+
+  it('uses bounded desk/chair-only setup follow-up path without combo rewrite or composer', async () => {
+    const deskSnapshot = {
+      productId: 'desk-follow-001',
+      name: 'Bàn làm việc livestream 140cm',
+      price: 2_990_000,
+      discountPrice: 2_490_000,
+      stock: 4,
+      slug: 'ban-lam-viec-livestream-140cm',
+      category: 'Bàn ghế gaming',
+      searchMetadata: { categoryPath: ['Bàn ghế gaming', 'Bàn gaming'] },
+    };
+    const chairSnapshot = {
+      productId: 'chair-follow-001',
+      name: 'Ghế công thái học livestream',
+      price: 3_990_000,
+      discountPrice: 3_490_000,
+      stock: 6,
+      slug: 'ghe-cong-thai-hoc-livestream',
+      category: 'Bàn ghế gaming',
+      searchMetadata: { categoryPath: ['Bàn ghế gaming', 'Ghế gaming'] },
+    };
+    const toCandidate = (snapshot: typeof deskSnapshot) => ({
+      ...retrievalResult.results[0],
+      productId: snapshot.productId,
+      payload: {
+        ...retrievalResult.results[0].payload,
+        productId: snapshot.productId,
+        name: snapshot.name,
+        slug: snapshot.slug,
+        category: snapshot.category,
+        categoryPath: snapshot.searchMetadata.categoryPath,
+        price: snapshot.price,
+        discountPrice: snapshot.discountPrice,
+        stock: snapshot.stock,
+      },
+    });
+    productRetriever.search
+      .mockResolvedValueOnce({
+        ...retrievalResult,
+        results: [toCandidate(deskSnapshot)],
+      })
+      .mockResolvedValueOnce({
+        ...retrievalResult,
+        results: [toCandidate(chairSnapshot)],
+      });
+    catalogAdapter.getSnapshotsByIds.mockResolvedValueOnce([
+      deskSnapshot,
+      chairSnapshot,
+    ]);
+    const responseComposer = {
+      composeProductAdvice: jest.fn(),
+      composeProductClarification: jest.fn(),
+    };
+
+    const result = await productAdviceNode(
+      {
+        userText: 'thế còn bàn ghế thì sao',
+        intentPlan: {
+          needsProductRetrieval: true,
+          broadNeed: false,
+          contextualUserText:
+            'combo pc, bàn, ghế phục vụ cho livestream thế còn bàn ghế thì sao',
+          contextResolutionReason: 'shopping_setup_continuation',
+        },
+      },
+      {
+        productRetriever,
+        catalogAdapter,
+        responseComposer: responseComposer as any,
+      },
+    );
+
+    expect(productRetriever.search).toHaveBeenCalledTimes(2);
+    expect(productRetriever.search).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('ban lam viec'),
+      expect.objectContaining({
+        pipeline: 'phase-09.2-baseline',
+        hardConstraints: { categoryHints: ['desk'], inStockOnly: true },
+      }),
+    );
+    expect(productRetriever.search).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('ghe cong thai hoc'),
+      expect.objectContaining({
+        pipeline: 'phase-09.2-baseline',
+        hardConstraints: { categoryHints: ['chair'], inStockOnly: true },
+      }),
+    );
+    expect(responseComposer.composeProductAdvice).not.toHaveBeenCalled();
+    expect(responseComposer.composeProductClarification).not.toHaveBeenCalled();
+    expect(result.metadata.productCards.map((card) => card.name)).toEqual([
+      'Bàn làm việc livestream 140cm',
+      'Ghế công thái học livestream',
+    ]);
+    expect(result.metadata.setup_slot_coverage).toEqual({
+      requestedSlots: ['desk', 'chair'],
+      coveredSlots: ['desk', 'chair'],
+      missingSlots: [],
+    });
+    expect(result.metadata.group_coverage).toMatchObject({
+      coveredGroups: ['desk', 'chair'],
+      missingGroups: [],
+    });
+    expect(result.metadata).toMatchObject({
+      rewrite_status: 'skipped',
+      rewrite_model: 'not_called',
+      rewrite_skipped_reason: 'setup_slot_followup_fast_path',
+      llmComposeStatus: 'skipped',
+      llmComposeFallbackReason: 'setup_slot_followup_fast_path',
+    });
+  });
+
+  it('returns a clear desk/chair gap from the fast setup follow-up path', async () => {
+    productRetriever.search.mockResolvedValue({
+      ...retrievalResult,
+      results: [],
+    });
+    const responseComposer = {
+      composeProductAdvice: jest.fn(),
+      composeProductClarification: jest.fn(),
+    };
+
+    const result = await productAdviceNode(
+      {
+        userText: 'bàn ghế thì sao',
+        intentPlan: {
+          needsProductRetrieval: true,
+          broadNeed: false,
+          contextualUserText:
+            'setup góc làm việc cho livestream combo pc bàn ghế bàn ghế thì sao',
+          contextResolutionReason: 'shopping_setup_continuation',
+        },
+      },
+      {
+        productRetriever,
+        catalogAdapter,
+        responseComposer: responseComposer as any,
+      },
+    );
+
+    expect(productRetriever.search).toHaveBeenCalledTimes(2);
+    expect(catalogAdapter.getSnapshotsByIds).not.toHaveBeenCalled();
+    expect(responseComposer.composeProductAdvice).not.toHaveBeenCalled();
+    expect(result.metadata.productCards).toHaveLength(0);
+    expect(result.metadata.setup_slot_coverage).toEqual({
+      requestedSlots: ['desk', 'chair'],
+      coveredSlots: [],
+      missingSlots: ['desk', 'chair'],
+    });
+    expect(result.text).toMatch(/catalog chưa có lựa chọn phù hợp cho bàn, ghế/i);
+    expect(result.metadata.llmComposeFallbackReason).toBe(
+      'setup_slot_followup_fast_path',
+    );
+  });
+  it('computes slot coverage from displayed cards after filtering', async () => {
+    const desktopSnapshot = {
+      productId: 'desktop-oos-001',
+      name: 'PC GVN livestream RTX 4060',
+      price: 24_990_000,
+      discountPrice: 23_990_000,
+      stock: 0,
+      slug: 'pc-gvn-livestream-rtx-4060',
+      category: 'PC GVN',
+      searchMetadata: { categoryPath: ['PC GVN'] },
+    };
+    const monitorSnapshot = {
+      productId: 'monitor-live-001',
+      name: 'Màn hình livestream 27 inch',
+      price: 4_990_000,
+      discountPrice: 4_690_000,
+      stock: 4,
+      slug: 'man-hinh-livestream-27',
+      category: 'Màn hình',
+      searchMetadata: { categoryPath: ['Màn hình'] },
+    };
+    const toCandidate = (snapshot: typeof desktopSnapshot) => ({
+      ...retrievalResult.results[0],
+      productId: snapshot.productId,
+      payload: {
+        ...retrievalResult.results[0].payload,
+        productId: snapshot.productId,
+        name: snapshot.name,
+        slug: snapshot.slug,
+        category: snapshot.category,
+        categoryPath: snapshot.searchMetadata.categoryPath,
+        price: snapshot.price,
+        discountPrice: snapshot.discountPrice,
+        stock: snapshot.stock,
+      },
+    });
+    productRetriever.search.mockResolvedValueOnce({
+      ...retrievalResult,
+      query: { ...retrievalResult.query, constraints: {} },
+      results: [],
+      comboGroups: [
+        {
+          id: 'desktop_pc',
+          label: 'Desktop PC',
+          query: 'setup desktop_pc',
+          results: [toCandidate(desktopSnapshot)],
+        },
+        {
+          id: 'monitor',
+          label: 'Monitor',
+          query: 'setup monitor',
+          results: [toCandidate(monitorSnapshot)],
+        },
+      ],
+      groupCoverage: {
+        expectedGroups: ['desktop_pc', 'monitor'],
+        coveredGroups: ['desktop_pc', 'monitor'],
+        missingGroups: [],
+        coverageRate: 1,
+      },
+    });
+    catalogAdapter.getSnapshotsByIds.mockResolvedValueOnce([
+      desktopSnapshot,
+      monitorSnapshot,
+    ]);
+
+    const result = await productAdviceNode(
+      {
+        userText: 'combo pc màn hình livestream',
+        intentPlan: { needsProductRetrieval: true, broadNeed: false },
+      },
+      { productRetriever, catalogAdapter },
+    );
+
+    expect(result.metadata.productCards.map((card) => card.productId)).toEqual([
+      'monitor-live-001',
+    ]);
+    expect(result.metadata.setup_slot_coverage).toEqual({
+      requestedSlots: ['desktop_pc', 'monitor'],
+      coveredSlots: ['monitor'],
+      missingSlots: ['desktop_pc'],
+    });
+    expect(result.metadata.group_coverage).toMatchObject({
+      coveredGroups: ['monitor'],
+      missingGroups: ['desktop_pc'],
+      coverageRate: 0.5,
+    });
+  });
+  it('does not display optional combo groups when explicit PC desk chair slots are missing', async () => {
+    const monitorSnapshot = {
+      productId: 'monitor-generic-001',
+      name: 'Màn hình livestream 27 inch',
+      price: 4_990_000,
+      discountPrice: 4_690_000,
+      stock: 4,
+      slug: 'man-hinh-livestream-27',
+      category: 'Màn hình',
+      searchMetadata: { categoryPath: ['Màn hình'] },
+    };
+    const keyboardSnapshot = {
+      productId: 'keyboard-generic-001',
+      name: 'Bàn phím cơ cho creator',
+      price: 1_990_000,
+      discountPrice: 1_690_000,
+      stock: 6,
+      slug: 'ban-phim-co-creator',
+      category: 'Bàn phím',
+      searchMetadata: { categoryPath: ['Bàn phím'] },
+    };
+    const toCandidate = (snapshot: typeof monitorSnapshot) => ({
+      ...retrievalResult.results[0],
+      productId: snapshot.productId,
+      payload: {
+        ...retrievalResult.results[0].payload,
+        productId: snapshot.productId,
+        name: snapshot.name,
+        slug: snapshot.slug,
+        category: snapshot.category,
+        categoryPath: snapshot.searchMetadata.categoryPath,
+        price: snapshot.price,
+        discountPrice: snapshot.discountPrice,
+        stock: snapshot.stock,
+      },
+    });
+    productRetriever.search.mockResolvedValueOnce({
+      ...retrievalResult,
+      query: { ...retrievalResult.query, constraints: {} },
+      results: [],
+      comboGroups: [
+        {
+          id: 'desktop_pc',
+          label: 'Desktop PC',
+          query: 'setup desktop_pc',
+          results: [],
+        },
+        {
+          id: 'desk',
+          label: 'Desk',
+          query: 'setup desk',
+          results: [],
+        },
+        {
+          id: 'chair',
+          label: 'Chair',
+          query: 'setup chair',
+          results: [],
+        },
+        {
+          id: 'monitor',
+          label: 'Monitor',
+          query: 'setup monitor',
+          results: [toCandidate(monitorSnapshot)],
+        },
+        {
+          id: 'keyboard',
+          label: 'Keyboard',
+          query: 'setup keyboard',
+          results: [toCandidate(keyboardSnapshot)],
+        },
+      ],
+      groupCoverage: {
+        expectedGroups: ['desktop_pc', 'desk', 'chair', 'monitor', 'keyboard'],
+        coveredGroups: ['monitor', 'keyboard'],
+        missingGroups: ['desktop_pc', 'desk', 'chair'],
+        coverageRate: 0.4,
+      },
+      rewrite: {
+        rewrittenQuery: 'combo pc bàn ghế livestream',
+        detectedIntents: ['LIVE_STREAMING'],
+        productGroups: ['pc', 'desk', 'chair'],
+        hardConstraints: {},
+        softSignals: ['livestream'],
+        expandedKeywords: [],
+        comboGroups: ['desktop_pc', 'desk', 'chair', 'monitor', 'keyboard'],
+        confidence: 0.8,
+        metadata: {
+          rewrite_provider: 'deepseek',
+          rewrite_model: 'deepseek-v4-pro',
+          rewrite_status: 'fallback_timeout',
+          rewrite_retry_count: 0,
+          rewrite_latency_ms: 12_000,
+          rewritten_query: 'combo pc bàn ghế livestream',
+        },
+      },
+    });
+    catalogAdapter.getSnapshotsByIds.mockResolvedValueOnce([
+      monitorSnapshot,
+      keyboardSnapshot,
+    ]);
+
+    const result = await productAdviceNode(
+      {
+        userText: 'combo pc bàn ghế livestream',
+        intentPlan: { needsProductRetrieval: true, broadNeed: false },
+      },
+      { productRetriever, catalogAdapter },
+    );
+
+    expect(result.metadata.productCards).toEqual([]);
+    expect(result.metadata.productGroups).toEqual([]);
+    expect(result.metadata.setup_slot_coverage).toEqual({
+      requestedSlots: ['desktop_pc', 'desk', 'chair', 'monitor', 'keyboard'],
+      coveredSlots: [],
+      missingSlots: ['desktop_pc', 'desk', 'chair', 'monitor', 'keyboard'],
+    });
+    expect(result.metadata.group_coverage).toMatchObject({
+      coveredGroups: [],
+      missingGroups: ['desktop_pc', 'desk', 'chair', 'monitor', 'keyboard'],
+    });
+    expect(result.metadata.tool_results?.search_products.productIds).toEqual(
+      [],
+    );
+    expect(result.text).not.toMatch(/Màn hình|Bàn phím/i);
+  });
   it('CHAT-02 D-13 asks follow-up questions before retrieval for broad needs', async () => {
     const responseComposer = {
       composeProductClarification: jest
@@ -1911,7 +2456,9 @@ describe('productAdviceNode', () => {
     expect(result.text).not.toBe('Mình đang so sánh Laptop Gaming RTX 4060 vì');
     expect(result.text).toMatch(/[.!?]$/);
     expect(result.metadata.llmComposed).toBe(false);
-    expect(result.metadata.llmComposeFallbackReason).toBe('incomplete_composed_text');
+    expect(result.metadata.llmComposeFallbackReason).toBe(
+      'incomplete_composed_text',
+    );
   });
   it('accepts subset count advice when three product cards render', async () => {
     const responseComposer = {
@@ -1969,7 +2516,9 @@ describe('productAdviceNode', () => {
     const numberedLines = result.text.match(/\b\d+\.\s/g) ?? [];
     expect(numberedLines).toHaveLength(0);
     expect(result.metadata.llmComposed).toBe(false);
-    expect(result.metadata.llmComposeFallbackReason).toBe('count_claim_mismatch');
+    expect(result.metadata.llmComposeFallbackReason).toBe(
+      'count_claim_mismatch',
+    );
   });
 
   it('rejects unsupported warranty claims when catalog lacks warranty facts', async () => {

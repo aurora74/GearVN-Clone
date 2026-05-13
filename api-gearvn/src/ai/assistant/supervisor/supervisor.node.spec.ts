@@ -177,9 +177,177 @@ describe('supervisorNode deterministic bypass', () => {
       contextualUserText: 'tư vấn laptop dưới 18 triệu, nhẹ, pin tốt',
     });
     expect(result.parsedEntities).toMatchObject({ productCategory: 'laptop' });
-    expect(String(result.intentPlan?.contextualUserText)).not.toContain('Viettel');
+    expect(String(result.intentPlan?.contextualUserText)).not.toContain(
+      'Viettel',
+    );
   });
 
+  it('corrects unsupported classifier output for livestream workspace setup advice', async () => {
+    const classifier = {
+      classify: jest.fn().mockResolvedValue({
+        route: 'general',
+        confidence: 0.95,
+        intents: [AssistantIntent.UNSUPPORTED],
+        entities: {},
+      }),
+    };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'mình cần tư vấn setup góc làm việc cho livestream',
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.primaryIntent).toBe(AssistantIntent.PRODUCT_ADVICE);
+    expect(result.intents).toEqual([AssistantIntent.PRODUCT_ADVICE]);
+    expect(result.parsedEntities).toMatchObject({
+      useCaseIntentPrimitives: expect.arrayContaining([
+        'WORK_FROM_HOME',
+        'LIVE_STREAMING',
+      ]),
+      comboGroups: expect.arrayContaining(['webcam', 'microphone', 'lighting']),
+    });
+    expect(result.metadata?.deterministic_bypass).not.toBe(true);
+  });
+  it('keeps PC correction anchored to the prior livestream setup context', async () => {
+    const classifier = { classify: jest.fn() };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'mình cần pc cơ',
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content:
+                'customer: mình cần tư vấn setup góc làm việc cho livestream\nassistant: Mình đã gợi ý một số lựa chọn setup.',
+            },
+          ],
+        },
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.primaryIntent).toBe(AssistantIntent.PRODUCT_ADVICE);
+    expect(result.intentPlan).not.toMatchObject({ broadNeed: true });
+    expect(result.intentPlan).toMatchObject({
+      contextResolutionReason: 'shopping_setup_continuation',
+      contextualUserText: expect.stringContaining('setup góc làm việc'),
+    });
+    expect(String(result.intentPlan?.contextualUserText)).toContain('pc');
+  });
+  it('routes table-chair setup follow-up to product advice in recent setup context', async () => {
+    const classifier = {
+      classify: jest.fn().mockResolvedValue({
+        route: 'general',
+        confidence: 0.82,
+        intents: [AssistantIntent.UNSUPPORTED],
+        entities: {},
+      }),
+    };
+
+    const result = await supervisorNode(
+      {
+        ...baseState,
+        userText: 'thế còn bàn ghế thì sao',
+        promptContext: {
+          sections: [
+            {
+              kind: 'hotMessages',
+              content:
+                'customer: combo pc, bàn, ghế phục vụ cho livestream\nassistant: Mình đã gom theo từng nhóm setup.',
+            },
+          ],
+        },
+      },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('sales');
+    expect(result.primaryIntent).toBe(AssistantIntent.PRODUCT_ADVICE);
+    expect(result.parsedEntities).toMatchObject({
+      productCategory: 'desk',
+      contextResolutionReason: 'shopping_setup_continuation',
+    });
+  });
+
+  it.each([
+    ['setup làm việc tại nhà', ['WORK_FROM_HOME']],
+    ['tư vấn góc livestream', ['LIVE_STREAMING']],
+    ['gợi ý combo work from home để video call', ['WORK_FROM_HOME']],
+  ])(
+    'routes use-case setup consultation variant %s to product advice',
+    async (userText, expectedPrimitives) => {
+      const classifier = {
+        classify: jest.fn().mockResolvedValue({
+          route: 'general',
+          confidence: 0.9,
+          intents: [AssistantIntent.UNSUPPORTED],
+          entities: {},
+        }),
+      };
+
+      const result = await supervisorNode({ ...baseState, userText }, {
+        configurable: { classifier },
+      } as any);
+
+      expect(classifier.classify).toHaveBeenCalled();
+      expect(result.activeSubgraph).toBe('sales');
+      expect(result.primaryIntent).toBe(AssistantIntent.PRODUCT_ADVICE);
+      expect(result.parsedEntities?.useCaseIntentPrimitives).toEqual(
+        expect.arrayContaining(expectedPrimitives),
+      );
+    },
+  );
+
+  it('does not deterministically bypass informational livestream definition questions into product advice', async () => {
+    const classifier = {
+      classify: jest.fn().mockResolvedValue({
+        route: 'general',
+        confidence: 0.92,
+        intents: [AssistantIntent.UNSUPPORTED],
+        entities: {},
+      }),
+    };
+
+    const result = await supervisorNode(
+      { ...baseState, userText: 'livestream là gì' },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('general');
+    expect(result.primaryIntent).toBe(AssistantIntent.UNSUPPORTED);
+    expect(result.metadata?.deterministic_bypass).not.toBe(true);
+  });
+
+  it('does not turn informational chair definition into product advice without setup context', async () => {
+    const classifier = {
+      classify: jest.fn().mockResolvedValue({
+        route: 'general',
+        confidence: 0.9,
+        intents: [AssistantIntent.UNSUPPORTED],
+        entities: {},
+      }),
+    };
+
+    const result = await supervisorNode(
+      { ...baseState, userText: 'ghế là gì' },
+      { configurable: { classifier } } as any,
+    );
+
+    expect(classifier.classify).toHaveBeenCalled();
+    expect(result.activeSubgraph).toBe('general');
+    expect(result.primaryIntent).toBe(AssistantIntent.UNSUPPORTED);
+  });
   it('keeps generic laptop advice broad for product clarification', async () => {
     const classifier = { classify: jest.fn() };
 

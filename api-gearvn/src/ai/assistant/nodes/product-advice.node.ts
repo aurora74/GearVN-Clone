@@ -15,6 +15,7 @@ import {
   ProductRetrievalRewriteMetadata,
   RerankedProductCandidate,
 } from '../../retrieval/product-retrieval.types';
+import { comboGroupsFromIntentPrimitives } from '../../retrieval/product-intent-primitives';
 import { detectProductFamilyFromText } from '../../retrieval/product-family-taxonomy';
 import type {
   AssistantPriorRecommendationContext,
@@ -63,6 +64,12 @@ type ProductAdviceProductGroup = {
   productCards: ProductAdviceCard[];
 };
 
+type ProductAdviceSlotCoverage = {
+  requestedSlots: string[];
+  coveredSlots: string[];
+  missingSlots: string[];
+};
+
 type ProductAdviceComposeResult = {
   text: string | null;
   fallbackReason?: string;
@@ -101,6 +108,7 @@ type ProductAdviceResult = {
     productIds?: string[];
     productGroups?: ProductAdviceProductGroup[];
     group_coverage?: ProductGroupCoverage;
+    setup_slot_coverage?: ProductAdviceSlotCoverage;
     combo_group_count?: number;
     active_subgraph?: 'sales';
     tool_calls?: ReturnType<typeof buildProductToolCalls>;
@@ -134,6 +142,8 @@ type ProductAdviceResult = {
 
 const PRODUCT_ADVICE_COMPOSE_TIMEOUT_MS = 42_000;
 const PRODUCT_ADVICE_REWRITE_TIMEOUT_MS = 12_000;
+const SETUP_SLOT_FOLLOW_UP_TIMEOUT_MS = 7_000;
+const SETUP_SLOT_SNAPSHOT_TIMEOUT_MS = 2_000;
 
 const PRODUCT_COUNT_NOUN_PATTERN =
   'mau|san pham|the san pham|model|models|lua chon|goi y|recommendation|recommendations|option|options|product|products|laptop|laptops|may tinh|may|con';
@@ -159,6 +169,15 @@ const PRODUCT_ADVICE_FOLLOW_UP_QUESTIONS = [
   'Bạn dùng chính để học/làm việc, chơi game, đồ họa hay di chuyển nhiều?',
   'Bạn ưu tiên màn hình, hiệu năng, pin hay mỏng nhẹ?',
 ];
+const SETUP_ADVICE_FOLLOW_UP_QUESTIONS = [
+  'Bạn muốn dùng PC để bàn hay laptop?',
+  'Ngân sách tổng cho góc setup khoảng bao nhiêu?',
+  'Bạn cần gồm những món nào: bàn, ghế, micro, camera, đèn hay màn hình?',
+];
+const SETUP_PC_CLARIFICATION_QUESTIONS = [
+  'Bạn muốn mua PC bộ lắp sẵn hay build theo linh kiện?',
+  'Ngân sách cho riêng PC khoảng bao nhiêu?',
+];
 const PHASE_10_CLARIFICATION_QUESTIONS = [
   'Bạn ưu tiên laptop, PC hay phụ kiện?',
   'Ngân sách khoảng bao nhiêu?',
@@ -171,12 +190,36 @@ export async function productAdviceNode(
   const requestedMoreOptions =
     state.intentPlan?.requestedMoreOptions === true ||
     state.requestedMoreOptions === true;
+  const contextualSetupAdvice = isContextualSetupProductAdvice(state);
+  const setupClarificationQuestions = setupClarificationQuestionsForState(
+    state,
+    contextualSetupAdvice,
+  );
   const broadNeed =
     state.intentPlan?.broadNeed === true ||
     isBroadProductAdviceRequest(state.userText);
-  const followUpQuestions = broadNeed ? PRODUCT_ADVICE_FOLLOW_UP_QUESTIONS : [];
+  const shouldClarifyBroadNeed = broadNeed && !contextualSetupAdvice;
+  const followUpQuestions = shouldClarifyBroadNeed
+    ? PRODUCT_ADVICE_FOLLOW_UP_QUESTIONS
+    : [];
 
-  if (broadNeed && !requestedMoreOptions) {
+  if (setupClarificationQuestions.length > 0 && !requestedMoreOptions) {
+    return {
+      intent: 'PRODUCT_ADVICE',
+      nodeName: 'product_advice',
+      text: buildClarificationText(setupClarificationQuestions),
+      metadata: {
+        productCards: [],
+        followUpQuestions: setupClarificationQuestions,
+        needsClarification: true,
+        llmComposed: false,
+        llmComposeStatus: 'skipped',
+        llmComposeFallbackReason: 'setup_fast_clarification',
+      },
+    };
+  }
+
+  if (shouldClarifyBroadNeed && !requestedMoreOptions) {
     const clarification = await composeProductClarificationText(config, {
       userText: sanitizeCustomerFacingRequest(state.userText),
       followUpQuestions,
@@ -300,6 +343,21 @@ export async function productAdviceNode(
     throw new Error('productAdviceNode requires ProductRetriever');
   }
 
+  const setupSlotFollowUpGroups = setupSlotFollowUpGroupsForState(
+    state,
+    contextualSetupAdvice,
+  );
+  if (setupSlotFollowUpGroups.length > 0 && !requestedMoreOptions) {
+    return fastSetupSlotFollowUpResponse({
+      state,
+      config,
+      productRetriever,
+      groups: setupSlotFollowUpGroups,
+      roomId,
+      cardLimit,
+    });
+  }
+
   const customerFacingText = stripProductAdviceControlPhrases(
     normalizeProductSearchQuery(productCustomerText(state)),
   );
@@ -418,7 +476,9 @@ export async function productAdviceNode(
     const snapshotById = new Map<string, ProductCatalogSnapshot>(
       snapshots.map((snapshot) => [snapshot.productId, snapshot] as const),
     );
-    const productGroups: ProductAdviceProductGroup[] =
+    const comboVisibleConstraints =
+      withoutCategoryConstraints(visibleConstraints);
+    const initialProductGroups: ProductAdviceProductGroup[] =
       uniqueProductGroupsByProductId(
         groupResults
           .map((group) => ({
@@ -428,11 +488,12 @@ export async function productAdviceNode(
               .filter((result) => {
                 if (excludedProductIdSet.has(result.productId)) return false;
                 const snapshot = snapshotById.get(result.productId);
+                if (snapshot && Number(snapshot.stock ?? 0) <= 0) return false;
                 return snapshot
                   ? resultSatisfiesVisibleConstraints(
                       result,
                       snapshot,
-                      visibleConstraints,
+                      comboVisibleConstraints,
                     )
                   : false;
               })
@@ -443,8 +504,15 @@ export async function productAdviceNode(
           }))
           .filter((group) => group.productCards.length > 0),
       );
+    const productGroups = gateComboProductGroups(
+      initialProductGroups,
+      retrieval,
+      searchQuery,
+    );
     const productCards = productGroups.flatMap((group) => group.productCards);
     const productIds = productCards.map((card) => card.productId);
+    const slotCoverage = slotCoverageFromRetrieval(retrieval, productGroups);
+    const displayedGroupCoverage = groupCoverageFromSlotCoverage(slotCoverage);
 
     throwIfAborted(config.abortSignal);
     if (roomId && productCards.length > 0) {
@@ -461,7 +529,9 @@ export async function productAdviceNode(
       followUpQuestions,
       priorRecommendations,
       preferenceDelta,
-      consultationMode: productCards.length > 0 ? 'combo_advice' : consultationMode,
+      consultationMode:
+        productCards.length > 0 ? 'combo_advice' : consultationMode,
+      slotCoverage,
     });
 
     return {
@@ -477,7 +547,8 @@ export async function productAdviceNode(
         retrieval_query: retrieval.effectiveQuery ?? searchQuery,
         crag_retry: retrieval.cragRetry ?? retrieval.crag_retry,
         productIds,
-        group_coverage: retrieval.groupCoverage,
+        group_coverage: displayedGroupCoverage,
+        setup_slot_coverage: slotCoverage,
         combo_group_count: retrieval.comboGroups.length,
         active_subgraph: 'sales',
         tool_calls: buildProductToolCalls(retrieval, productIds),
@@ -551,10 +622,12 @@ export async function productAdviceNode(
     snapshotById,
     priceSort,
   ).slice(0, cardLimit);
-  const freshProductCards: ProductAdviceCard[] = constrainedResults.map((result) => {
-    const snapshot = snapshotById.get(result.productId)!;
-    return toProductCard(result, snapshot);
-  });
+  const freshProductCards: ProductAdviceCard[] = constrainedResults.map(
+    (result) => {
+      const snapshot = snapshotById.get(result.productId)!;
+      return toProductCard(result, snapshot);
+    },
+  );
   const productCards = productCardsForConsultationMode({
     consultationMode,
     priorRecommendations,
@@ -739,6 +812,7 @@ async function composeGroundedProductAdviceText(
     priorRecommendations?: AssistantPriorRecommendationContext[];
     preferenceDelta?: string;
     consultationMode?: AssistantProductConsultationMode;
+    slotCoverage?: ProductAdviceSlotCoverage;
   },
 ): Promise<ProductAdviceComposeMetadata> {
   const composeResult = await composeProductAdviceText(config, input);
@@ -748,7 +822,7 @@ async function composeGroundedProductAdviceText(
 
   if (usableComposedText) {
     return {
-      text: usableComposedText,
+      text: withMissingSlotGapNotice(usableComposedText, input.slotCoverage),
       llmComposed: true,
       llmComposeStatus: 'used',
     };
@@ -757,7 +831,10 @@ async function composeGroundedProductAdviceText(
   const effectiveFallbackReason =
     composeResult.fallbackReason ?? fallbackReason ?? 'composer_unavailable';
   return {
-    text: productAdviceFallbackText(input),
+    text: withMissingSlotGapNotice(
+      productAdviceFallbackText(input),
+      input.slotCoverage,
+    ),
     llmComposed: false,
     llmComposeStatus: 'fallback',
     llmComposeFallbackReason: effectiveFallbackReason,
@@ -815,6 +892,7 @@ async function composeProductAdviceText(
     priorRecommendations?: AssistantPriorRecommendationContext[];
     preferenceDelta?: string;
     consultationMode?: AssistantProductConsultationMode;
+    slotCoverage?: ProductAdviceSlotCoverage;
   },
 ): Promise<ProductAdviceComposeResult> {
   try {
@@ -948,19 +1026,25 @@ function productAdviceFallbackText(input: {
   priorRecommendations?: AssistantPriorRecommendationContext[];
   preferenceDelta?: string;
   consultationMode?: AssistantProductConsultationMode;
+  slotCoverage?: ProductAdviceSlotCoverage;
 }): string {
   if (input.consultationMode === 'refinement') {
     return continuityAwareRefinementFallbackText(input);
   }
 
   const cardSummaries = productCardFactSummaries(input.productCards);
-  if (cardSummaries.length === 0) return minimalProductCardsText(input.productCards);
+  if (cardSummaries.length === 0)
+    return minimalProductCardsText(input.productCards);
 
   const leadSummary = cardSummaries[0];
   const comparisonText = cardSummaries.slice(1, 3).join('; ');
   const suffix = comparisonText
     ? ` Bạn có thể so thêm ${comparisonText} trong các thẻ sản phẩm bên dưới.`
     : ' Bạn có thể mở thẻ sản phẩm bên dưới để xem chi tiết cấu hình, giá và tình trạng hàng.';
+  const gapText =
+    input.consultationMode === 'combo_advice'
+      ? missingSlotGapNotice(input.slotCoverage)
+      : '';
 
   switch (input.consultationMode) {
     case 'more_options':
@@ -968,10 +1052,72 @@ function productAdviceFallbackText(input: {
     case 'price_sort':
       return `Mình đã sắp xếp lại nhóm đã tư vấn theo yêu cầu, bắt đầu với ${leadSummary}.${suffix}`;
     case 'combo_advice':
-      return `Mình đã gom các lựa chọn theo từng nhóm nhu cầu, trong đó có ${leadSummary}.${suffix}`;
+      return `Mình đã gom các lựa chọn theo từng nhóm nhu cầu, trong đó có ${leadSummary}.${suffix}${gapText}`;
     case 'initial_advice':
     default:
       return `Mình tìm thấy lựa chọn phù hợp để bạn cân nhắc, nổi bật là ${leadSummary}.${suffix}`;
+  }
+}
+
+function withMissingSlotGapNotice(
+  text: string,
+  slotCoverage?: ProductAdviceSlotCoverage,
+): string {
+  const notice = missingSlotGapNotice(slotCoverage);
+  if (!notice) return text;
+  const normalizedText = normalizeAdviceIntentText(text);
+  const alreadyMentionsCatalogGap =
+    /catalog.*(chua|khong)|chua co lua chon phu hop|khong co lua chon phu hop/.test(
+      normalizedText,
+    );
+  const mentionsEveryMissingSlot = (slotCoverage?.missingSlots ?? []).every(
+    (slot) =>
+      normalizeAdviceIntentText(slotGapLabel(slot))
+        .split('/')
+        .some((label) => normalizedText.includes(label.trim())),
+  );
+  return alreadyMentionsCatalogGap && mentionsEveryMissingSlot
+    ? text
+    : `${text}${notice}`;
+}
+
+function missingSlotGapNotice(
+  slotCoverage?: ProductAdviceSlotCoverage,
+): string {
+  const missingSlots = slotCoverage?.missingSlots ?? [];
+  if (missingSlots.length === 0) return '';
+  const labels = uniqueAdviceStrings(missingSlots.map(slotGapLabel));
+  if (labels.length === 0) return '';
+  const criticalDesktopGap = missingSlots.includes('desktop_pc')
+    ? ' Mình không thay PC bộ bằng linh kiện rời hoặc sản phẩm khác.'
+    : '';
+  return ` Hiện catalog chưa có lựa chọn phù hợp cho ${labels.join(', ')}.${criticalDesktopGap}`;
+}
+
+function slotGapLabel(slot: string): string {
+  switch (slot) {
+    case 'desktop_pc':
+      return 'PC bộ/desktop PC';
+    case 'desk':
+      return 'bàn';
+    case 'chair':
+      return 'ghế';
+    case 'monitor':
+      return 'màn hình';
+    case 'keyboard':
+      return 'bàn phím';
+    case 'mouse':
+      return 'chuột';
+    case 'microphone':
+      return 'microphone';
+    case 'webcam':
+      return 'webcam';
+    case 'lighting':
+      return 'đèn livestream';
+    case 'headset':
+      return 'tai nghe';
+    default:
+      return slot.replace(/_/g, ' ');
   }
 }
 
@@ -987,7 +1133,9 @@ function continuityAwareRefinementFallbackText(input: {
     (card) => !priorIds.has(card.productId),
   );
   const comparisonNames = listProductNames(
-    currentCandidates.length > 0 ? currentCandidates : input.productCards.slice(1),
+    currentCandidates.length > 0
+      ? currentCandidates
+      : input.productCards.slice(1),
   );
   const priorLeadText = priorLead?.name
     ? `Mình vẫn giữ ${priorLead.name} trong nhóm so sánh vì đây là lựa chọn đã tư vấn trước đó`
@@ -1027,7 +1175,10 @@ function formatProductCardPrice(card: ProductAdviceCard): string | undefined {
     : undefined;
 }
 
-function listProductNames(productCards: ProductAdviceCard[], limit = 2): string {
+function listProductNames(
+  productCards: ProductAdviceCard[],
+  limit = 2,
+): string {
   const names = productCards
     .map((card) => card.name)
     .filter((name): name is string => Boolean(name))
@@ -1059,7 +1210,9 @@ function productCardFromPriorRecommendation(
     productId: item.productId,
     name: item.name,
     slug: item.slug,
-    detailHref: item.slug ? `/products/${item.slug}` : `/products/${item.productId}`,
+    detailHref: item.slug
+      ? `/products/${item.slug}`
+      : `/products/${item.productId}`,
     price: item.price,
     discountPrice: item.discountPrice,
     stock,
@@ -1077,7 +1230,8 @@ function productCardFromPriorRecommendation(
       productId: item.productId,
       actions: ['VIEW_PRODUCT', ...(effectivePrice ? ['ADD_TO_CART'] : [])],
     },
-    specs: item.specs ?? (item.specsSummary ? { summary: item.specsSummary } : {}),
+    specs:
+      item.specs ?? (item.specsSummary ? { summary: item.specsSummary } : {}),
   };
 }
 
@@ -1133,6 +1287,95 @@ function productSearchText(state: ProductAdviceState): string {
   return expandPerformanceLaptopSearchText(productCustomerText(state));
 }
 
+function isContextualSetupProductAdvice(state: ProductAdviceState): boolean {
+  const text = [
+    state.userText,
+    asString(state.intentPlan?.contextualUserText),
+    asString(state.parsedEntities?.contextualUserText),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    isSetupOrComboProductAdvice(text) ||
+    comboGroupsFromIntentPrimitives(text).length > 1
+  );
+}
+
+function setupClarificationQuestionsForState(
+  state: ProductAdviceState,
+  contextualSetupAdvice: boolean,
+): string[] {
+  const currentText = state.userText;
+  const normalizedCurrent = normalizeAdviceIntentText(currentText);
+  const normalizedContext = normalizeAdviceIntentText(
+    [
+      currentText,
+      asString(state.intentPlan?.contextualUserText),
+      asString(state.parsedEntities?.contextualUserText),
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+  const explicitCurrentSlotCount = explicitSetupSlotCount(normalizedCurrent);
+  const currentHasBudget = hasSetupBudgetSignal(normalizedCurrent);
+  const contextHasBudget = hasSetupBudgetSignal(normalizedContext);
+  const hasMultipleCurrentSlots = explicitCurrentSlotCount >= 2;
+  const broadLivestreamSetup =
+    /\b(setup|set up|goc|combo|tron bo|ca bo)\b/.test(normalizedCurrent) &&
+    /\b(livestream|streaming|streamer)\b/.test(normalizedCurrent) &&
+    !hasMultipleCurrentSlots &&
+    !currentHasBudget;
+
+  if (broadLivestreamSetup) return SETUP_ADVICE_FOLLOW_UP_QUESTIONS;
+
+  const asksPcCorrection =
+    contextualSetupAdvice &&
+    /\b(pc|desktop|may bo|may tinh de ban|may tinh ban)\b/.test(
+      normalizedCurrent,
+    ) &&
+    !hasMultipleCurrentSlots &&
+    !contextHasBudget &&
+    !asksForPcComponentsOrCustomBuild(normalizedCurrent);
+
+  return asksPcCorrection ? SETUP_PC_CLARIFICATION_QUESTIONS : [];
+}
+
+function explicitSetupSlotCount(normalizedText: string): number {
+  const slots = new Set<string>();
+  if (/\b(laptop|notebook|may tinh xach tay)\b/.test(normalizedText)) {
+    slots.add('laptop');
+  }
+  if (
+    /\b(pc|desktop|may bo|may tinh de ban|may tinh ban)\b/.test(normalizedText)
+  ) {
+    slots.add('desktop_pc');
+  }
+  if (/\b(ban ghe|desk|ban gaming|ban lam viec)\b/.test(normalizedText)) {
+    slots.add('desk');
+  }
+  if (/\b(ghe|chair|ghe gaming|ghe cong thai hoc)\b/.test(normalizedText)) {
+    slots.add('chair');
+  }
+  if (/\b(micro|mic|microphone|thu am)\b/.test(normalizedText)) {
+    slots.add('microphone');
+  }
+  if (/\b(webcam|camera)\b/.test(normalizedText)) slots.add('webcam');
+  if (/\b(den|lighting|led)\b/.test(normalizedText)) slots.add('lighting');
+  if (/\b(man hinh|monitor)\b/.test(normalizedText)) slots.add('monitor');
+  return slots.size;
+}
+function hasSetupBudgetSignal(normalizedText: string): boolean {
+  return /\b\d{1,3}\s*(?:tr|trieu|m|k|ngan|nghin|vnd|d|dong)\b/.test(
+    normalizedText,
+  );
+}
+
+function asksForPcComponentsOrCustomBuild(normalizedText: string): boolean {
+  return /\b(build|custom|linh kien|lap rap|rap may|cpu|ram|mainboard|vga|gpu|ssd|hdd|case|psu|nguon|tan nhiet)\b/.test(
+    normalizedText,
+  );
+}
+
 function productCustomerText(state: ProductAdviceState): string {
   const productCategory = asString(state.parsedEntities?.productCategory);
   const requestedMoreOptions =
@@ -1186,6 +1429,324 @@ function stripMoreOptionsContinuationPhrases(text: string): string {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+async function fastSetupSlotFollowUpResponse(input: {
+  state: ProductAdviceState;
+  config: ProductAdviceConfig;
+  productRetriever: ProductRetriever;
+  groups: Array<'desk' | 'chair'>;
+  roomId?: string;
+  cardLimit: number;
+}): Promise<ProductAdviceResult> {
+  const query = setupSlotFollowUpQuery(input.state.userText, input.groups);
+  const perGroupTopK = Math.min(3, Math.max(1, input.cardLimit));
+  const retrievals = await Promise.all(
+    input.groups.map((group) =>
+      searchSetupSlotWithinBudget(
+        input.productRetriever,
+        group,
+        query,
+        perGroupTopK,
+        input.config.abortSignal,
+      ),
+    ),
+  );
+  throwIfAborted(input.config.abortSignal);
+
+  const candidatesByGroup = new Map(
+    retrievals.map((entry) => [entry.group, entry.results] as const),
+  );
+  const candidateResults = uniqueResultsByProductId(
+    retrievals.flatMap((entry) => entry.results),
+  );
+  const candidateProductIds = candidateResults.map((result) => result.productId);
+  const fallbackSnapshots = candidateResults.map(snapshotFromResult);
+  const snapshots: ProductCatalogSnapshot[] = candidateProductIds.length
+    ? await withTimeout(
+        input.config.catalogAdapter?.getSnapshotsByIds(candidateProductIds) ??
+          Promise.resolve(fallbackSnapshots),
+        SETUP_SLOT_SNAPSHOT_TIMEOUT_MS,
+        undefined,
+      ).catch(() => fallbackSnapshots)
+    : [];
+  throwIfAborted(input.config.abortSignal);
+
+  const snapshotById = new Map<string, ProductCatalogSnapshot>(
+    snapshots.map((snapshot) => [snapshot.productId, snapshot] as const),
+  );
+  const productGroups: ProductAdviceProductGroup[] =
+    uniqueProductGroupsByProductId(
+      input.groups
+        .map((group) => ({
+          groupId: group,
+          label: slotGapLabel(group),
+          productCards: (candidatesByGroup.get(group) ?? [])
+            .filter((result) => {
+              const snapshot = snapshotById.get(result.productId);
+              if (!snapshot || Number(snapshot.stock ?? 0) <= 0) return false;
+              return resultSatisfiesVisibleConstraints(result, snapshot, {
+                categoryHints: [group],
+                inStockOnly: true,
+              });
+            })
+            .slice(0, perGroupTopK)
+            .map((result) =>
+              toProductCard(result, snapshotById.get(result.productId)!),
+            ),
+        }))
+        .filter((group) => group.productCards.length > 0),
+    );
+  const productCards = productGroups.flatMap((group) => group.productCards);
+  const productIds = productCards.map((card) => card.productId);
+  const slotCoverage: ProductAdviceSlotCoverage = {
+    requestedSlots: input.groups,
+    coveredSlots: productGroups.map((group) => group.groupId),
+    missingSlots: input.groups.filter(
+      (group) => !productGroups.some((productGroup) => productGroup.groupId === group),
+    ),
+  };
+  const groupCoverage = groupCoverageFromSlotCoverage(slotCoverage);
+  const rewrite = skippedRewriteMetadata(query, 'setup_slot_followup_fast_path');
+
+  if (input.roomId && productCards.length > 0) {
+    await input.config.sessionService?.saveRecommendationLedger(
+      input.roomId,
+      productCards,
+    );
+    throwIfAborted(input.config.abortSignal);
+  }
+
+  return {
+    intent: 'PRODUCT_ADVICE',
+    nodeName: 'product_advice',
+    text: setupSlotFollowUpText(productCards, slotCoverage),
+    metadata: {
+      productCards,
+      productGroups,
+      followUpQuestions: [],
+      retrievalQuery: {
+        original: query,
+        expanded: [],
+        expandedText: query,
+        constraints: { categoryHints: input.groups, inStockOnly: true },
+      },
+      retrieval_query: query,
+      productIds,
+      group_coverage: groupCoverage,
+      setup_slot_coverage: slotCoverage,
+      combo_group_count: input.groups.length,
+      active_subgraph: 'sales',
+      tool_calls: buildProductToolCalls({ effectiveQuery: query }, productIds),
+      tool_results: {
+        search_products: {
+          retrieval_query: query,
+          productIds,
+        },
+        get_product_snapshot: {
+          productIds,
+          count: productCards.length,
+        },
+      },
+      ...rewrite.metadata,
+      requested_recommendation_limit: null,
+      applied_recommendation_limit: productCards.length,
+      product_card_count: productCards.length,
+      consultationMode: 'combo_advice',
+      comparedProductIds: productIds,
+      llmComposed: false,
+      llmComposeStatus: 'skipped',
+      llmComposeFallbackReason: 'setup_slot_followup_fast_path',
+    },
+  };
+}
+
+async function searchSetupSlotWithinBudget(
+  productRetriever: ProductRetriever,
+  group: 'desk' | 'chair',
+  query: string,
+  topK: number,
+  signal?: AbortSignal,
+): Promise<{ group: 'desk' | 'chair'; results: RerankedProductCandidate[] }> {
+  if (signal?.aborted) return { group, results: [] };
+  const slotQuery = `${query} ${slotSearchTerms(group)}`.trim();
+  const searchPromise = productRetriever
+    .search(slotQuery, {
+      topK,
+      hardConstraints: { categoryHints: [group], inStockOnly: true },
+      pipeline: 'phase-09.2-baseline',
+    })
+    .then((retrieval) => ({ group, results: retrieval.results }))
+    .catch(() => ({ group, results: [] }));
+
+  return withTimeout(
+    searchPromise,
+    SETUP_SLOT_FOLLOW_UP_TIMEOUT_MS,
+    undefined,
+  ).catch(() => ({ group, results: [] }));
+}
+
+function setupSlotFollowUpGroupsForState(
+  state: ProductAdviceState,
+  contextualSetupAdvice: boolean,
+): Array<'desk' | 'chair'> {
+  if (!contextualSetupAdvice) return [];
+  const reason =
+    asString(state.intentPlan?.contextResolutionReason) ??
+    asString(state.parsedEntities?.contextResolutionReason);
+  const setupContextText = [
+    asString(state.intentPlan?.contextualUserText),
+    asString(state.parsedEntities?.contextualUserText),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const hasSetupContext =
+    reason === 'shopping_setup_continuation' ||
+    isSetupOrComboProductAdvice(setupContextText) ||
+    /\b(livestream|streaming|streamer)\b/.test(
+      normalizeAdviceIntentText(setupContextText),
+    );
+  if (!hasSetupContext) return [];
+
+  const normalizedCurrent = normalizeAdviceIntentText(state.userText);
+  if (!normalizedCurrent || isInformationalDefinitionRequest(normalizedCurrent)) {
+    return [];
+  }
+  const currentSlots = explicitRequestedSetupSlots(state.userText).filter(
+    (slot): slot is 'desk' | 'chair' => slot === 'desk' || slot === 'chair',
+  );
+  if (currentSlots.length === 0) return [];
+  const allCurrentSlots = explicitRequestedSetupSlots(state.userText);
+  if (allCurrentSlots.some((slot) => slot !== 'desk' && slot !== 'chair')) {
+    return [];
+  }
+  return currentSlots;
+}
+
+function setupSlotFollowUpQuery(
+  userText: string,
+  groups: Array<'desk' | 'chair'>,
+): string {
+  const slotText = groups.map(slotGapLabel).join(' ');
+  return `${slotText} setup livestream ${userText}`
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function slotSearchTerms(group: 'desk' | 'chair'): string {
+  return group === 'desk'
+    ? 'ban lam viec ban gaming desk'
+    : 'ghe gaming ghe cong thai hoc chair';
+}
+
+function setupSlotFollowUpText(
+  productCards: ProductAdviceCard[],
+  slotCoverage: ProductAdviceSlotCoverage,
+): string {
+  const gapText = missingSlotGapNotice(slotCoverage);
+  if (productCards.length === 0) {
+    const labels = slotCoverage.requestedSlots.map(slotGapLabel).join(', ');
+    return `Hiện catalog chưa có lựa chọn phù hợp cho ${labels} trong setup vừa rồi.${gapText}`;
+  }
+
+  const summaries = productCardFactSummaries(productCards).slice(0, 3);
+  const summaryText = summaries.length
+    ? ` Nổi bật là ${summaries.join('; ')}.`
+    : '';
+  return `Mình lọc riêng phần ${slotCoverage.requestedSlots
+    .map(slotGapLabel)
+    .join('/')} trong setup vừa rồi và gửi thẻ sản phẩm bên dưới.${summaryText}${gapText}`;
+}
+
+function slotCoverageFromRetrieval(
+  retrieval: ProductRetrievalResult,
+  productGroups: ProductAdviceProductGroup[],
+): ProductAdviceSlotCoverage {
+  const coveredByCards = new Set(productGroups.map((group) => group.groupId));
+  const requestedSlots = uniqueAdviceStrings([
+    ...(retrieval.groupCoverage?.expectedGroups ?? []),
+    ...(retrieval.rewrite?.comboGroups ?? []),
+  ]);
+  const coveredSlots = Array.from(coveredByCards).filter((slot) =>
+    requestedSlots.includes(slot),
+  );
+  const missingSlots = requestedSlots.filter(
+    (slot) => !coveredByCards.has(slot),
+  );
+  return { requestedSlots, coveredSlots, missingSlots };
+}
+
+function gateComboProductGroups(
+  productGroups: ProductAdviceProductGroup[],
+  retrieval: ProductRetrievalResult,
+  query: string,
+): ProductAdviceProductGroup[] {
+  const explicitSlots = explicitRequestedSetupSlots(query).filter((slot) =>
+    (retrieval.groupCoverage?.expectedGroups ?? []).includes(slot),
+  );
+  if (explicitSlots.length === 0) return productGroups;
+
+  const coveredSlots = new Set(productGroups.map((group) => group.groupId));
+  const missingExplicitSlots = explicitSlots.filter(
+    (slot) => !coveredSlots.has(slot),
+  );
+  if (missingExplicitSlots.length === 0) return productGroups;
+
+  return productGroups.filter((group) => explicitSlots.includes(group.groupId));
+}
+
+function explicitRequestedSetupSlots(query: string): string[] {
+  const normalized = normalizeSetupSlotText(query);
+  const slots: string[] = [];
+  if (/\b(laptop|notebook|may tinh xach tay)\b/.test(normalized)) {
+    slots.push('laptop');
+  }
+  if (/\b(pc|desktop|may bo|may tinh de ban|may tinh ban)\b/.test(normalized)) {
+    slots.push('desktop_pc');
+  }
+  if (/\b(ban|ban ghe|desk|ban gaming|ban lam viec)\b/.test(normalized)) {
+    slots.push('desk');
+  }
+  if (/\b(ghe|chair|ghe gaming|ghe cong thai hoc)\b/.test(normalized)) {
+    slots.push('chair');
+  }
+  if (/\b(micro|mic|microphone|thu am)\b/.test(normalized)) {
+    slots.push('microphone');
+  }
+  if (/\b(webcam|camera)\b/.test(normalized)) slots.push('webcam');
+  if (/\b(den|lighting|led)\b/.test(normalized)) slots.push('lighting');
+  if (/\b(man hinh|monitor)\b/.test(normalized)) slots.push('monitor');
+  if (/\b(ban phim|keyboard)\b/.test(normalized)) slots.push('keyboard');
+  if (/\b(tai nghe|headset|headphone|earphone|earbuds)\b/.test(normalized)) {
+    slots.push('headset');
+  }
+  if (/\b(chuot|mouse)\b/.test(normalized)) slots.push('mouse');
+  return uniqueAdviceStrings(slots);
+}
+
+function normalizeSetupSlotText(query: string): string {
+  return query
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .toLowerCase();
+}
+
+function groupCoverageFromSlotCoverage(
+  slotCoverage: ProductAdviceSlotCoverage,
+): ProductGroupCoverage {
+  const expectedGroups = slotCoverage.requestedSlots;
+  const coveredGroups = slotCoverage.coveredSlots;
+  return {
+    expectedGroups,
+    coveredGroups,
+    missingGroups: slotCoverage.missingSlots,
+    coverageRate:
+      expectedGroups.length === 0
+        ? 0
+        : coveredGroups.length / expectedGroups.length,
+  };
 }
 
 async function priorRecommendationsForMode(
@@ -1250,6 +1811,16 @@ function productConsultationModeFromState(
     : 'initial_advice';
 }
 
+function withoutCategoryConstraints(
+  constraints: ProductRetrievalConstraints,
+): ProductRetrievalConstraints {
+  const cleaned = { ...constraints };
+  delete cleaned.category;
+  delete cleaned.categoryPath;
+  delete cleaned.categoryHints;
+  return cleaned;
+}
+
 function effectiveConsultationMode(
   requestedMode: AssistantProductConsultationMode,
   priorRecommendations: AssistantPriorRecommendationContext[],
@@ -1287,7 +1858,9 @@ function continuityMetadata(input: {
       hasPriorRecommendations: priorRecommendationProductIds.length > 0,
       priorRecommendationProductIds,
       comparedProductIds: input.comparedProductIds,
-      ...(input.preferenceDelta ? { preferenceDelta: input.preferenceDelta } : {}),
+      ...(input.preferenceDelta
+        ? { preferenceDelta: input.preferenceDelta }
+        : {}),
     },
   };
 }
@@ -1515,7 +2088,7 @@ function mentionsCatalogProduct(text: string): boolean {
 }
 function isSetupOrComboProductAdvice(text: string): boolean {
   const normalized = normalizeAdviceIntentText(text);
-  return /\b(setup|set up|combo|full set|build pc|build may|lap rap|rap may|rig|dan may|dan pc|bo may|bo pc|bo gear|tron bo|ca bo)\b/.test(
+  return /\b(setup|set up|combo|full set|build pc|build may|lap rap|rap may|rig|goc|dan may|dan pc|bo may|bo pc|bo gear|tron bo|ca bo)\b/.test(
     normalized,
   );
 }
@@ -1812,6 +2385,12 @@ function normalizeAdviceIntentText(text: string): string {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function isInformationalDefinitionRequest(normalizedText: string): boolean {
+  return /\b(la gi|nghia la gi|khai niem|dinh nghia|what is|what are)\b/.test(
+    normalizedText,
+  );
 }
 
 function isBroadProductAdviceRequest(text: string): boolean {

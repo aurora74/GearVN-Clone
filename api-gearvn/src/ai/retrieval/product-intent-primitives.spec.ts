@@ -89,6 +89,22 @@ describe('Phase 10 product intent primitives', () => {
       ]),
     );
   });
+  it('promotes explicit setup slot families into canonical combo groups', () => {
+    expect(
+      comboGroupsFromIntentPrimitives('combo pc bàn ghế livestream'),
+    ).toEqual(
+      expect.arrayContaining([
+        'desktop_pc',
+        'desk',
+        'chair',
+        'webcam',
+        'microphone',
+      ]),
+    );
+    expect(comboGroupsFromIntentPrimitives('setup ban-ghe-gaming')).toEqual(
+      expect.arrayContaining(['desk', 'chair']),
+    );
+  });
 
   it('maps CAD and engineering needs to workstation performance signals without combo grouping', () => {
     const detected = detectIntentPrimitives('PC làm CAD/kỹ thuật').map(

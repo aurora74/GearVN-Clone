@@ -38,36 +38,11 @@ const PC_DESKTOP_ALIASES = [
   'máy bộ',
   'may tinh de ban',
   'máy tính để bàn',
+  'may tinh ban',
+  'máy tính bàn',
   'workstation',
-  'linh-kien-may-tinh',
-  'linh kien may tinh',
-  'linh kiện máy tính',
 ];
 
-const PC_COMPONENT_ALIASES = [
-  'cpu',
-  'vga',
-  'gpu',
-  'card do hoa',
-  'card đồ họa',
-  'ram',
-  'ssd',
-  'hdd',
-  'o cung',
-  'ổ cứng',
-  'mainboard',
-  'bo mach chu',
-  'bo mạch chủ',
-  'case may tinh',
-  'case máy tính',
-  'vo case',
-  'vỏ case',
-  'nguon may tinh',
-  'nguồn máy tính',
-  'psu',
-  'tan nhiet',
-  'tản nhiệt',
-];
 
 export const PRODUCT_FAMILY_TAXONOMY: ProductFamilyDefinition[] = [
   {
@@ -91,7 +66,7 @@ export const PRODUCT_FAMILY_TAXONOMY: ProductFamilyDefinition[] = [
     key: 'pc',
     displayLabel: 'PC',
     aliases: PC_DESKTOP_ALIASES,
-    categoryAliases: [...PC_DESKTOP_ALIASES, ...PC_COMPONENT_ALIASES],
+    categoryAliases: PC_DESKTOP_ALIASES,
   },
   {
     key: 'monitor',
@@ -144,7 +119,24 @@ export const PRODUCT_FAMILY_TAXONOMY: ProductFamilyDefinition[] = [
   {
     key: 'chair',
     displayLabel: 'ghế',
-    aliases: ['chair', 'ghe', 'ghế', 'ghe gaming', 'ghế gaming'],
+    aliases: [
+      'chair',
+      'ghe',
+      'ghế',
+      'ghe gaming',
+      'ghế gaming',
+      'ban ghe gaming',
+      'bàn ghế gaming',
+      'ban-ghe-gaming',
+    ],
+    categoryAliases: [
+      'chair',
+      'ghe',
+      'ghế',
+      'ghe gaming',
+      'ghế gaming',
+      'ban-ghe-gaming',
+    ],
   },
   {
     key: 'desk',
@@ -156,6 +148,18 @@ export const PRODUCT_FAMILY_TAXONOMY: ProductFamilyDefinition[] = [
       'bàn gaming',
       'ban lam viec',
       'bàn làm việc',
+      'ban ghe gaming',
+      'bàn ghế gaming',
+      'ban-ghe-gaming',
+    ],
+    categoryAliases: [
+      'desk',
+      'table',
+      'ban gaming',
+      'bàn gaming',
+      'ban lam viec',
+      'bàn làm việc',
+      'ban-ghe-gaming',
     ],
   },
   {

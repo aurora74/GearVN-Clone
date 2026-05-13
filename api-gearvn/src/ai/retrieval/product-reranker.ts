@@ -522,8 +522,24 @@ function categoryTextMatchesHint(
     return candidateLooksLikePortableLaptop(candidate, categoryText);
   }
   if (normalizedHint === 'pc') {
-    return candidateLooksLikeDesktopPc(candidate, categoryText);
+    return candidateLooksLikeAssembledDesktopPc(candidate, categoryText);
   }
+  if (normalizedHint === 'desktop pc' || normalizedHint === 'desktop_pc') {
+    return candidateLooksLikeAssembledDesktopPc(candidate, categoryText);
+  }
+  if (isChairHint(normalizedHint)) {
+    return candidateLooksLikeChair(candidate, categoryText);
+  }
+  if (isDeskHint(normalizedHint)) {
+    return candidateLooksLikeDesk(candidate, categoryText);
+  }
+  if (isMicrophoneHint(normalizedHint)) {
+    return candidateLooksLikeAudioMicrophone(candidate, categoryText);
+  }
+  if (isHeadsetHint(normalizedHint)) {
+    return candidateLooksLikeStandaloneHeadset(candidate, categoryText);
+  }
+
   const aliases = productFamilyCategoryAliases(normalizedHint);
   return aliases.some((alias) => normalizedTextHasAlias(categoryText, alias));
 }
@@ -583,6 +599,183 @@ function candidateLooksLikeDesktopPc(
   );
 }
 
+function candidateLooksLikeAssembledDesktopPc(
+  candidate: ProductCandidate,
+  categoryText: string,
+): boolean {
+  if (!candidateLooksLikeDesktopPc(candidate, categoryText)) return false;
+
+  const text = normalizeText(
+    [
+      categoryText,
+      candidate.payload.name,
+      ...(candidate.payload.semanticTags ?? []),
+      ...(candidate.payload.useCases ?? []),
+    ].join(' '),
+  );
+  const componentOnlySignal =
+    /\b(cpu|processor|mainboard|motherboard|bo mach chu|ram|memory|ssd|hdd|o cung|vga|gpu|card do hoa|case may tinh|vo case|psu|nguon may tinh|tan nhiet|cooling|thermal paste|keo tan nhiet|rgb|hub|fan|quat|controller|bo dieu khien)\b/.test(
+      text,
+    );
+  const assembledSignal =
+    /\b(pc|desktop|may bo|may tinh de ban|workstation|gaming pc|bo pc|may tinh ban)\b/.test(
+      text,
+    );
+
+  return assembledSignal && !componentOnlySignal;
+}
+
+function isChairHint(normalizedHint: string): boolean {
+  return [
+    'chair',
+    'ghe',
+    'ghe gaming',
+    'ghe cong thai hoc',
+    'ban ghe gaming',
+    'ban-ghe-gaming',
+  ].includes(normalizedHint);
+}
+
+function isDeskHint(normalizedHint: string): boolean {
+  return [
+    'desk',
+    'table',
+    'ban gaming',
+    'ban lam viec',
+    'ban-ghe-gaming',
+  ].includes(normalizedHint);
+}
+
+function isMicrophoneHint(normalizedHint: string): boolean {
+  return ['microphone', 'micro', 'mic', 'thu am'].includes(normalizedHint);
+}
+
+function candidateLooksLikeAudioMicrophone(
+  candidate: ProductCandidate,
+  categoryText: string,
+): boolean {
+  if (candidateLooksLikePortableLaptop(candidate, categoryText)) return false;
+
+  const name = normalizeText(candidate.payload.name);
+  const productText = normalizeText(
+    [
+      categoryText,
+      name,
+      ...(candidate.payload.semanticTags ?? []),
+      ...(candidate.payload.useCases ?? []),
+      ...(candidate.payload.targetUsers ?? []),
+    ].join(' '),
+  );
+  const accessoryCableSignal =
+    /\b(cable|cap|adapter|adaptor|hub|sac|charging|charger|usb\s*c|type\s*c|micro\s*usb)\b/.test(
+      productText,
+    );
+  const audioDeviceSignal =
+    /\b(microphone|mic\b|micro\s*(thu\s*am|karaoke|khong\s*day|gaming|stream|livestream)|thu\s*am|audio|recording|podcast)\b/.test(
+      productText,
+    );
+
+  if (accessoryCableSignal && !audioDeviceSignal) return false;
+  return audioDeviceSignal;
+}
+
+function isHeadsetHint(normalizedHint: string): boolean {
+  return ['headset', 'headphone', 'headphones', 'tai nghe'].includes(
+    normalizedHint,
+  );
+}
+
+function candidateLooksLikeStandaloneHeadset(
+  candidate: ProductCandidate,
+  categoryText: string,
+): boolean {
+  if (candidateLooksLikeKeyboard(candidate, categoryText)) return false;
+
+  const productText = normalizeText(
+    [
+      categoryText,
+      candidate.payload.name,
+      ...(candidate.payload.semanticTags ?? []),
+      ...(candidate.payload.useCases ?? []),
+      ...(candidate.payload.targetUsers ?? []),
+    ].join(' '),
+  );
+  return /\b(headset|headphone|headphones|tai nghe|earphone|earbuds)\b/.test(
+    productText,
+  );
+}
+
+function candidateLooksLikeChair(
+  candidate: ProductCandidate,
+  categoryText: string,
+): boolean {
+  const name = normalizeText(candidate.payload.name);
+  const productText = normalizeText(
+    [
+      categoryText,
+      name,
+      ...(candidate.payload.semanticTags ?? []),
+      ...(candidate.payload.useCases ?? []),
+      ...(candidate.payload.targetUsers ?? []),
+    ].join(' '),
+  );
+  const chairIdentity = /\b(chair|ghe|ghe gaming|ghe cong thai hoc)\b/.test(
+    name,
+  );
+  const accessoryOnly =
+    /\b(footrest|gac chan|ke chan|dem chan|phu kien|accessory)\b/.test(
+      productText,
+    );
+  if (accessoryOnly && !chairIdentity) return false;
+
+  return (
+    chairIdentity ||
+    productFamilyCategoryAliases('chair').some((alias) =>
+      normalizedTextHasAlias(categoryText, alias),
+    )
+  );
+}
+
+function candidateLooksLikeDesk(
+  candidate: ProductCandidate,
+  categoryText: string,
+): boolean {
+  const name = normalizeText(candidate.payload.name);
+  const productText = normalizeText(
+    [
+      categoryText,
+      name,
+      ...(candidate.payload.semanticTags ?? []),
+      ...(candidate.payload.useCases ?? []),
+      ...(candidate.payload.targetUsers ?? []),
+    ].join(' '),
+  );
+  const deskIdentity = /\b(desk|table|ban gaming|ban lam viec)\b/.test(name);
+  const nonDeskIdentity =
+    /\b(chair|ghe|footrest|gac chan|ke chan|ban phim|keyboard)\b/.test(
+      productText,
+    );
+  if (nonDeskIdentity && !deskIdentity) return false;
+
+  return (
+    deskIdentity ||
+    productFamilyCategoryAliases('desk').some((alias) =>
+      normalizedTextHasAlias(categoryText, alias),
+    )
+  );
+}
+
+function candidateLooksLikeKeyboard(
+  candidate: ProductCandidate,
+  categoryText: string,
+): boolean {
+  const identityText = normalizeText(
+    [candidate.payload.name, categoryText].join(' '),
+  );
+  return productFamilyAliases('keyboard').some((alias) =>
+    normalizedTextHasAlias(identityText, alias),
+  );
+}
 function extractConcreteGpuModel(normalizedQuery: string): string | undefined {
   const match = normalizedQuery.match(
     /\b(?:nvidia\s*)?(rtx|gtx)\s*-?(\d{3,4})(?:\s*(ti|super))?\b/,

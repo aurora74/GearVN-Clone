@@ -167,6 +167,7 @@ describe('ProductRetriever Phase 10 contracts', () => {
 
     expect(rewriteService.rewrite).toHaveBeenCalledWith({
       query: 'laptop hoc ai',
+      hardConstraints: {},
     });
     expect(embedder.embedQuery).toHaveBeenCalledWith(
       expect.stringContaining('laptop RTX AI CUDA RAM 16GB SSD 512GB'),

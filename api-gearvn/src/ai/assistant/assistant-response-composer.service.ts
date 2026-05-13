@@ -16,6 +16,11 @@ export type ProductAdviceCompositionInput = {
   priorRecommendations?: AssistantPriorRecommendationContext[];
   preferenceDelta?: string;
   consultationMode?: AssistantProductConsultationMode;
+  slotCoverage?: {
+    requestedSlots: string[];
+    coveredSlots: string[];
+    missingSlots: string[];
+  };
   signal?: AbortSignal;
 };
 
@@ -75,6 +80,8 @@ export class AssistantResponseComposer {
                 ? redactCustomerPii(input.preferenceDelta)
                 : undefined,
               consultationMode: input.consultationMode ?? 'initial_advice',
+              slotCoverage: input.slotCoverage,
+              catalogGapGuidance: buildCatalogGapGuidance(input.slotCoverage),
               followUpQuestions: input.followUpQuestions,
               responseGuidance: buildResponseGuidance(input.userText),
               outputSchema: { message: 'Vietnamese advice text' },
@@ -180,7 +187,8 @@ function compactPromptSpecs(
 ) {
   if (!specs || typeof specs !== 'object') return {};
   const entries = Object.entries(specs).filter(
-    ([, value]) => value !== undefined && value !== null && String(value).trim(),
+    ([, value]) =>
+      value !== undefined && value !== null && String(value).trim(),
   );
   const normalizedRequest = normalizeAdviceText(customerRequest ?? '');
   const priority = entries.filter(([key]) =>
@@ -195,6 +203,31 @@ function compactPromptSpecs(
       .slice(0, 8)
       .map(([key, value]) => [key, String(value).slice(0, 120)]),
   );
+}
+
+function buildCatalogGapGuidance(
+  slotCoverage?: ProductAdviceCompositionInput['slotCoverage'],
+): string | undefined {
+  const missingSlots = slotCoverage?.missingSlots ?? [];
+  if (missingSlots.length === 0) return undefined;
+  const labels = missingSlots.map(slotGapLabel);
+  const desktopGuard = missingSlots.includes('desktop_pc')
+    ? ' Do not replace an assembled desktop PC gap with components or unrelated products.'
+    : '';
+  return `Explicitly state the catalog has no suitable option for: ${labels.join(', ')}.${desktopGuard}`;
+}
+
+function slotGapLabel(slot: string): string {
+  switch (slot) {
+    case 'desktop_pc':
+      return 'assembled desktop PC / PC bộ';
+    case 'desk':
+      return 'desk / bàn';
+    case 'chair':
+      return 'chair / ghế';
+    default:
+      return slot.replace(/_/g, ' ');
+  }
 }
 
 function buildResponseGuidance(userText: string): string | undefined {
@@ -231,7 +264,9 @@ function extractProductAdviceMessage(response: unknown): string | null {
     if (!text) continue;
 
     const parsed = parseJsonObject(text);
-    const parsedMessage = parsed ? productAdviceMessageFromParsed(parsed) : null;
+    const parsedMessage = parsed
+      ? productAdviceMessageFromParsed(parsed)
+      : null;
     if (parsedMessage) return parsedMessage;
 
     if (looksLikeJson(text)) continue;
@@ -271,13 +306,17 @@ function productAdviceMessageFromStructured(response: unknown): string | null {
   return null;
 }
 
-function productAdviceMessageFromParsed(parsed: Record<string, unknown>): string | null {
+function productAdviceMessageFromParsed(
+  parsed: Record<string, unknown>,
+): string | null {
   const message =
     typeof parsed.message === 'string'
       ? parsed.message
       : Array.isArray(parsed.sentences)
         ? parsed.sentences
-            .filter((sentence): sentence is string => typeof sentence === 'string')
+            .filter(
+              (sentence): sentence is string => typeof sentence === 'string',
+            )
             .join(' ')
         : '';
   const trimmed = message.trim();
@@ -321,7 +360,7 @@ function textFromModelContent(content: unknown): string {
     : Array.isArray(content)
       ? content.map(contentPartText).join('')
       : isRecord(content)
-        ? productAdviceMessageFromParsed(content) ?? ''
+        ? (productAdviceMessageFromParsed(content) ?? '')
         : '';
 }
 
@@ -357,7 +396,9 @@ function productAdviceMaxTokens(configuredMaxTokens: number): number {
 }
 
 function trimToCompleteSentence(text: string, maxChars: number): string {
-  const candidate = (text.length <= maxChars ? text : text.slice(0, maxChars)).trim();
+  const candidate = (
+    text.length <= maxChars ? text : text.slice(0, maxChars)
+  ).trim();
   if (!candidate) return '';
   if (/[.!?…]$/.test(candidate)) return candidate;
 
@@ -409,16 +450,21 @@ function uniqueTextCandidates(values: string[]): string[] {
   return result;
 }
 
-function isQueryRelevantSpecKey(key: string, normalizedRequest: string): boolean {
+function isQueryRelevantSpecKey(
+  key: string,
+  normalizedRequest: string,
+): boolean {
   const normalizedKey = normalizeAdviceText(key);
   if (!normalizedKey) return false;
   const wantsBattery = /pin|battery|wh/.test(normalizedRequest);
-  const wantsPerformance = /gaming|game|ai|machine learning|ml|rtx|gpu|vga|do hoa/.test(
-    normalizedRequest,
-  );
-  const wantsMonitor = /man hinh|monitor|2k|qhd|ips|oled|hz|tan so|do phan giai/.test(
-    normalizedRequest,
-  );
+  const wantsPerformance =
+    /gaming|game|ai|machine learning|ml|rtx|gpu|vga|do hoa/.test(
+      normalizedRequest,
+    );
+  const wantsMonitor =
+    /man hinh|monitor|2k|qhd|ips|oled|hz|tan so|do phan giai/.test(
+      normalizedRequest,
+    );
   const wantsThinLight = /mong nhe|thin|light|di chuyen|can nang|weight/.test(
     normalizedRequest,
   );

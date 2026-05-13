@@ -9,6 +9,7 @@ import {
   comboGroupsFromIntentPrimitives,
   constraintsFromIntentPrimitives,
   detectIntentPrimitives,
+  isValidProductIntentComboGroup,
 } from './product-intent-primitives';
 import { detectProductFamiliesFromText } from './product-family-taxonomy';
 import { ProductRetrievalConstraints } from './product-retrieval.types';
@@ -537,7 +538,11 @@ function comboGroupsForContext(
   context: ProductQueryRewriteContext,
   groups: string[],
 ): string[] {
-  return isExplicitComboRequest(context) ? uniqueStrings(groups) : [];
+  if (!isExplicitComboRequest(context)) return [];
+  return uniqueStrings([
+    ...groups.filter(isValidProductIntentComboGroup),
+    ...comboGroupsFromIntentPrimitives(productFamilyEligibilityText(context)),
+  ]);
 }
 
 function isExplicitComboRequest(context: ProductQueryRewriteContext): boolean {
@@ -563,6 +568,8 @@ function countProductGroupMentions(normalized: string): number {
     /man hinh|monitor/,
     /ban phim|keyboard/,
     /chuot|mouse/,
+    /ban ghe gaming|ban-ghe-gaming|ban lam viec|desk|table/,
+    /ghe gaming|chair/,
     /tai nghe|headset|headphone/,
     /webcam|camera/,
     /microphone|\bmicro\b/,
@@ -590,7 +597,9 @@ function explicitProductFamiliesForContext(
   return uniqueStrings([
     ...(context.hardConstraints?.categoryHints ?? []),
     context.hardConstraints?.category,
-    ...detectProductFamiliesFromText(productFamilyEligibilityText(context, text)),
+    ...detectProductFamiliesFromText(
+      productFamilyEligibilityText(context, text),
+    ),
   ]);
 }
 

@@ -1,4 +1,6 @@
 import { normalizeDictionaryText } from './product-domain-dictionary';
+import { detectProductFamiliesFromText } from './product-family-taxonomy';
+import type { ProductFamilyKey } from './product-family-taxonomy';
 import { ProductRetrievalConstraints } from './product-retrieval.types';
 
 export const TEACHER_INTENT_PRIMITIVE_IDS = [
@@ -25,6 +27,7 @@ export type ProductIntentPrimitiveId =
 
 export type ProductIntentComboGroup =
   | 'laptop'
+  | 'desktop_pc'
   | 'monitor'
   | 'keyboard'
   | 'mouse'
@@ -35,6 +38,7 @@ export type ProductIntentComboGroup =
   | 'lighting'
   | 'storage'
   | 'chair'
+  | 'desk'
   | 'accessory'
   | 'pc';
 
@@ -135,10 +139,13 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
       'bo lam viec tai nha',
     ],
     productGroups: [
+      'desktop_pc',
       'laptop',
       'monitor',
       'keyboard',
       'mouse',
+      'desk',
+      'chair',
       'webcam',
       'usb-c-hub',
     ],
@@ -345,7 +352,15 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
       'streaming',
       'streamer',
     ],
-    productGroups: ['webcam', 'microphone', 'lighting', 'headset'],
+    productGroups: [
+      'webcam',
+      'microphone',
+      'lighting',
+      'headset',
+      'monitor',
+      'keyboard',
+      'mouse',
+    ],
     hardCriteria: {},
     softSignals: ['âm thanh rõ', 'ánh sáng', 'video call', 'creator'],
     expandedKeywords: [
@@ -357,7 +372,15 @@ export const PRODUCT_INTENT_PRIMITIVES: Record<
       'creator',
       'headset',
     ],
-    comboGroups: ['webcam', 'microphone', 'lighting', 'headset'],
+    comboGroups: [
+      'webcam',
+      'microphone',
+      'lighting',
+      'headset',
+      'monitor',
+      'keyboard',
+      'mouse',
+    ],
   },
   VALUE_PERFORMANCE: {
     id: 'VALUE_PERFORMANCE',
@@ -427,13 +450,84 @@ export function comboGroupsFromIntentPrimitives(
   const groups = detectIntentPrimitives(query).flatMap(
     (primitive) => primitive.comboGroups,
   );
-  return uniqueStrings(groups) as ProductIntentComboGroup[];
+  return uniqueStrings([
+    ...groups,
+    ...explicitComboGroupsFromText(query),
+  ]) as ProductIntentComboGroup[];
+}
+
+export function isValidProductIntentComboGroup(
+  group: string,
+): group is ProductIntentComboGroup {
+  return VALID_COMBO_GROUPS.has(group as ProductIntentComboGroup);
 }
 
 const ALL_PRODUCT_INTENT_PRIMITIVES = [
   ...TEACHER_INTENT_PRIMITIVE_IDS,
   ...GEARVN_INTENT_PRIMITIVE_IDS,
 ].map((id) => PRODUCT_INTENT_PRIMITIVES[id]);
+
+const VALID_COMBO_GROUPS = new Set<ProductIntentComboGroup>([
+  'laptop',
+  'desktop_pc',
+  'monitor',
+  'keyboard',
+  'mouse',
+  'webcam',
+  'usb-c-hub',
+  'headset',
+  'microphone',
+  'lighting',
+  'storage',
+  'chair',
+  'desk',
+  'accessory',
+  'pc',
+]);
+
+const FAMILY_TO_COMBO_GROUP: Partial<
+  Record<ProductFamilyKey, ProductIntentComboGroup>
+> = {
+  laptop: 'laptop',
+  pc: 'desktop_pc',
+  monitor: 'monitor',
+  keyboard: 'keyboard',
+  mouse: 'mouse',
+  webcam: 'webcam',
+  microphone: 'microphone',
+  headset: 'headset',
+  lighting: 'lighting',
+  storage: 'storage',
+  chair: 'chair',
+  desk: 'desk',
+  accessory: 'accessory',
+  hub: 'usb-c-hub',
+};
+
+function explicitComboGroupsFromText(query: string): ProductIntentComboGroup[] {
+  const normalized = normalizeDictionaryText(query);
+  if (!normalized) return [];
+
+  const families = detectProductFamiliesFromText(query);
+  const rawTextHasAccentedDesk = /\bbàn\b/iu.test(query);
+  const compoundDeskChair =
+    /\bban\s+ghe\b|\bban\s+ghe\s+gaming\b|\bban-ghe-gaming\b/.test(normalized);
+  const inferredFamilies = new Set<ProductFamilyKey>(families);
+  if (rawTextHasAccentedDesk || compoundDeskChair) inferredFamilies.add('desk');
+  if (compoundDeskChair) inferredFamilies.add('chair');
+
+  const explicitGroups = Array.from(inferredFamilies)
+    .map((family) => FAMILY_TO_COMBO_GROUP[family])
+    .filter((group): group is ProductIntentComboGroup => Boolean(group));
+
+  const explicitComboRequest =
+    /\b(setup|set up|combo|full set|build pc|build may|lap rap|rap may|rig|goc|dan|dan may|dan pc|bo|bo lam|bo may|bo pc|bo gear|dong bo|tron bo|ca bo)\b/.test(
+      normalized,
+    );
+  const multiFamilyRequest = explicitGroups.length >= 2;
+
+  return explicitComboRequest || multiFamilyRequest ? explicitGroups : [];
+}
 
 function mergePrimitiveConstraints(
   left: ProductRetrievalConstraints,

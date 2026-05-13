@@ -24,6 +24,10 @@ import {
   isOrdinalOnlyReference,
 } from '../resolvers/recommendation-reference.util';
 import { detectProductFamilyFromText } from '../../retrieval/product-family-taxonomy';
+import {
+  comboGroupsFromIntentPrimitives,
+  detectIntentPrimitives,
+} from '../../retrieval/product-intent-primitives';
 
 type SupervisorClassifier = {
   classify(text: string): Promise<unknown>;
@@ -509,6 +513,11 @@ function enrichSupervisorDecision(
     decisionIsUnsupported &&
     deterministic.route === 'sales' &&
     isProductInformationRequest(normalizedSupervisorText);
+  const shouldCorrectUseCaseSetupUnsupported =
+    decisionIsUnsupported &&
+    deterministic.route === 'sales' &&
+    Array.isArray(deterministic.entities.useCaseIntentPrimitives) &&
+    deterministic.entities.useCaseIntentPrimitives.length > 0;
   const shouldResolveAmbiguousCartBeforeAction =
     ambiguousCartProductReference &&
     deterministic.route === 'sales' &&
@@ -534,6 +543,7 @@ function enrichSupervisorDecision(
   const shouldUseFallbackDecision =
     (decisionIsUnsupported && decision.confidence < 0.6) ||
     shouldCorrectProductInfoUnsupported ||
+    shouldCorrectUseCaseSetupUnsupported ||
     shouldResolveAmbiguousCartBeforeAction ||
     shouldCorrectCheckoutMisroute;
   const deterministicCartAction = deterministic.intents.includes(
@@ -648,6 +658,14 @@ function highConfidenceDeterministicBypassDecision(
   if (
     !eligibleIntent ||
     decision.intents.includes(AssistantIntent.CHECKOUT_PREP)
+  ) {
+    return null;
+  }
+
+  if (
+    Array.isArray(decision.entities.useCaseIntentPrimitives) &&
+    decision.entities.useCaseIntentPrimitives.length > 0 &&
+    !isSalesProductRequest(normalizedText)
   ) {
     return null;
   }
@@ -793,14 +811,19 @@ function deterministicCommerceDecision(
     };
   }
 
+  const wantsUseCaseSetupAdvice = isUseCaseSetupShoppingConsultation(
+    text,
+    normalizedText,
+  );
   if (
     isReviewRequest(normalizedText) ||
     isSalesProductRequest(normalizedText) ||
+    wantsUseCaseSetupAdvice ||
     isShoppingContinuation(conversationContext.reason)
   ) {
     const wantsReview = isReviewRequest(normalizedText);
     const wantsProductAdvice =
-      isSalesProductRequest(normalizedText) &&
+      (isSalesProductRequest(normalizedText) || wantsUseCaseSetupAdvice) &&
       (!wantsReview || hasCompanionShoppingRequest(normalizedText));
     const intents = [
       ...(wantsProductAdvice ? [AssistantIntent.PRODUCT_ADVICE] : []),
@@ -840,6 +863,18 @@ function extractCommerceEntities(
 
   const productCategory = productCategoryFromText(normalizedText);
   if (productCategory) entities.productCategory = productCategory;
+
+  const useCasePrimitives = detectIntentPrimitives(text);
+  const useCaseComboGroups = comboGroupsFromIntentPrimitives(text);
+  if (useCasePrimitives.length > 0) {
+    entities.useCaseIntentPrimitives = useCasePrimitives.map(
+      (primitive) => primitive.id,
+    );
+  }
+  if (useCaseComboGroups.length > 0) {
+    entities.comboGroups = useCaseComboGroups;
+    entities.categoryHints = useCaseComboGroups;
+  }
 
   const voucherCode = extractVoucherCode(text);
   if (voucherCode) entities.voucherCode = voucherCode;
@@ -1042,7 +1077,9 @@ function applyConversationContextEntities(
 
   return {
     ...entities,
-    ...(context.productCategory && !entities.productCategory
+    ...(context.productCategory &&
+    (!entities.productCategory ||
+      context.reason === 'shopping_setup_continuation')
       ? { productCategory: context.productCategory }
       : {}),
     ...(context.reason === 'checkout_contact_continuation'
@@ -1082,7 +1119,9 @@ function buildConversationContext(
   const productInfoFollowUp =
     isProductInformationRequest(normalizedCurrent) &&
     looksLikeDeicticProductReference(normalizedCurrent);
-  if (productCategoryFromText(normalizedCurrent) && !productInfoFollowUp) {
+  const currentProductCategory = productCategoryFromText(normalizedCurrent);
+  const setupContext = hasRecentSetupShoppingContext(hotMessages);
+  if (currentProductCategory && !productInfoFollowUp && !setupContext) {
     return {};
   }
   const requestedMoreOptions = isRequestedMoreOptions(normalizedCurrent);
@@ -1095,11 +1134,15 @@ function buildConversationContext(
         ? 'shopping_affirmation_continuation'
         : productInfoFollowUp
           ? 'shopping_product_info_continuation'
-          : null;
+          : setupContext && looksLikeSetupSlotFollowUp(currentText)
+            ? 'shopping_setup_continuation'
+            : null;
   if (!continuationReason) return {};
 
   const progressiveSummary = promptContextSection(state, 'progressiveSummary');
   const productCategory =
+    (setupContext ? setupFollowUpCategoryFromText(currentText) : undefined) ??
+    currentProductCategory ??
     extractLastDiscussedProductCategory(hotMessages) ??
     extractProductCategoryFromRecommendationLedger(
       state.lastRecommendationLedger ?? [],
@@ -1198,7 +1241,9 @@ function extractProductCategoryFromRecommendationLedger(
 ): string | undefined {
   for (const item of ledger) {
     const category = productCategoryFromText(
-      normalizeCommerceText([item.category, item.name].filter(Boolean).join(' ')),
+      normalizeCommerceText(
+        [item.category, item.name].filter(Boolean).join(' '),
+      ),
     );
     if (category) return category;
   }
@@ -1215,9 +1260,11 @@ function extractProductCategoryFromResponseCards(
     for (const card of cards) {
       const category = productCategoryFromText(
         normalizeCommerceText(
-          [card.name, ...(card.reasons ?? []), JSON.stringify(card.specs ?? {})].join(
-            ' ',
-          ),
+          [
+            card.name,
+            ...(card.reasons ?? []),
+            JSON.stringify(card.specs ?? {}),
+          ].join(' '),
         ),
       );
       if (category) return category;
@@ -1237,7 +1284,8 @@ function extractPriorShoppingTextFromSummary(
   return (
     lines.find((line) =>
       mentionsProductCategory(normalizeCommerceText(line)),
-    ) ?? (lines.length > 0 ? `${productCategory} ${lines.join(' ')}` : undefined)
+    ) ??
+    (lines.length > 0 ? `${productCategory} ${lines.join(' ')}` : undefined)
   );
 }
 
@@ -1319,7 +1367,8 @@ function isShoppingContinuation(reason?: string): boolean {
     reason === 'shopping_constraint_continuation' ||
     reason === 'shopping_affirmation_continuation' ||
     reason === 'shopping_product_info_continuation' ||
-    reason === 'shopping_more_options_continuation'
+    reason === 'shopping_more_options_continuation' ||
+    reason === 'shopping_setup_continuation'
   );
 }
 
@@ -1361,10 +1410,7 @@ function isSalesProductRequest(normalizedText: string): boolean {
   const mentionsProduct =
     Boolean(productCategoryFromText(normalizedText)) ||
     /gearvn|san pham|may tinh|linh kien/.test(normalizedText);
-  const asksForShopping =
-    /tu van|goi y|\bcan\b|can mua|nen mua|chon|mua|co .* nao|review|danh gia/.test(
-      normalizedText,
-    );
+  const asksForShopping = hasShoppingAdviceLanguage(normalizedText);
   const hasShoppingConstraints =
     /duoi|toi da|tam gia|\btam\b|khoang|trieu|\d{1,3}\s*(trieu|tr)\b|gaming|game|hoc|machine learning|\bai\b|van phong|do hoa|render|lap trinh|code|creator|hieu nang|mong nhe|pin|man hinh|ram|ssd|cpu|gpu|rtx|gtx|ryzen|intel|uu tien/.test(
       normalizedText,
@@ -1374,6 +1420,72 @@ function isSalesProductRequest(normalizedText: string): boolean {
     (asksForShopping ||
       hasShoppingConstraints ||
       isProductInformationRequest(normalizedText))
+  );
+}
+
+function isUseCaseSetupShoppingConsultation(
+  text: string,
+  normalizedText: string,
+): boolean {
+  if (isInformationalDefinitionRequest(normalizedText)) return false;
+
+  const primitives = detectIntentPrimitives(text);
+  if (!primitives.some((primitive) => primitive.comboGroups.length > 0)) {
+    return false;
+  }
+
+  return (
+    hasShoppingAdviceLanguage(normalizedText) ||
+    hasSetupOrComboMarker(normalizedText)
+  );
+}
+
+function hasShoppingAdviceLanguage(normalizedText: string): boolean {
+  return /tu van|goi y|\bcan\b|can mua|nen mua|chon|mua|co .* nao|review|danh gia/.test(
+    normalizedText,
+  );
+}
+
+function hasSetupOrComboMarker(normalizedText: string): boolean {
+  return /\b(setup|set up|combo|full set|build pc|build may|lap rap|rap may|rig|dan may|dan pc|bo may|bo pc|bo gear|tron bo|ca bo)\b|\bgoc\s+(lam viec|livestream|streaming)\b/.test(
+    normalizedText,
+  );
+}
+
+function hasRecentSetupShoppingContext(hotMessages: string): boolean {
+  const normalized = normalizeCommerceText(hotMessages);
+  if (!normalized) return false;
+  return (
+    hasSetupOrComboMarker(normalized) ||
+    /\b(livestream|streaming|streamer)\b/.test(normalized)
+  );
+}
+
+function looksLikeSetupSlotFollowUp(text: string): boolean {
+  const normalized = normalizeCommerceText(text);
+  if (!normalized) return false;
+  if (productCategoryFromText(normalized)) return true;
+  if (comboGroupsFromIntentPrimitives(text).length > 0) return true;
+  return /\b(the con|con|thi sao|co khong|co gi|ve)\b.*\b(ban ghe|ban-ghe-gaming|ghe|webcam|micro|mic|den|lighting|monitor|man hinh|ban phim|chuot|tai nghe)\b/.test(
+    normalized,
+  );
+}
+
+function setupFollowUpCategoryFromText(text: string): string | undefined {
+  const normalized = normalizeCommerceText(text);
+  if (
+    /\bban\s+ghe\b|\bban-ghe-gaming\b/.test(normalized) ||
+    /\bbàn\b/iu.test(text)
+  ) {
+    return 'desk';
+  }
+  if (/\bghe\b/.test(normalized)) return 'chair';
+  return undefined;
+}
+
+function isInformationalDefinitionRequest(normalizedText: string): boolean {
+  return /\b(la gi|nghia la gi|khai niem|dinh nghia|what is|what are)\b/.test(
+    normalizedText,
   );
 }
 
