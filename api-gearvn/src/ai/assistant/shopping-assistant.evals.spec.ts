@@ -1,4 +1,5 @@
 import {
+  chapter4AgentScenarioIds,
   shoppingAssistantEvalFixtures,
   ShoppingAssistantEvalScenarioType,
 } from './evals/shopping-assistant.fixtures';
@@ -13,6 +14,32 @@ const expectedScenarioCounts: Record<ShoppingAssistantEvalScenarioType, number> 
   multi_intent_memory: 3,
   tone_unsupported_blocking: 3,
 };
+
+const expectedChapter4AgentScenarioIds = [
+  '09.2-scenario-ai-ml-rank-detail-cart-checkout',
+  '09.2-scenario-lenovo-detail-review-cart-checkout',
+  '10-scenario-home-office-combo',
+  '10-scenario-ambiguous-strong-value-clarify',
+  '09.2-scenario-ambiguous-family-clarify-before-cart',
+  'safety-03-owned-order',
+  'handoff-01-request',
+] as const;
+
+const chapter4ScenarioCategoryCoverage = {
+  need_based_product_advice: ['09.2-scenario-ai-ml-rank-detail-cart-checkout'],
+  recommended_product_detail: ['09.2-scenario-lenovo-detail-review-cart-checkout'],
+  combo_setup_advice: ['10-scenario-home-office-combo'],
+  ambiguous_query_clarification: [
+    '10-scenario-ambiguous-strong-value-clarify',
+    '09.2-scenario-ambiguous-family-clarify-before-cart',
+  ],
+  cart_draft_confirmation: [
+    '09.2-scenario-ai-ml-rank-detail-cart-checkout',
+    '09.2-scenario-lenovo-detail-review-cart-checkout',
+  ],
+  owned_order_lookup: ['safety-03-owned-order'],
+  staff_handoff: ['handoff-01-request'],
+} as const;
 
 const forbiddenServiceCalls = [
   'OrderService.create',
@@ -58,6 +85,45 @@ describe('shopping assistant MVP eval fixtures', () => {
       'máy mạnh giá tốt',
       'Laptop, ngân sách khoảng 25 triệu, ưu tiên hiệu năng',
     ]);
+  });
+
+  it('locks the Chapter 4 scenario subset and covers every D-25 category', () => {
+    expect(chapter4AgentScenarioIds).toEqual(expectedChapter4AgentScenarioIds);
+
+    const fixtureIds = new Set(
+      shoppingAssistantEvalFixtures.map((fixture) => fixture.id),
+    );
+    for (const scenarioId of chapter4AgentScenarioIds) {
+      expect(fixtureIds.has(scenarioId)).toBe(true);
+    }
+
+    const selectedIds = new Set<string>(chapter4AgentScenarioIds);
+    for (const categoryIds of Object.values(chapter4ScenarioCategoryCoverage)) {
+      expect(categoryIds.some((scenarioId) => selectedIds.has(scenarioId))).toBe(
+        true,
+      );
+    }
+
+    expect(Object.keys(chapter4ScenarioCategoryCoverage)).toEqual([
+      'need_based_product_advice',
+      'recommended_product_detail',
+      'combo_setup_advice',
+      'ambiguous_query_clarification',
+      'cart_draft_confirmation',
+      'owned_order_lookup',
+      'staff_handoff',
+    ]);
+  });
+
+  it('does not advertise cart or checkout availability for fixtures that block cart drafts', () => {
+    for (const fixture of shoppingAssistantEvalFixtures) {
+      if (!(fixture.forbiddenServiceCalls ?? []).includes('AssistantActionAdapter.prepareCartDraft')) {
+        continue;
+      }
+
+      expect(fixture.expectedPassLabels).not.toContain('cart_action_available');
+      expect(fixture.expectedPassLabels).not.toContain('checkout_continuation');
+    }
   });
   it('stores deterministic labels and graph expectations for every fixture', () => {
     for (const fixture of shoppingAssistantEvalFixtures) {

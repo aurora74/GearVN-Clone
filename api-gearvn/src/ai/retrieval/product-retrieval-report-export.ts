@@ -12,7 +12,15 @@ export type ProductRetrievalReportFiles = {
   json?: string;
   csv?: string;
   markdown?: string;
+  gate?: string;
 };
+
+type RetrievalGateStatus =
+  | 'acceptable'
+  | 'needs_remediation'
+  | 'blocked_incomplete_benchmark';
+
+const EXPECTED_BENCHMARK_CASE_COUNT = 80;
 
 export async function writeProductRetrievalReports(input: {
   reportDir: string;
@@ -47,6 +55,13 @@ export async function writeProductRetrievalReports(input: {
     );
   }
 
+  files.gate = join(input.reportDir, 'retrieval-gate.md');
+  await writeFile(
+    files.gate,
+    `${buildRetrievalGateMarkdown(input.comparison)}\n`,
+    'utf8',
+  );
+
   return files;
 }
 
@@ -57,6 +72,14 @@ export function buildComparisonCsv(
     'caseId',
     'query',
     'group',
+    'labelSource',
+    'relevantSetSize',
+    'topKRelevantHits',
+    'qrelsCoverageManualBinary',
+    'qrelsCoverageExpectedProductIds',
+    'qrelsCoverageExpectedClarification',
+    'qrelsCoverageCategoryCorpus',
+    'qrelsCoverageNonAmbiguousUnlabeled',
     'baselineRecallAt10',
     'improvedRecallAt10',
     'baselineMRR',
@@ -67,9 +90,13 @@ export function buildComparisonCsv(
     'improvedFailure',
     'clarificationNeeded',
     'groupCoverage',
-    'failureNotes',
+    'rewriteStatus',
+    'rewriteLatencyMs',
+    'rewriteRetryCount',
+    'rewriteModel',
+    'baselineFailureNotes',
+    'improvedFailureNotes',
   ];
-
   return [
     header.join(','),
     ...comparison.improved.results.map((improvedResult) => {
@@ -81,6 +108,14 @@ export function buildComparisonCsv(
         improvedResult.caseId,
         improvedResult.query,
         improvedResult.group,
+        improvedResult.labelSource,
+        improvedResult.relevantSetSize,
+        improvedResult.topKRelevantHits,
+        comparison.qrelsCoverage.manual_binary_qrels,
+        comparison.qrelsCoverage.expected_product_ids,
+        comparison.qrelsCoverage.expected_clarification,
+        comparison.qrelsCoverage.category_corpus,
+        comparison.qrelsCoverage.nonAmbiguousUnlabeled,
         baselineResult?.metrics['Recall@10'] ?? 0,
         improvedResult.metrics['Recall@10'],
         baselineResult?.metrics.MRR ?? 0,
@@ -91,7 +126,12 @@ export function buildComparisonCsv(
         String(!improvedResult.relevantFound),
         String(improvedResult.clarified),
         improvedResult.groupCoverage,
-        baselineResult?.failureReason ?? improvedResult.failureReason ?? '',
+        improvedResult.rewrite?.rewriteStatus ?? '',
+        improvedResult.rewrite?.rewriteLatencyMs ?? '',
+        improvedResult.rewrite?.rewriteRetryCount ?? '',
+        improvedResult.rewrite?.rewriteModel ?? '',
+        baselineResult?.failureReason ?? '',
+        improvedResult.failureReason ?? '',
       ].map(csvCell).join(',');
     }),
   ].join('\n');
@@ -115,6 +155,11 @@ export function buildComparisonMarkdown(
     `- Cases evaluated: ${comparison.improved.results.length}`,
     '- The same teacher-scoped fixtures are run through both retrieval pipelines.',
     '- Metrics include Recall@10, Precision@5, MRR, nDCG@10, Failure Rate, Clarification Rate, and Group Coverage.',
+    '- Per-query rows expose labelSource, relevantSetSize, and topKRelevantHits so category-derived labels can be interpreted separately from explicit product IDs.',
+    '',
+    '### Label Coverage',
+    '',
+    qrelsCoverageTable(comparison),
     '',
     '## Results',
     '',
@@ -129,6 +174,81 @@ export function buildComparisonMarkdown(
     '- Live benchmark execution requires configured retrieval service credentials.',
   ].join('\n');
 }
+export function buildRetrievalGateMarkdown(
+  comparison: ProductRetrievalComparisonReport,
+): string {
+  const finalCases = Math.min(
+    comparison.baseline.results.length,
+    comparison.improved.results.length,
+  );
+  const selectedCases = selectedCaseCount(comparison, finalCases);
+  const improvedFailures = comparison.failures.filter(
+    (failure) => failure.pipeline === 'phase-10-improved',
+  );
+  const status = retrievalGateStatus(comparison, finalCases, improvedFailures.length);
+  const lines = [
+    '# Retrieval Gate',
+    '',
+    `Status: ${status}`,
+    '',
+    `- Secret keys logged: ${comparison.secretKeysLogged}`,
+    `- Selected cases: ${selectedCases}`,
+    `- Final completed cases: ${finalCases}`,
+    `- Expected complete cases: ${EXPECTED_BENCHMARK_CASE_COUNT}`,
+    `- Relative gate passed: ${comparison.relativeGate.passed}`,
+    `- Improved pipeline failures: ${improvedFailures.length}`,
+    '',
+    '## Label coverage',
+    '',
+    qrelsCoverageTable(comparison),
+    '',
+  ];
+
+  if (finalCases >= EXPECTED_BENCHMARK_CASE_COUNT) {
+    lines.push('## Metrics', '', metricTable(comparison), '');
+  }
+
+  if (comparison.failures.length > 0) {
+    lines.push(
+      '## Failures',
+      '',
+      ...comparison.failures.map(
+        (failure) =>
+          `- ${failure.pipeline} ${failure.caseId}: ${failure.reason}`,
+      ),
+      '',
+    );
+  }
+
+  return lines.join('\n').trimEnd();
+}
+
+function retrievalGateStatus(
+  comparison: ProductRetrievalComparisonReport,
+  finalCases: number,
+  improvedFailureCount: number,
+): RetrievalGateStatus {
+  if (finalCases < EXPECTED_BENCHMARK_CASE_COUNT) {
+    return 'blocked_incomplete_benchmark';
+  }
+
+  if (comparison.relativeGate.passed && improvedFailureCount === 0) {
+    return 'acceptable';
+  }
+
+  return 'needs_remediation';
+}
+
+function selectedCaseCount(
+  comparison: ProductRetrievalComparisonReport,
+  fallback: number,
+): number {
+  const selectedCases = (comparison as ProductRetrievalComparisonReport & {
+    selectedCases?: unknown;
+  }).selectedCases;
+
+  return typeof selectedCases === 'number' ? selectedCases : fallback;
+}
 
 function metricTable(comparison: ProductRetrievalComparisonReport): string {
   const metrics = Object.keys(comparison.improved.summary) as Array<
@@ -142,6 +262,20 @@ function metricTable(comparison: ProductRetrievalComparisonReport): string {
       (metric) =>
         `| ${metric} | ${comparison.baseline.summary[metric]} | ${comparison.improved.summary[metric]} | ${comparison.deltas[metric]} |`,
     ),
+  ].join('\n');
+}
+
+function qrelsCoverageTable(comparison: ProductRetrievalComparisonReport): string {
+  const coverage = comparison.qrelsCoverage;
+  return [
+    '| Label source | Cases |',
+    '|--------------|-------|',
+    `| manual_binary_qrels | ${coverage.manual_binary_qrels} |`,
+    `| expected_product_ids | ${coverage.expected_product_ids} |`,
+    `| expected_clarification | ${coverage.expected_clarification} |`,
+    `| category_corpus | ${coverage.category_corpus} |`,
+    `| nonAmbiguousUnlabeled | ${coverage.nonAmbiguousUnlabeled} |`,
+    `| totalCases | ${coverage.totalCases} |`,
   ].join('\n');
 }
 

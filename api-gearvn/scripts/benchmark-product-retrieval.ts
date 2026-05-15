@@ -27,15 +27,18 @@ import {
 import { QdrantProductsClient } from '../src/ai/vector/qdrant-products.client';
 import { loadLocalEnv, requireEnvPresence } from './script-env';
 
-type BenchmarkMode = 'baseline' | 'improved' | 'compare';
+export type BenchmarkMode = 'baseline' | 'improved' | 'compare';
 
-type BenchmarkArgs = {
+export type BenchmarkArgs = {
   limit?: number;
   topK: number;
   queries?: BenchmarkCase['group'][];
   mode: BenchmarkMode;
   reportDir: string;
   formats: ProductRetrievalReportFormat[];
+  rewriteTimeoutMs: number;
+  allowDeterministicShortCircuit: boolean;
+  loadLocalEnv: boolean;
 };
 
 type BenchmarkCliReport = ProductRetrievalBenchmarkReport & {
@@ -55,6 +58,8 @@ type CliMetadata = {
   embeddingModel: string;
   qdrantCount: number | null;
   selectedCases: number;
+  rewriteTimeoutMs: number;
+  allowDeterministicShortCircuit: boolean;
 };
 
 type CliReport = (BenchmarkCliReport | ComparisonCliReport) & CliMetadata;
@@ -74,8 +79,14 @@ const QUERY_GROUPS: BenchmarkCase['group'][] = [
   'ambiguous',
 ];
 const REPORT_FORMATS: ProductRetrievalReportFormat[] = ['json', 'csv', 'md'];
+export const DEFAULT_BENCHMARK_REWRITE_TIMEOUT_MS = 10_000;
+export const CHAPTER_4_FINAL_REPORT_DIR = join(
+  'reports',
+  'phase-10-retrieval',
+  'chapter-4-final',
+);
 
-function parseArgs(rawArgs: string[]): BenchmarkArgs {
+export function parseArgs(rawArgs: string[]): BenchmarkArgs {
   return rawArgs.reduce<BenchmarkArgs>(
     (parsed, arg) => {
       if (arg.startsWith('--limit=')) {
@@ -86,6 +97,28 @@ function parseArgs(rawArgs: string[]): BenchmarkArgs {
       if (arg.startsWith('--topK=')) {
         const topK = Number(arg.slice('--topK='.length));
         if (Number.isFinite(topK) && topK > 0) parsed.topK = Math.floor(topK);
+      }
+      if (arg.startsWith('--rewriteTimeoutMs=')) {
+        const rewriteTimeoutMs = Number(arg.slice('--rewriteTimeoutMs='.length));
+        if (Number.isFinite(rewriteTimeoutMs) && rewriteTimeoutMs > 0) {
+          parsed.rewriteTimeoutMs = Math.floor(rewriteTimeoutMs);
+        }
+      }
+      if (
+        arg === '--no-deterministic-short-circuit' ||
+        arg === '--deterministicShortCircuit=false' ||
+        arg === '--allowDeterministicShortCircuit=false'
+      ) {
+        parsed.allowDeterministicShortCircuit = false;
+      }
+      if (
+        arg === '--deterministicShortCircuit=true' ||
+        arg === '--allowDeterministicShortCircuit=true'
+      ) {
+        parsed.allowDeterministicShortCircuit = true;
+      }
+      if (arg === '--no-load-local-env') {
+        parsed.loadLocalEnv = false;
       }
       if (arg.startsWith('--queries=')) {
         parsed.queries = arg
@@ -119,15 +152,20 @@ function parseArgs(rawArgs: string[]): BenchmarkArgs {
     {
       topK: 10,
       mode: 'compare',
-      reportDir: join('reports', 'phase-10-retrieval', String(Date.now())),
+      reportDir: CHAPTER_4_FINAL_REPORT_DIR,
       formats: REPORT_FORMATS,
-    },
+      rewriteTimeoutMs: DEFAULT_BENCHMARK_REWRITE_TIMEOUT_MS,
+      allowDeterministicShortCircuit: true,
+      loadLocalEnv: true,
+    }
   );
 }
 
 async function main(): Promise<void> {
-  loadLocalEnv();
   const args = parseArgs(argv.slice(2));
+  if (args.loadLocalEnv) {
+    loadLocalEnv();
+  }
   const envPresence = requireEnvPresence(requiredEnvForMode(args.mode));
   const missingEnv = Object.entries(envPresence)
     .filter(([, value]) => !value.present)
@@ -158,7 +196,10 @@ async function main(): Promise<void> {
   const embeddings = new OpenRouterBgeM3Client(config);
   const qdrant = new QdrantProductsClient({ config });
   const rewriteClient = new DeepSeekQueryRewriteClient(rewriteConfig);
-  const rewriteService = new ProductQueryRewriteService(rewriteClient);
+  const rewriteService = new ProductQueryRewriteService(
+    rewriteClient,
+    rewriteConfig,
+  );
   const comboService = new ProductComboRetrievalService();
   const retriever = new ProductRetriever(
     embeddings,
@@ -176,6 +217,8 @@ async function main(): Promise<void> {
     relevanceCorpus,
     topK: args.topK,
     rewriteModel: rewriteConfig?.deepSeek.model,
+    rewriteTimeoutMs: args.rewriteTimeoutMs,
+    allowDeterministicShortCircuit: args.allowDeterministicShortCircuit,
   });
 
   const metadata: CliMetadata = {
@@ -184,6 +227,8 @@ async function main(): Promise<void> {
     embeddingModel: config.openRouter.embeddingModel,
     qdrantCount: await safeCountProducts(qdrant),
     selectedCases: selectedCases.length,
+    rewriteTimeoutMs: args.rewriteTimeoutMs,
+    allowDeterministicShortCircuit: args.allowDeterministicShortCircuit,
   };
   const cliReport: CliReport = { ...report, ...metadata };
 
@@ -215,12 +260,16 @@ async function runBenchmarkForMode(input: {
   relevanceCorpus: ProductSearchPayload[];
   topK: number;
   rewriteModel?: string;
+  rewriteTimeoutMs: number;
+  allowDeterministicShortCircuit: boolean;
 }): Promise<BenchmarkCliReport | ProductRetrievalComparisonReport> {
   if (input.mode === 'compare') {
     return runProductRetrievalComparison(input.retriever, input.selectedCases, {
       topK: input.topK,
       relevanceCorpus: input.relevanceCorpus,
       rewriteModel: input.rewriteModel,
+      rewriteTimeoutMs: input.rewriteTimeoutMs,
+      allowDeterministicShortCircuit: input.allowDeterministicShortCircuit,
     });
   }
 
@@ -232,7 +281,9 @@ async function runBenchmarkForMode(input: {
       topK: input.topK,
       relevanceCorpus: input.relevanceCorpus,
       pipeline: pipelineVersion,
-    },
+      rewriteTimeoutMs: input.rewriteTimeoutMs,
+      allowDeterministicShortCircuit: input.allowDeterministicShortCircuit,
+    }
   );
 
   return {
@@ -272,6 +323,10 @@ function printReadableSummary(report: CliReport): void {
   console.log(`Embedding model: ${report.embeddingModel}`);
   console.log(`Queries: ${report.selectedCases}`);
   console.log(`Qdrant count: ${report.qdrantCount ?? 'unavailable'}`);
+  console.log(`Rewrite timeout: ${report.rewriteTimeoutMs}ms`);
+  console.log(
+    `Deterministic rewrite short-circuit: ${report.allowDeterministicShortCircuit}`,
+  );
 
   if ('baseline' in report) {
     console.log(`Baseline Recall@10: ${report.baseline.summary['Recall@10']}`);
@@ -303,13 +358,26 @@ function isBenchmarkMode(value: string): value is BenchmarkMode {
   return value === 'baseline' || value === 'improved' || value === 'compare';
 }
 
-main().catch((error) => {
-  console.error(
-    JSON.stringify({
-      error: 'benchmark_product_retrieval_failed',
-      message: error instanceof Error ? error.message : String(error),
-      secretKeysLogged: false,
-    }),
-  );
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(
+      JSON.stringify({
+        error: 'benchmark_product_retrieval_failed',
+        message: sanitizeCliError(error),
+        secretKeysLogged: false,
+      }),
+    );
+    process.exitCode = 1;
+  });
+}
+
+function sanitizeCliError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(sk|or|ds)-[A-Za-z0-9._-]{16,}\b/g, '[redacted]')
+    .replace(
+      /\b(api[_-]?key|token|authorization)(\s*[:=]\s*)[^\s,;]+/gi,
+      '$1$2[redacted]',
+    );
+}

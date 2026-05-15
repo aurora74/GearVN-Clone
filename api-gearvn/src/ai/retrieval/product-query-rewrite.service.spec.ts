@@ -225,7 +225,7 @@ describe('ProductQueryRewriteService', () => {
     expect(result.comboGroups).toEqual([]);
   });
 
-  it('honors provider combo groups only for explicit setup requests', async () => {
+  it('merges provider combo groups with local setup intent primitives for explicit setup requests', async () => {
     client.rewriteJson.mockResolvedValueOnce(
       validPayload({
         rewrittenQuery: 'setup làm việc tại nhà laptop màn hình',
@@ -239,7 +239,14 @@ describe('ProductQueryRewriteService', () => {
       query: 'setup làm việc tại nhà',
     });
 
-    expect(result.comboGroups).toEqual(['laptop', 'monitor']);
+    expect(result.comboGroups).toEqual([
+      'laptop',
+      'monitor',
+      'keyboard',
+      'mouse',
+      'webcam',
+      'usb-c-hub',
+    ]);
   });
   it('retries schema mismatch once before fallback_schema_mismatch', async () => {
     client.rewriteJson
@@ -289,6 +296,24 @@ describe('ProductQueryRewriteService', () => {
       expect.arrayContaining(['gia tot']),
     );
   });
+  it.each([
+    ['máy mạnh giá tốt', 'product type, budget, and use case'],
+    ['máy để học', 'study level, software, portability, and budget'],
+    ['laptop tốt', 'target use, price range, and preferred size'],
+    ['phụ kiện cần thiết', 'device type and activity context'],
+  ])(
+    'returns fallback_api_error clarification for ambiguous low-information query: %s',
+    async (query, expectedReason) => {
+      client.rewriteJson.mockRejectedValueOnce(new Error('DeepSeek unavailable'));
+
+      const result = await createService().rewrite({ query });
+
+      expect(result.rewrite_status).toBe('fallback_api_error');
+      expect(result.clarificationNeeded).toBe(true);
+      expect(result.clarificationReason).toContain(expectedReason);
+    },
+  );
+
   it('returns fallback_timeout when a product-advice rewrite budget expires', async () => {
     let rewriteSignal: AbortSignal | undefined;
     client.rewriteJson.mockImplementationOnce((input) => {
@@ -310,6 +335,26 @@ describe('ProductQueryRewriteService', () => {
       'laptop 30 triệu học AI/Machine Learning',
     );
   });
+  it.each([
+    ['máy mạnh giá tốt', 'product type, budget, and use case'],
+    ['máy để học', 'study level, software, portability, and budget'],
+    ['laptop tốt', 'target use, price range, and preferred size'],
+    ['phụ kiện cần thiết', 'device type and activity context'],
+  ])(
+    'returns fallback_timeout clarification for ambiguous low-information query: %s',
+    async (query, expectedReason) => {
+      client.rewriteJson.mockImplementationOnce(
+        () => new Promise<string>(() => undefined),
+      );
+
+      const result = await createService().rewrite({ query, timeoutMs: 5 });
+
+      expect(result.rewrite_status).toBe('fallback_timeout');
+      expect(result.clarificationNeeded).toBe(true);
+      expect(result.clarificationReason).toContain(expectedReason);
+    },
+  );
+
   it('preserves original concrete specs when rewrite times out on contextual text', async () => {
     client.rewriteJson.mockImplementationOnce(
       () => new Promise<string>(() => undefined),

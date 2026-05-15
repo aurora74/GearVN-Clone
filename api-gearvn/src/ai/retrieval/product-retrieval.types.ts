@@ -163,6 +163,18 @@ export type ProductRetrievalResult = {
   explanation?: string;
 };
 
+export type BenchmarkBinaryQrel = {
+  productId: string;
+  relevant: true;
+  rationale: string;
+};
+
+export type ProductBenchmarkLabelSource =
+  | 'manual_binary_qrels'
+  | 'expected_product_ids'
+  | 'expected_clarification'
+  | 'category_corpus';
+
 export type BenchmarkCase = {
   id: string;
   query: string;
@@ -175,6 +187,7 @@ export type BenchmarkCase = {
     | 'ambiguous';
   expectedCategories: string[];
   expectedProductIds?: string[];
+  expectedQrels?: BenchmarkBinaryQrel[];
   expectedIntents?: string[];
   expectedSpecs?: Record<string, unknown>;
   expectedComboGroups?: string[];

@@ -13,6 +13,7 @@
     "index:products:qdrant": "ts-node -r tsconfig-paths/register scripts/index-products-qdrant.ts",
     "benchmark:product-retrieval": "ts-node -r tsconfig-paths/register scripts/benchmark-product-retrieval.ts",
     "benchmark:phase10-retrieval": "ts-node -r tsconfig-paths/register scripts/benchmark-product-retrieval.ts",
+    "audit:retrieval-qrels": "ts-node -r tsconfig-paths/register scripts/audit-product-retrieval-qrels.ts",
     "assistant:smoke:live": "ts-node -r tsconfig-paths/register src/ai/assistant/scripts/live-agent-smoke.ts",
     "seed:verified-chat-customer": "ts-node -r tsconfig-paths/register scripts/seed-verified-chat-customer.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",

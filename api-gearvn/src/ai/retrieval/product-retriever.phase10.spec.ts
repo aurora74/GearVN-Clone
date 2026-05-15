@@ -215,6 +215,46 @@ describe('ProductRetriever Phase 10 contracts', () => {
     expect(vector.queryProducts).not.toHaveBeenCalled();
   });
 
+  it('short-circuits vector search when fallback rewrite produces clarification', async () => {
+    const embedder = { embedQuery: jest.fn() };
+    const vector = { queryProducts: jest.fn() };
+    const lexical = { search: jest.fn() };
+    const rewriteService = {
+      rewrite: jest.fn().mockResolvedValue(
+        buildRewrite({
+          rewrittenQuery: 'máy mạnh giá tốt',
+          clarificationNeeded: true,
+          clarificationReason: 'Needs product type, budget, and use case before retrieval.',
+          metadata: {
+            rewrite_provider: 'deepseek',
+            rewrite_model: 'deepseek-v4-pro',
+            rewrite_status: 'fallback_timeout',
+            rewrite_retry_count: 0,
+            rewrite_latency_ms: 5,
+            rewritten_query: 'máy mạnh giá tốt',
+          },
+        }),
+      ),
+    };
+    const retriever = new ProductRetriever(
+      embedder,
+      vector,
+      lexical,
+      rewriteService,
+    );
+
+    const result = await retriever.search('máy mạnh giá tốt', {
+      pipeline: 'phase-10-improved',
+      rewriteContext: { query: 'máy mạnh giá tốt', timeoutMs: 5 },
+    });
+
+    expect(result.clarification?.needed).toBe(true);
+    expect(result.rewrite?.metadata.rewrite_status).toBe('fallback_timeout');
+    expect(result.results).toEqual([]);
+    expect(embedder.embedQuery).not.toHaveBeenCalled();
+    expect(vector.queryProducts).not.toHaveBeenCalled();
+    expect(lexical.search).not.toHaveBeenCalled();
+  });
   it('does not enter combo retrieval for single-category AI/ML laptop advice', async () => {
     const embedder = { embedQuery: jest.fn().mockResolvedValue([0.3, 0.4]) };
     const vector = {

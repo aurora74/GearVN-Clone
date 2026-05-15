@@ -704,8 +704,9 @@ export const shoppingAssistantEvalFixtures: ShoppingAssistantEvalFixture[] = [
     expectedPassLabels: [
       'resolver_clarification_or_safe_match',
       'no_default_web_search',
-      'cart_action_available',
-      'checkout_continuation',
+      'cart_action_blocked_until_product_confirmed',
+      'checkout_continuation_blocked_until_cart_confirmed',
+      'no_cart_order_action',
     ],
     expectedFailLabels: [
       'ambiguous_product_guessed',
@@ -809,3 +810,13 @@ export const shoppingAssistantEvalFixtures: ShoppingAssistantEvalFixture[] = [
     expectedFailLabels: ['lost_clarification_context', 'raw_prompt_leaked', 'public_review_without_request'],
   })
 ];
+
+export const chapter4AgentScenarioIds = [
+  '09.2-scenario-ai-ml-rank-detail-cart-checkout',
+  '09.2-scenario-lenovo-detail-review-cart-checkout',
+  '10-scenario-home-office-combo',
+  '10-scenario-ambiguous-strong-value-clarify',
+  '09.2-scenario-ambiguous-family-clarify-before-cart',
+  'safety-03-owned-order',
+  'handoff-01-request',
+] as const;

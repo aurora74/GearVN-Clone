@@ -120,7 +120,7 @@ describe('ProductRetriever CRAG recovery contract', () => {
       }),
     });
   });
-  it('keeps deterministic PC constraints authoritative when rewrite drifts to phones', async () => {
+  it('keeps deterministic PC constraints authoritative when rewrite drifts to phones without accepting loose components', async () => {
     const embedder = {
       embedQuery: jest.fn().mockResolvedValue({ vectors: [[0.1, 0.2, 0.3]] }),
     };
@@ -138,12 +138,12 @@ describe('ProductRetriever CRAG recovery contract', () => {
             ram: '8 GB',
           },
         }),
-        candidate('pc-component-rtx', {
-          name: 'VGA ASUS Dual GeForce RTX 4060',
-          category: 'linh-kien-may-tinh',
-          categoryPath: ['Linh kiện máy tính', 'VGA'],
-          price: 9_990_000,
-          discountPrice: 9_490_000,
+        candidate('pc-workstation-rtx', {
+          name: 'PC GVN Workstation GeForce RTX 4060',
+          category: 'pc-gaming',
+          categoryPath: ['PC', 'PC Gaming'],
+          price: 29_990_000,
+          discountPrice: 29_490_000,
           normalizedSpecs: { gpu: 'NVIDIA RTX 4060', ram: '16GB' },
         }),
       ]),
@@ -195,7 +195,7 @@ describe('ProductRetriever CRAG recovery contract', () => {
     ).toBeUndefined();
     expect(result.query.constraints).toMatchObject({ categoryHints: ['pc'] });
     expect(result.results.map((item) => item.productId)).toEqual([
-      'pc-component-rtx',
+      'pc-workstation-rtx',
     ]);
   });
 });
@@ -317,7 +317,7 @@ describe('product reranker hard shopping constraints', () => {
     ]);
   });
 
-  it('keeps explicit PC advice on desktop/category-relevant candidates without laptop fallback', () => {
+  it('keeps explicit PC advice on assembled desktop candidates without laptop or loose component fallback', () => {
     const results = rerankProducts(
       'bộ PC tầm 30 triệu làm CAD kỹ thuật',
       [
@@ -359,7 +359,6 @@ describe('product reranker hard shopping constraints', () => {
 
     expect(results.map((result) => result.productId)).toEqual([
       'pc-name-match',
-      'pc-component-match',
     ]);
   });
 

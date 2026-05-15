@@ -342,6 +342,11 @@ export class ProductQueryRewriteService {
     ) {
       hardConstraints.categoryHints = explicitFamilyHints;
     }
+    const fallbackClarification = fallbackClarificationForContext(
+      context,
+      fallbackTexts.join(' '),
+      hardConstraints,
+    );
     const metadata = this.metadata({
       status: options.status,
       retryCount: options.retryCount,
@@ -365,8 +370,8 @@ export class ProductQueryRewriteService {
         context,
         comboGroupsFromIntentPrimitives(fallbackTexts.join(' ')),
       ),
-      clarificationNeeded: false,
-      clarificationReason: null,
+      clarificationNeeded: fallbackClarification.needed,
+      clarificationReason: fallbackClarification.reason,
       metadata,
     };
   }
@@ -534,6 +539,55 @@ function shouldUseDeterministicShortCircuit(
 
   return usefulBudgetSignals || usefulSpecSignals || usefulNeedSignals;
 }
+function fallbackClarificationForContext(
+  context: ProductQueryRewriteContext,
+  text: string,
+  hardConstraints: ProductRetrievalConstraints,
+): { needed: boolean; reason: string | null } {
+  const normalized = normalizeRewriteIntentText(
+    productFamilyEligibilityText(context, text),
+  );
+  if (!normalized) return { needed: false, reason: null };
+  if (hasRetrievalConcreteSignals(hardConstraints)) {
+    return { needed: false, reason: null };
+  }
+
+  const ambiguousRules: Array<{ pattern: RegExp; reason: string }> = [
+    {
+      pattern: /\b(may manh gia tot|may cau hinh manh gia tot|may hieu nang tot|may ngon gia tot)\b/,
+      reason: 'Needs product type, budget, and use case before retrieval.',
+    },
+    {
+      pattern: /\b(may de hoc|may hoc tap|may cho hoc tap)\b/,
+      reason: 'Needs study level, software, portability, and budget before retrieval.',
+    },
+    {
+      pattern: /\b(laptop tot|laptop nao tot|laptop ngon|laptop dang mua)\b/,
+      reason: 'Needs target use, price range, and preferred size before retrieval.',
+    },
+    {
+      pattern: /\b(phu kien can thiet|accessories can thiet|phu kien nen mua)\b/,
+      reason: 'Needs device type and activity context before retrieval.',
+    },
+  ];
+
+  const matchedRule = ambiguousRules.find((rule) => rule.pattern.test(normalized));
+  if (!matchedRule) return { needed: false, reason: null };
+
+  return { needed: true, reason: matchedRule.reason };
+}
+
+function hasRetrievalConcreteSignals(
+  hardConstraints: ProductRetrievalConstraints,
+): boolean {
+  return Boolean(
+    typeof hardConstraints.minPrice === 'number' ||
+      typeof hardConstraints.maxPrice === 'number' ||
+      hardConstraints.inStockOnly ||
+      Object.keys(hardConstraints.requiredSpecs ?? {}).length > 0,
+  );
+}
+
 function comboGroupsForContext(
   context: ProductQueryRewriteContext,
   groups: string[],
