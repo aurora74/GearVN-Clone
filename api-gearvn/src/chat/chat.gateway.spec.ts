@@ -139,6 +139,7 @@ describe('ChatGateway', () => {
       slug: 'laptop-a',
       name: 'Laptop A',
       price: 15000000,
+      image: 'https://cdn.example.test/laptop-a.jpg',
       stock: 10,
       isPublished: true,
       isArchived: false,
@@ -631,6 +632,7 @@ describe('ChatGateway', () => {
           id: 'product-1',
           slug: 'laptop-a',
           name: 'Laptop A',
+          image: 'https://cdn.example.test/laptop-a.jpg',
           quantity: 1,
           finalPrice: 15000000,
         }),
@@ -638,6 +640,7 @@ describe('ChatGateway', () => {
           productId: 'product-1',
           slug: 'laptop-a',
           name: 'Laptop A',
+          image: 'https://cdn.example.test/laptop-a.jpg',
         }),
         confirmedByBackend: true,
       }),
@@ -646,6 +649,121 @@ describe('ChatGateway', () => {
     expect(assistantActionAdapter.createPayment).not.toHaveBeenCalled();
     expect(assistantActionAdapter.decrementInventory).not.toHaveBeenCalled();
     expect(assistantActionAdapter.reserveVoucher).not.toHaveBeenCalled();
+  });
+
+  it('uses active backend discount and product image when confirming assistant cart adds', async () => {
+    const draft = {
+      draftId: 'draft-sale-1',
+      roomId: 'room-client-customer-1',
+      customerId: 'customer-1',
+      action: 'CART_ADD',
+      kind: 'CART_ADD',
+      status: 'pending',
+      requiresConfirmation: true,
+      displayText: 'Thêm Laptop Sale vào giỏ hàng',
+      productId: 'product-sale-1',
+      quantity: 2,
+      expiresAt: new Date(Date.now() + 60_000),
+      payload: { productId: 'product-sale-1', quantity: 2 },
+    };
+    assistantSessionService.findPendingActionDraft.mockResolvedValue(draft);
+    assistantSessionService.consumeActionDraft.mockResolvedValue(draft);
+    assistantActionAdapter.findProductSnapshot.mockResolvedValueOnce({
+      id: 'product-sale-1',
+      slug: 'laptop-sale',
+      name: 'Laptop Sale',
+      price: 28_990_000,
+      discountPrice: 26_890_000,
+      images: ['', 'https://cdn.example.test/laptop-sale.jpg'],
+      stock: 10,
+      isPublished: true,
+      isArchived: false,
+    });
+    const socket = createSocket({
+      data: { actor: { id: 'customer-1', role: UserRole.CUSTOMER } },
+    });
+
+    await gateway.handleAssistantConfirmAction(
+      {
+        roomId: 'room-client-customer-1',
+        draftId: 'draft-sale-1',
+      },
+      socket as any,
+    );
+
+    expect(socket.emit).toHaveBeenCalledWith(
+      'assistant-action-confirmed',
+      expect.objectContaining({
+        cartItem: expect.objectContaining({
+          id: 'product-sale-1',
+          price: 28_990_000,
+          finalPrice: 26_890_000,
+          clientFinalPrice: 26_890_000,
+          image: 'https://cdn.example.test/laptop-sale.jpg',
+        }),
+        product: expect.objectContaining({
+          price: 28_990_000,
+          discountPrice: 26_890_000,
+          image: 'https://cdn.example.test/laptop-sale.jpg',
+        }),
+      }),
+    );
+  });
+
+  it('falls back to base price and default image when confirmation snapshot has no active sale or image', async () => {
+    const draft = {
+      draftId: 'draft-nosale-1',
+      roomId: 'room-client-customer-1',
+      customerId: 'customer-1',
+      action: 'CART_ADD',
+      kind: 'CART_ADD',
+      status: 'pending',
+      requiresConfirmation: true,
+      displayText: 'Thêm Laptop thường vào giỏ hàng',
+      productId: 'product-nosale-1',
+      quantity: 1,
+      expiresAt: new Date(Date.now() + 60_000),
+      payload: { productId: 'product-nosale-1', quantity: 1 },
+    };
+    assistantSessionService.findPendingActionDraft.mockResolvedValue(draft);
+    assistantSessionService.consumeActionDraft.mockResolvedValue(draft);
+    assistantActionAdapter.findProductSnapshot.mockResolvedValueOnce({
+      id: 'product-nosale-1',
+      slug: 'laptop-nosale',
+      name: 'Laptop thường',
+      price: 28_990_000,
+      stock: 10,
+      isPublished: true,
+      isArchived: false,
+    });
+    const socket = createSocket({
+      data: { actor: { id: 'customer-1', role: UserRole.CUSTOMER } },
+    });
+
+    await gateway.handleAssistantConfirmAction(
+      {
+        roomId: 'room-client-customer-1',
+        draftId: 'draft-nosale-1',
+      },
+      socket as any,
+    );
+
+    expect(socket.emit).toHaveBeenCalledWith(
+      'assistant-action-confirmed',
+      expect.objectContaining({
+        cartItem: expect.objectContaining({
+          id: 'product-nosale-1',
+          price: 28_990_000,
+          finalPrice: 28_990_000,
+          image: '/avatar-default.jpg',
+        }),
+        product: expect.objectContaining({
+          price: 28_990_000,
+          discountPrice: undefined,
+          image: '/avatar-default.jpg',
+        }),
+      }),
+    );
   });
 
   it('confirms checkout redirect drafts from the stored backend draft without client echo fields', async () => {

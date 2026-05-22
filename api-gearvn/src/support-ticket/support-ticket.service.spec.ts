@@ -17,6 +17,8 @@ const createTicketModel = () => {
   model.findById = jest.fn();
   model.findByIdAndUpdate = jest.fn();
   model.countDocuments = jest.fn();
+  model.aggregate = jest.fn();
+  model.updateOne = jest.fn();
 
   return model;
 };
@@ -181,6 +183,32 @@ describe('SupportTicketService', () => {
     expect(existingTicket.save).toHaveBeenCalled();
   });
 
+  it('stores synthetic chat customer ids in metadata instead of the ObjectId field', async () => {
+    const roomId = 'room-client-debug-livestream-1778926079006-customer';
+    const syntheticCustomerId = 'debug-livestream-1778926079006-customer';
+    const latestMessageId = new Types.ObjectId().toString();
+
+    ticketModel.findOne.mockResolvedValue(null);
+
+    await service.createOrRefreshForChat({
+      roomId,
+      customerId: syntheticCustomerId,
+      latestMessageId,
+      contextLabel: 'Chat khách hàng',
+    });
+
+    expect(ticketModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomId,
+        customerId: undefined,
+        metadata: expect.objectContaining({
+          latestMessageId,
+          rawCustomerId: syntheticCustomerId,
+        }),
+      }),
+    );
+  });
+
   it('backfills missing source ids on legacy active chat tickets', async () => {
     const roomId = 'room-client-customer-1';
     const latestMessageId = new Types.ObjectId().toString();
@@ -308,5 +336,54 @@ describe('SupportTicketService', () => {
     await expect(
       service.updateStatus(new Types.ObjectId().toString(), SUPPORT_TICKET_STATUS.RESOLVED),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('lists tickets through a safe customer lookup pipeline that preserves synthetic ids', async () => {
+    const syntheticCustomerId = 'debug-livestream-1778926079006-customer';
+    ticketModel.aggregate.mockResolvedValue([
+      {
+        _id: new Types.ObjectId(),
+        sourceType: SUPPORT_TICKET_SOURCE.CHAT,
+        customerId: syntheticCustomerId,
+        metadata: { rawCustomerId: syntheticCustomerId },
+      },
+    ]);
+    ticketModel.countDocuments.mockResolvedValue(1);
+
+    const result = await service.list({ page: 1, limit: 5 });
+    const pipeline = JSON.stringify(ticketModel.aggregate.mock.calls[0][0]);
+
+    expect(pipeline).toContain('"$convert"');
+    expect(pipeline).not.toContain('populate');
+    expect(result.data[0].customerId).toBe(syntheticCustomerId);
+  });
+
+  it('opens a ticket through aggregation without populating invalid customer ids', async () => {
+    const ticketId = new Types.ObjectId();
+    const latestActivityAt = new Date('2026-05-01T00:00:00Z');
+    jest.useFakeTimers().setSystemTime(latestActivityAt);
+    ticketModel.aggregate.mockResolvedValue([
+      {
+        _id: ticketId,
+        status: SUPPORT_TICKET_STATUS.NEW,
+        customerId: 'debug-livestream-1778926079006-customer',
+      },
+    ]);
+    ticketModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
+
+    const result = await service.findOne(ticketId.toString());
+
+    expect(result.status).toBe(SUPPORT_TICKET_STATUS.PROCESSING);
+    expect(ticketModel.updateOne).toHaveBeenCalledWith(
+      { _id: ticketId },
+      {
+        $set: {
+          status: SUPPORT_TICKET_STATUS.PROCESSING,
+          latestActivityAt,
+        },
+      },
+    );
+    expect(JSON.stringify(ticketModel.aggregate.mock.calls[0][0])).toContain('"$convert"');
+    jest.useRealTimers();
   });
 });

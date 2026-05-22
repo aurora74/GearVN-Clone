@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { Product, ProductSchema } from '../../product/product.schema';
+import { Event, EventSchema } from '../../event/event.schema';
 import { Order, OrderSchema } from '../../order/order.schema';
 import { Voucher, VoucherSchema } from '../../voucher/voucher.schema';
 import { SupportTicketModule } from '../../support-ticket/support-ticket.module';
@@ -51,6 +52,7 @@ import { ProductContextResolver } from './resolvers/product-context.resolver';
         schema: CustomerAssistantProfileSchema,
       },
       { name: Product.name, schema: ProductSchema },
+      { name: Event.name, schema: EventSchema },
       { name: Order.name, schema: OrderSchema },
       { name: Voucher.name, schema: VoucherSchema },
     ]),

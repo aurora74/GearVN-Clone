@@ -11,7 +11,7 @@ export type CategoryType = {
   _id: string;
   name: string;
   label: string;
-  image: string;
+  image?: string;
   createdAt: string;
   updatedAt: string;
   fields: CategoryFields[];
@@ -20,6 +20,10 @@ export type CategoryType = {
   unpublishedAt?: string;
   isArchived?: boolean;
   archivedAt?: string;
+  sourceMetadata?: {
+    source?: string;
+    [key: string]: unknown;
+  };
 };
 
 export type UseCategoriesParams = {

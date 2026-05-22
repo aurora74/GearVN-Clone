@@ -7,11 +7,17 @@ import {
   DEFAULT_BENCHMARK_REWRITE_TIMEOUT_MS,
   parseArgs,
 } from '../../../scripts/benchmark-product-retrieval';
-import { ProductRetrievalComparisonReport } from './product-retrieval.benchmark';
 import {
+  ProductRetrievalAblationReport,
+  ProductRetrievalComparisonReport,
+} from './product-retrieval.benchmark';
+import {
+  buildAblationCsv,
+  buildAblationMarkdown,
   buildComparisonCsv,
   buildComparisonMarkdown,
   buildRetrievalGateMarkdown,
+  writeProductRetrievalAblationReports,
   writeProductRetrievalReports,
 } from './product-retrieval-report-export';
 
@@ -79,6 +85,50 @@ describe('product retrieval report export', () => {
     }
   });
 
+  it('builds ablation CSV and thesis markdown sections', () => {
+    const ablation = ablationFixture();
+
+    expect(buildAblationCsv(ablation)).toContain(
+      'variant,caseId,query,group,labelSource,relevantSetSize,recallAt10,precisionAt5,mrr,ndcgAt10,relevantFound,clarified,groupCoverage,rewriteStatus,rewriteLatencyMs,failureNotes',
+    );
+    expect(buildAblationCsv(ablation)).toContain(
+      'dense_vector_only,case-1,laptop học AI,need_based,expected_product_ids,1,1,0.2,1,1,true,false,1,success,123,',
+    );
+    expect(buildAblationMarkdown(ablation)).toContain('## Experiment Design');
+    expect(buildAblationMarkdown(ablation)).toContain('## Variant Results');
+    expect(buildAblationMarkdown(ablation)).toContain('## Component Impact');
+    expect(buildAblationMarkdown(ablation)).toContain('## Limitations');
+  });
+
+  it('writes ablation JSON, CSV, and Markdown artifacts', async () => {
+    const reportDir = await mkdtemp(join(tmpdir(), 'phase-12-ablation-'));
+
+    try {
+      const files = await writeProductRetrievalAblationReports({
+        reportDir,
+        ablation: ablationFixture(),
+      });
+
+      expect(files.json).toMatch(/ablation-report\.json$/);
+      expect(files.csv).toMatch(/ablation-results\.csv$/);
+      expect(files.markdown).toMatch(/ablation-report\.md$/);
+      await expect(readFile(files.json!, 'utf8')).resolves.toContain(
+        '"ablationReport": true',
+      );
+      await expect(readFile(files.json!, 'utf8')).resolves.toContain(
+        '"secretKeysLogged": false',
+      );
+      await expect(readFile(files.csv!, 'utf8')).resolves.toContain(
+        'dense_vector_only',
+      );
+      await expect(readFile(files.markdown!, 'utf8')).resolves.toContain(
+        '## Component Impact',
+      );
+    } finally {
+      await rm(reportDir, { recursive: true, force: true });
+    }
+  });
+
   it('parses the fixed Chapter 4 comparison command without loading env files', () => {
     expect(parseArgs([])).toEqual(
       expect.objectContaining({
@@ -111,6 +161,20 @@ describe('product retrieval report export', () => {
       allowDeterministicShortCircuit: false,
       loadLocalEnv: false,
     });
+
+    expect(
+      parseArgs([
+        '--mode=ablation',
+        '--reportDir=reports/phase-12-task-3',
+        '--formats=json,csv,md',
+      ]),
+    ).toEqual(
+      expect.objectContaining({
+        mode: 'ablation',
+        reportDir: 'reports/phase-12-task-3',
+        formats: ['json', 'csv', 'md'],
+      }),
+    );
   });
 
   it('marks retrieval gate acceptable only for complete passing reports without improved failures', () => {
@@ -144,6 +208,58 @@ describe('product retrieval report export', () => {
     expect(gate).not.toContain('## Metrics');
   });
 });
+
+function ablationFixture(): ProductRetrievalAblationReport {
+  const comparison = comparisonFixture();
+  const variants = {
+    dense_vector_only: comparison.improved,
+    hybrid_no_rerank: comparison.improved,
+    hybrid_rerank_no_expansion: comparison.improved,
+    hybrid_rerank_expansion: comparison.improved,
+    hybrid_rerank_rewrite: comparison.improved,
+    phase_10_full: comparison.improved,
+  };
+  const zeroSummary = {
+    'Recall@10': 0,
+    'Precision@5': 0,
+    MRR: 0,
+    'nDCG@10': 0,
+    'Failure Rate': 0,
+    'Clarification Rate': 0,
+    'Group Coverage': 0,
+  };
+
+  return {
+    benchmarkReport: true,
+    ablationReport: true,
+    variants,
+    variantOrder: [
+      'dense_vector_only',
+      'hybrid_no_rerank',
+      'hybrid_rerank_no_expansion',
+      'hybrid_rerank_expansion',
+      'hybrid_rerank_rewrite',
+      'phase_10_full',
+    ],
+    deltasFromDense: {
+      dense_vector_only: zeroSummary,
+      hybrid_no_rerank: zeroSummary,
+      hybrid_rerank_no_expansion: zeroSummary,
+      hybrid_rerank_expansion: zeroSummary,
+      hybrid_rerank_rewrite: zeroSummary,
+      phase_10_full: zeroSummary,
+    },
+    componentImpact: {
+      hybrid: zeroSummary,
+      reranking: zeroSummary,
+      query_expansion: zeroSummary,
+      query_rewrite: zeroSummary,
+      full_pipeline: zeroSummary,
+    },
+    qrelsCoverage: comparison.qrelsCoverage,
+    secretKeysLogged: false,
+  };
+}
 function comparisonFixture(): ProductRetrievalComparisonReport {
   const result = {
     caseId: 'case-1',

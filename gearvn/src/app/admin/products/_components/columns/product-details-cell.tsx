@@ -16,6 +16,7 @@ import { formatPrice } from "@/utils/format/format-price";
 import { ProductType } from "@/types/product";
 import { useCategoryByName } from "@/react-query/query/category";
 
+import { ProductDescriptionRenderer } from "@/components/product/product-description-renderer";
 import {
   Sheet,
   SheetTitle,
@@ -164,12 +165,7 @@ export const ProductDetailsCell = memo(
               {/* Bên phải: mô tả sản phẩm */}
               <div className="xl:w-1/2 xl:flex-1 xl:overflow-y-auto px-2 -mx-2 mt-6 xl:mt-0 custom-scroll">
                 <h4 className="font-semibold mb-2">Mô tả sản phẩm</h4>
-                <div
-                  className="description"
-                  dangerouslySetInnerHTML={{
-                    __html: product.description || "<p>Không có mô tả</p>",
-                  }}
-                />
+                <ProductDescriptionRenderer description={product.description} />
               </div>
             </div>
           </SheetContent>

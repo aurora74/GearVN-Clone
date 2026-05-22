@@ -16,6 +16,12 @@ describe('ProductCatalogAdapter catalog detail lookup', () => {
     lean: jest.Mock;
     exec: jest.Mock;
   };
+  let eventFindChain: {
+    select: jest.Mock;
+    lean: jest.Mock;
+    exec: jest.Mock;
+  };
+  let eventModel: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -33,6 +39,14 @@ describe('ProductCatalogAdapter catalog detail lookup', () => {
     productModel = {
       find: jest.fn().mockReturnValue(findChain),
       findOne: jest.fn().mockReturnValue(findOneChain),
+    };
+    eventFindChain = {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([]),
+    };
+    eventModel = {
+      find: jest.fn().mockReturnValue(eventFindChain),
     };
   });
 
@@ -121,6 +135,84 @@ describe('ProductCatalogAdapter catalog detail lookup', () => {
         productId: validProductId,
         isPublished: true,
         isArchived: false,
+      }),
+    ]);
+  });
+
+  it('omits inactive event discount prices from assistant catalog snapshots', async () => {
+    findChain.exec.mockResolvedValue([
+      {
+        _id: validProductId,
+        name: 'ASUS TUF Gaming F16',
+        slug: 'asus-tuf-gaming-f16',
+        price: 28_990_000,
+        discountPrice: 26_890_000,
+        stock: 3,
+        category: 'Laptop',
+        isPublished: true,
+        isArchived: false,
+        event: 'flash-sale-ended',
+      },
+    ]);
+    eventFindChain.exec.mockResolvedValue([
+      {
+        tag: 'flash-sale-ended',
+        startsAt: new Date(Date.now() - 86_400_000),
+        endsAt: new Date(Date.now() - 1_000),
+        isEnabled: true,
+        isArchived: false,
+      },
+    ]);
+
+    const adapter = new ProductCatalogAdapter({} as any, productModel, eventModel);
+    const result = await adapter.getSnapshotsByIds([validProductId]);
+
+    expect(eventModel.find).toHaveBeenCalledWith({
+      tag: { $in: ['flash-sale-ended'] },
+      isArchived: { $ne: true },
+    });
+    expect(result).toEqual([
+      expect.objectContaining({
+        productId: validProductId,
+        price: 28_990_000,
+        discountPrice: undefined,
+      }),
+    ]);
+  });
+
+  it('keeps active event discount prices in assistant catalog snapshots', async () => {
+    findChain.exec.mockResolvedValue([
+      {
+        _id: validProductId,
+        name: 'ASUS TUF Gaming F16',
+        slug: 'asus-tuf-gaming-f16',
+        price: 28_990_000,
+        discountPrice: 26_890_000,
+        stock: 3,
+        category: 'Laptop',
+        isPublished: true,
+        isArchived: false,
+        event: 'flash-sale-active',
+      },
+    ]);
+    eventFindChain.exec.mockResolvedValue([
+      {
+        tag: 'flash-sale-active',
+        startsAt: new Date(Date.now() - 1_000),
+        endsAt: new Date(Date.now() + 86_400_000),
+        isEnabled: true,
+        isArchived: false,
+      },
+    ]);
+
+    const adapter = new ProductCatalogAdapter({} as any, productModel, eventModel);
+    const result = await adapter.getSnapshotsByIds([validProductId]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        productId: validProductId,
+        price: 28_990_000,
+        discountPrice: 26_890_000,
       }),
     ]);
   });

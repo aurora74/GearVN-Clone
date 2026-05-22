@@ -4,6 +4,7 @@ import { UseOrdersParams } from "@/types/order";
 import { UseProductsParams, UseRelatedProductsParams } from "@/types/product";
 import { SupportTicketListParams } from "@/types/engagement";
 import { PublicVoucherParams, UseVouchersParams } from "@/types/voucher";
+import { UseCategoriesParams } from "@/types/category";
 
 export const queryKeys = {
   user: {
@@ -141,19 +142,27 @@ export const queryKeys = {
 
   category: {
     root: ["categories"],
-    list: ({
-      page = 1,
-      limit = 20,
-      search = "",
-      sortBy = "",
-      visibility = "",
-    }: {
-      page?: number;
-      limit?: number;
-      search?: string;
-      sortBy?: string;
-      visibility?: string;
-    }) => ["categories", "list", page, limit, search, sortBy, visibility],
+    list: (params: UseCategoriesParams) => {
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        sortBy = "",
+        fields = "",
+        visibility,
+      } = params;
+
+      return [
+        "categories",
+        "list",
+        page,
+        limit,
+        search,
+        sortBy,
+        fields,
+        visibility ?? "",
+      ];
+    },
     detail: (id: string) => ["categories", "detail", id],
     slug: (slug: string) => ["categories", "slug", slug],
     byName: (name: string) => ["categories", "byName", name],

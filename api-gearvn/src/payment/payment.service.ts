@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { randomBytes } from 'crypto';
 
 import { OrderService } from 'src/order/order.service';
 import { Permission } from 'src/auth/policy/permissions';
@@ -75,7 +76,7 @@ export class PaymentService {
       vnp_Version: '2.1.0',
       vnp_TmnCode: tmnCode!,
       vnp_OrderType: 'other',
-      vnp_TxnRef: dto.orderId,
+      vnp_TxnRef: this.buildVnpayTxnRef(dto.orderId),
       vnp_ReturnUrl: returnUrl!,
       vnp_CreateDate: createDate,
       vnp_OrderInfo: dto.orderInfo,
@@ -97,8 +98,26 @@ export class PaymentService {
     return 'pending';
   }
 
+  private buildVnpayTxnRef(orderId: string): string {
+    return `${orderId}_${Date.now()}_${randomBytes(4).toString('hex')}`;
+  }
+
+  private parseOrderIdFromVnpayTxnRef(txnRef: string): string {
+    return txnRef.split('_')[0];
+  }
+
+  private statusFromPersistedOrder(
+    order: Pick<Order, 'paymentStatus'> | null,
+    responseCode: string,
+  ): 'success' | 'pending' | 'failed' {
+    if (order?.paymentStatus === PAYMENT_STATUS.PAID) return 'success';
+    if (responseCode === '00') return 'pending';
+    return this.mapReconciliationStatus(responseCode);
+  }
+
   async reconcileVnpayReturn(query: any) {
     const txnRef = String(query?.vnp_TxnRef ?? '').trim();
+    const orderId = this.parseOrderIdFromVnpayTxnRef(txnRef);
     const responseCode = String(query?.vnp_ResponseCode ?? '').trim();
     const providerReference = String(
       query?.vnp_TransactionNo ?? query?.vnp_BankTranNo ?? '',
@@ -108,14 +127,14 @@ export class PaymentService {
       throw new BadRequestException('Missing transaction reference');
     }
 
-    const order = await this.orderModel.findById(txnRef).lean();
+    const order = await this.orderModel.findById(orderId).lean();
     if (!order) {
       throw new NotFoundException('Order not found');
     }
 
     const isSignatureValid = this.validateReturnQuery(query);
     if (!isSignatureValid) {
-      await this.orderModel.findByIdAndUpdate(txnRef, {
+      await this.orderModel.findByIdAndUpdate(orderId, {
         paymentProvider: 'VNPAY',
         paymentResponseCode: responseCode || 'INVALID_SIGNATURE',
         paymentSignatureValid: false,
@@ -130,53 +149,87 @@ export class PaymentService {
       throw new BadRequestException('VNPay amount does not match order total');
     }
 
-    if (order.paymentReconciledAt) {
+    if (order.paymentStatus === PAYMENT_STATUS.PAID) {
       return {
-        status: this.mapReconciliationStatus(responseCode),
-        orderId: txnRef,
+        status: 'success',
+        orderId,
         vnpResponseCode: responseCode,
         replay: true,
       };
     }
 
+    const metadata = {
+      paymentProvider: 'VNPAY',
+      paymentReference: providerReference || undefined,
+      paymentResponseCode: responseCode,
+      paymentAmount: rawAmount / 100,
+      paymentSignatureValid: true,
+    };
+
+    if (responseCode !== '00') {
+      const updateResult = await this.orderModel.findOneAndUpdate(
+        {
+          _id: orderId,
+          paymentStatus: { $ne: PAYMENT_STATUS.PAID },
+        },
+        {
+          $set: metadata,
+        },
+        { new: true },
+      );
+
+      if (!updateResult) {
+        const latestOrder = await this.orderModel.findById(orderId).lean();
+        return {
+          status: this.statusFromPersistedOrder(latestOrder ?? order, responseCode),
+          orderId,
+          vnpResponseCode: responseCode,
+          replay: true,
+        };
+      }
+
+      return {
+        status: this.statusFromPersistedOrder(updateResult, responseCode),
+        orderId,
+        vnpResponseCode: responseCode,
+        replay: false,
+      };
+    }
+
     const updateResult = await this.orderModel.findOneAndUpdate(
       {
-        _id: txnRef,
-        paymentReconciledAt: { $exists: false },
+        _id: orderId,
+        paymentStatus: PAYMENT_STATUS.PENDING,
       },
       {
         $set: {
-          paymentProvider: 'VNPAY',
-          paymentReference: providerReference || undefined,
-          paymentResponseCode: responseCode,
-          paymentAmount: rawAmount / 100,
-          paymentSignatureValid: true,
+          ...metadata,
+          paymentStatus: PAYMENT_STATUS.PAID,
           paymentReconciledAt: new Date(),
-          ...(responseCode === '00' && { paymentStatus: PAYMENT_STATUS.PAID }),
         },
       },
       { new: true },
     );
 
     if (!updateResult) {
+      const latestOrder = await this.orderModel.findById(orderId).lean();
       return {
-        status: this.mapReconciliationStatus(responseCode),
-        orderId: txnRef,
+        status: this.statusFromPersistedOrder(latestOrder ?? order, responseCode),
+        orderId,
         vnpResponseCode: responseCode,
         replay: true,
       };
     }
 
-    if (responseCode === '00') {
-      await this.orderService.applyInventoryTransition(
-        txnRef,
-        'COMMITTED',
-        'payment:vnpayReturn',
-      );
-    }
+    await this.orderService.applyInventoryTransition(
+      orderId,
+      'COMMITTED',
+      'payment:vnpayReturn',
+    );
+
     return {
-      status: this.mapReconciliationStatus(responseCode),
-      orderId: txnRef,
+      status: this.statusFromPersistedOrder(updateResult, responseCode),
+      orderId,
       vnpResponseCode: responseCode,
       replay: false,
     };

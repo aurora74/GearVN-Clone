@@ -288,7 +288,18 @@ export class ChatService {
         },
       },
       { $replaceRoot: { newRoot: '$latestMessage' } },
-      { $addFields: { userIdObj: { $toObjectId: '$userId' } } },
+      {
+        $addFields: {
+          userIdObj: {
+            $convert: {
+              input: '$userId',
+              to: 'objectId',
+              onError: null,
+              onNull: null,
+            },
+          },
+        },
+      },
       {
         $lookup: {
           from: 'users',
@@ -301,9 +312,20 @@ export class ChatService {
       {
         $addFields: {
           userId: {
-            _id: { $ifNull: ['$user._id', '$userIdObj'] },
-            fullName: { $ifNull: ['$user.fullName', 'Deleted user'] },
-            avatarUrl: '$user.avatarUrl',
+            $cond: [
+              { $ifNull: ['$user._id', false] },
+              {
+                _id: '$user._id',
+                fullName: '$user.fullName',
+                email: '$user.email',
+                avatarUrl: '$user.avatarUrl',
+              },
+              {
+                _id: '$userId',
+                fullName: 'Ẩn danh',
+                avatarUrl: null,
+              },
+            ],
           },
         },
       },

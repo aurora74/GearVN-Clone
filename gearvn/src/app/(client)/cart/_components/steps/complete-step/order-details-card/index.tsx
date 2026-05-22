@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 import { MapPin, Phone, User } from "lucide-react";
 
 import { formatPrice } from "@/utils/format/format-price";
-import { useOrder } from "@/react-query/query/order";
+import { Order } from "@/types/order";
 
 import { InfoRow } from "../info-row";
 import { NoResults } from "../no-results";
@@ -16,19 +15,12 @@ import { Separator } from "@/components/ui/separator";
 import { OrderItemRow } from "./order-item-row";
 import { OrderDetailsSkeleton } from "./order-details-skeleton";
 
-export const OrderDetailsCard = () => {
-  const searchParams = useSearchParams();
-  const orderIdParam = searchParams.get("orderId");
+type Props = {
+  order: Order | undefined;
+  isPending: boolean;
+};
 
-  let orderId: string | null = null;
-  try {
-    orderId = orderIdParam ? atob(orderIdParam) : null;
-  } catch {
-    orderId = null;
-  }
-
-  const { data: order, isPending } = useOrder(orderId ?? "");
-
+export const OrderDetailsCard = ({ order, isPending }: Props) => {
   if (isPending) return <OrderDetailsSkeleton />;
   if (!order) return <NoResults />;
 

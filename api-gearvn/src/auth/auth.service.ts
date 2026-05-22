@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   BadRequestException,
   UnauthorizedException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { hash, verify } from 'argon2';
 import { JwtService } from '@nestjs/jwt';
@@ -79,14 +80,30 @@ export class AuthService {
     }
 
     const user = await this.userService.create(data);
+    const userId = String((user as any).id ?? (user as any)._id);
 
-    const payload = { sub: user.id, email: user.email };
-    const emailToken = await this.jwtService.signAsync(
-      payload,
-      this.emailJwtConfiguration,
-    );
+    try {
+      const payload = { sub: userId, email: user.email };
+      const emailToken = await this.jwtService.signAsync(
+        payload,
+        this.emailJwtConfiguration,
+      );
 
-    await this.mailService.sendUserConfirmation(user, emailToken);
+      await this.mailService.sendUserConfirmation(user, emailToken);
+    } catch {
+      try {
+        await this.userService.deleteJustCreatedUnverifiedCustomer(
+          userId,
+          user.email,
+        );
+      } catch {
+        // Keep the public failure cause focused on email delivery.
+      }
+
+      throw new ServiceUnavailableException(
+        'We could not send the confirmation email. Please try registering again later.',
+      );
+    }
 
     return user;
   }
@@ -118,7 +135,13 @@ export class AuthService {
       this.emailJwtConfiguration,
     );
 
-    await this.mailService.sendResetPassword(user, token);
+    try {
+      await this.mailService.sendResetPassword(user, token);
+    } catch {
+      throw new ServiceUnavailableException(
+        'We could not send the password reset email. Please try again later.',
+      );
+    }
   }
 
   async resetPassword(token: string, newPassword: string) {

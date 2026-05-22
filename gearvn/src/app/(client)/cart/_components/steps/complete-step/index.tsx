@@ -1,11 +1,15 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import { CheckCircle, Clock3, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PAYMENT_METHOD, PAYMENT_STATUS } from "@/config.global";
+import { useOrder } from "@/react-query/query/order";
+import { useCartStore } from "@/stores/use-cart-store";
 
 import { OrderDetailsCard } from "./order-details-card";
 
@@ -17,6 +21,16 @@ type StatusConfig = {
   titleClass: string;
   message: React.ReactNode;
   showOrderDetails: boolean;
+};
+
+const decodeOrderId = (encodedOrderId: string | null) => {
+  if (!encodedOrderId) return null;
+
+  try {
+    return atob(encodedOrderId);
+  } catch {
+    return null;
+  }
 };
 
 const getStatusConfig = (status: ReturnStatus): StatusConfig => {
@@ -74,12 +88,43 @@ const getStatusConfig = (status: ReturnStatus): StatusConfig => {
 
 export const CompleteStep = () => {
   const searchParams = useSearchParams();
+  const { clearCart } = useCartStore();
   const rawStatus = searchParams.get("status");
+  const rawOrderId = searchParams.get("orderId");
+  const hasVnpayReturnCode = searchParams.has("vnpResponseCode");
 
-  const status: ReturnStatus =
+  const orderId = useMemo(() => decodeOrderId(rawOrderId), [rawOrderId]);
+  const { data: order, isPending } = useOrder(orderId ?? "");
+
+  const returnStatus: ReturnStatus =
     rawStatus === "success" || rawStatus === "pending" ? rawStatus : "failed";
 
+  const isVnpayOrder = order?.paymentMethod === PAYMENT_METHOD.VNPAY;
+  const shouldVerifyPersistedOrder =
+    returnStatus === "success" || !!orderId || hasVnpayReturnCode;
+
+  const status: ReturnStatus = (() => {
+    if (returnStatus !== "success") return returnStatus;
+
+    if (isPending && shouldVerifyPersistedOrder) return "pending";
+    if (!order && shouldVerifyPersistedOrder) return "failed";
+
+    if (hasVnpayReturnCode || isVnpayOrder) {
+      if (order?.paymentStatus === PAYMENT_STATUS.PAID) return "success";
+      if (order?.paymentStatus === PAYMENT_STATUS.PENDING) return "pending";
+      return "failed";
+    }
+
+    return "success";
+  })();
+
   const statusConfig = getStatusConfig(status);
+
+  useEffect(() => {
+    if (status === "success") {
+      clearCart();
+    }
+  }, [status, clearCart]);
 
   return (
     <div className="pt-6 space-y-8 text-center">
@@ -91,7 +136,9 @@ export const CompleteStep = () => {
         <p className="text-muted-foreground">{statusConfig.message}</p>
       </div>
 
-      {statusConfig.showOrderDetails && <OrderDetailsCard />}
+      {statusConfig.showOrderDetails && (
+        <OrderDetailsCard order={order} isPending={isPending} />
+      )}
 
       <Button
         asChild

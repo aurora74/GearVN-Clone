@@ -15,6 +15,8 @@ export const useOrder = (orderId: string) =>
   useQuery<Order>({
     queryKey: queryKeys.order.detail(orderId),
     enabled: !!orderId,
+    staleTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
       const response = await fetch(`/api/orders/${orderId}`, {
         credentials: "include",
@@ -31,6 +33,8 @@ export const useOrderByCode = (orderCode: string) => {
     queryKey: queryKeys.order.byCode(normalizedOrderCode),
 
     enabled: normalizedOrderCode.length > 0,
+    staleTime: 0,
+    refetchOnMount: "always",
 
     queryFn: async () => {
       const response = await fetch(
@@ -48,6 +52,8 @@ export const useOrderByCode = (orderCode: string) => {
 export const useMyOrders = (params: UseOrdersParams = { page: 1, limit: 10 }) =>
   useQuery<PaginatedResponse<Order>>({
     queryKey: queryKeys.order.me(params),
+    staleTime: 0,
+    refetchOnMount: "always",
 
     queryFn: async () => {
       const queryParams = Object.entries(params)

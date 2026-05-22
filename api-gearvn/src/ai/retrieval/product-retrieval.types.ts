@@ -105,6 +105,14 @@ export type ProductRetrievalPipelineMode =
   | 'phase-09.2-baseline'
   | 'phase-10-improved';
 
+export type ProductRetrievalAblationVariant =
+  | 'dense_vector_only'
+  | 'hybrid_no_rerank'
+  | 'hybrid_rerank_no_expansion'
+  | 'hybrid_rerank_expansion'
+  | 'hybrid_rerank_rewrite'
+  | 'phase_10_full';
+
 export type ProductRetrievalRewriteMetadata = {
   rewrittenQuery: string;
   detectedIntents: string[];

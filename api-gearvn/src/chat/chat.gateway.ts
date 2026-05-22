@@ -338,9 +338,9 @@ export class ChatGateway implements OnGatewayConnection {
       slug: product.slug,
       detailHref: product.slug ? `/products/${product.slug}` : `/products/${productId}`,
       price: product.price,
-      discountPrice: product.price,
+      discountPrice: this.activeDiscountPrice(product),
       stock,
-      image: '/avatar-default.jpg',
+      image: this.productImage(product),
       reasons: ['Backend confirmed product snapshot'],
       availability: {
         status: stock !== undefined && stock <= 0 ? 'out_of_stock' : 'available',
@@ -360,17 +360,35 @@ export class ChatGateway implements OnGatewayConnection {
     fallbackProductId?: string,
   ) {
     const productId = String(product.id ?? fallbackProductId ?? '');
-    const finalPrice = product.price ?? 0;
+    const finalPrice = this.effectiveProductPrice(product);
     return {
       id: productId,
       slug: product.slug ?? productId,
       name: product.name,
       price: product.price ?? finalPrice,
-      image: '/avatar-default.jpg',
+      image: this.productImage(product),
       quantity,
       finalPrice,
       clientFinalPrice: finalPrice,
     };
+  }
+
+  private effectiveProductPrice(product: AssistantProductSnapshot) {
+    return this.activeDiscountPrice(product) ?? product.price ?? 0;
+  }
+
+  private activeDiscountPrice(product: AssistantProductSnapshot) {
+    const discountPrice = Number(product.discountPrice);
+    return Number.isFinite(discountPrice) && discountPrice > 0
+      ? discountPrice
+      : undefined;
+  }
+
+  private productImage(product: AssistantProductSnapshot) {
+    const image = product.image?.trim();
+    if (image) return image;
+    const images = Array.isArray(product.images) ? product.images : [];
+    return images.find((entry) => entry?.trim()) ?? '/avatar-default.jpg';
   }
 
   async handleConnection(socket: Socket) {

@@ -46,11 +46,85 @@ type CheckoutFields = {
 const isCheckoutFields = (value: unknown): value is CheckoutFields =>
   Boolean(
     value &&
-    typeof value === "object" &&
-    "name" in value &&
+      typeof value === "object" &&
+      "name" in value &&
     "phone" in value &&
-    "address" in value,
+      "address" in value,
   );
+
+const normalizeMatchValue = (value?: string) => value?.trim().toLowerCase();
+
+const isFallbackProductImage = (image?: string) => {
+  const normalizedImage = image?.trim().toLowerCase();
+  if (!normalizedImage) return true;
+
+  const [pathWithoutQuery] = normalizedImage.split("?");
+  return (
+    pathWithoutQuery === "/avatar-default.jpg" ||
+    pathWithoutQuery === "avatar-default.jpg" ||
+    pathWithoutQuery.endsWith("/avatar-default.jpg")
+  );
+};
+
+const findMatchingProductCard = ({
+  productId,
+  cartItem,
+  product,
+  cards,
+}: {
+  productId: string;
+  cartItem?: CartItemType;
+  product?: AssistantProductCard;
+  cards: AssistantProductCard[];
+}) => {
+  const slugs = new Set(
+    [cartItem?.slug, product?.slug].map(normalizeMatchValue).filter(Boolean),
+  );
+  const names = new Set(
+    [cartItem?.name, product?.name].map(normalizeMatchValue).filter(Boolean),
+  );
+
+  return cards.find((card) => {
+    if (card.productId === productId) return true;
+
+    const cardSlug = normalizeMatchValue(card.slug);
+    if (cardSlug && slugs.has(cardSlug)) return true;
+
+    const cardName = normalizeMatchValue(card.name);
+    return Boolean(cardName && names.has(cardName));
+  });
+};
+
+const resolveCartItemImage = ({
+  productId,
+  cartItem,
+  product,
+  messages,
+}: {
+  productId: string;
+  cartItem: CartItemType;
+  product?: AssistantProductCard;
+  messages: Message[];
+}) => {
+  if (!isFallbackProductImage(cartItem.image)) return cartItem.image;
+
+  const productImage = product?.image;
+  if (!isFallbackProductImage(productImage)) return productImage;
+
+  const productCards = messages.flatMap(
+    (message) => message.metadata?.productCards ?? [],
+  );
+  const matchingCard = findMatchingProductCard({
+    productId,
+    cartItem,
+    product,
+    cards: productCards,
+  });
+
+  return isFallbackProductImage(matchingCard?.image)
+    ? cartItem.image
+    : matchingCard?.image;
+};
 
 const toCartItem = (
   product: AssistantProductCard,
@@ -530,7 +604,16 @@ export const ChatMessage = () => {
           .flatMap((message) => message.metadata?.productCards ?? [])
           .find((card) => card.productId === productId);
       if (cartItem) {
-        addToCart(cartItem);
+        addToCart({
+          ...cartItem,
+          image:
+            resolveCartItemImage({
+              productId,
+              cartItem,
+              product,
+              messages,
+            }) ?? cartItem.image,
+        });
         applied = true;
       } else if (product) {
         addToCart(toCartItem(product, quantity));

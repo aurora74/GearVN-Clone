@@ -1,21 +1,26 @@
 import { join, resolve } from 'node:path';
 import { argv } from 'node:process';
+import mongoose from 'mongoose';
 
 import { readAiRetrievalConfig } from '../src/ai/config/ai-retrieval.config';
 import { readDeepSeekRewriteConfig } from '../src/ai/config/deepseek-rewrite.config';
 import { OpenRouterBgeM3Client } from '../src/ai/embeddings/openrouter-bge-m3.client';
 import { DeepSeekQueryRewriteClient } from '../src/ai/retrieval/deepseek-query-rewrite.client';
 import { ProductComboRetrievalService } from '../src/ai/retrieval/product-combo-retrieval.service';
+import { ProductLexicalSearchService } from '../src/ai/retrieval/product-lexical-search.service';
 import { ProductQueryRewriteService } from '../src/ai/retrieval/product-query-rewrite.service';
 import { productRetrievalBenchmarkCases } from '../src/ai/retrieval/product-retrieval.benchmark-cases';
 import {
+  ProductRetrievalAblationReport,
   ProductRetrievalBenchmarkReport,
   ProductRetrievalComparisonReport,
+  runProductRetrievalAblation,
   runProductRetrievalBenchmark,
   runProductRetrievalComparison,
 } from '../src/ai/retrieval/product-retrieval.benchmark';
 import {
   ProductRetrievalReportFormat,
+  writeProductRetrievalAblationReports,
   writeProductRetrievalReports,
 } from '../src/ai/retrieval/product-retrieval-report-export';
 import { ProductRetriever } from '../src/ai/retrieval/product-retriever';
@@ -25,9 +30,10 @@ import {
   ProductSearchPayload,
 } from '../src/ai/retrieval/product-retrieval.types';
 import { QdrantProductsClient } from '../src/ai/vector/qdrant-products.client';
+import { Product, ProductSchema } from '../src/product/product.schema';
 import { loadLocalEnv, requireEnvPresence } from './script-env';
 
-export type BenchmarkMode = 'baseline' | 'improved' | 'compare';
+export type BenchmarkMode = 'baseline' | 'improved' | 'compare' | 'ablation';
 
 export type BenchmarkArgs = {
   limit?: number;
@@ -52,6 +58,10 @@ type ComparisonCliReport = ProductRetrievalComparisonReport & {
   reportFiles?: Awaited<ReturnType<typeof writeProductRetrievalReports>>;
 };
 
+type AblationCliReport = ProductRetrievalAblationReport & {
+  reportFiles?: Awaited<ReturnType<typeof writeProductRetrievalAblationReports>>;
+};
+
 type CliMetadata = {
   timestamp: string;
   collection: string;
@@ -62,7 +72,8 @@ type CliMetadata = {
   allowDeterministicShortCircuit: boolean;
 };
 
-type CliReport = (BenchmarkCliReport | ComparisonCliReport) & CliMetadata;
+type CliReport = (BenchmarkCliReport | ComparisonCliReport | AblationCliReport) &
+  CliMetadata;
 
 const REQUIRED_ENV = [
   'OPENROUTER_API_KEY',
@@ -70,6 +81,7 @@ const REQUIRED_ENV = [
   'QDRANT_API_KEY',
   'DEEPSEEK_API_KEY',
 ];
+const ABLATION_REQUIRED_ENV = [...REQUIRED_ENV, 'MONGO_URI'];
 const QUERY_GROUPS: BenchmarkCase['group'][] = [
   'keyword',
   'need_based',
@@ -201,47 +213,65 @@ async function main(): Promise<void> {
     rewriteConfig,
   );
   const comboService = new ProductComboRetrievalService();
-  const retriever = new ProductRetriever(
-    embeddings,
-    qdrant,
-    undefined,
-    rewriteService,
-    comboService,
-  );
-  const selectedCases = selectCases(args);
-  const relevanceCorpus = await safeLoadRelevanceCorpus(qdrant);
-  const report = await runBenchmarkForMode({
-    mode: args.mode,
-    retriever,
-    selectedCases,
-    relevanceCorpus,
-    topK: args.topK,
-    rewriteModel: rewriteConfig?.deepSeek.model,
-    rewriteTimeoutMs: args.rewriteTimeoutMs,
-    allowDeterministicShortCircuit: args.allowDeterministicShortCircuit,
-  });
+  let mongoConnected = false;
 
-  const metadata: CliMetadata = {
-    timestamp: new Date().toISOString(),
-    collection: config.qdrant.collection,
-    embeddingModel: config.openRouter.embeddingModel,
-    qdrantCount: await safeCountProducts(qdrant),
-    selectedCases: selectedCases.length,
-    rewriteTimeoutMs: args.rewriteTimeoutMs,
-    allowDeterministicShortCircuit: args.allowDeterministicShortCircuit,
-  };
-  const cliReport: CliReport = { ...report, ...metadata };
-
-  if ('baseline' in cliReport) {
-    cliReport.reportFiles = await writeProductRetrievalReports({
-      reportDir: resolve(process.cwd(), args.reportDir),
-      comparison: cliReport,
-      formats: args.formats,
+  try {
+    const lexical = await maybeCreateLexicalSearchService(args.mode);
+    mongoConnected = Boolean(lexical);
+    const retriever = new ProductRetriever(
+      embeddings,
+      qdrant,
+      lexical,
+      rewriteService,
+      comboService,
+    );
+    const selectedCases = selectCases(args);
+    const relevanceCorpus = await safeLoadRelevanceCorpus(qdrant);
+    const report = await runBenchmarkForMode({
+      mode: args.mode,
+      retriever,
+      selectedCases,
+      relevanceCorpus,
+      topK: args.topK,
+      rewriteModel: rewriteConfig?.deepSeek.model,
+      rewriteTimeoutMs: args.rewriteTimeoutMs,
+      allowDeterministicShortCircuit: args.allowDeterministicShortCircuit,
     });
-  }
 
-  printReadableSummary(cliReport);
-  console.log(JSON.stringify(cliReport, null, 2));
+    const metadata: CliMetadata = {
+      timestamp: new Date().toISOString(),
+      collection: config.qdrant.collection,
+      embeddingModel: config.openRouter.embeddingModel,
+      qdrantCount: await safeCountProducts(qdrant),
+      selectedCases: selectedCases.length,
+      rewriteTimeoutMs: args.rewriteTimeoutMs,
+      allowDeterministicShortCircuit: args.allowDeterministicShortCircuit,
+    };
+    const cliReport: CliReport = { ...report, ...metadata };
+
+    if ('baseline' in cliReport) {
+      cliReport.reportFiles = await writeProductRetrievalReports({
+        reportDir: resolve(process.cwd(), args.reportDir),
+        comparison: cliReport,
+        formats: args.formats,
+      });
+    }
+
+    if ('ablationReport' in cliReport) {
+      cliReport.reportFiles = await writeProductRetrievalAblationReports({
+        reportDir: resolve(process.cwd(), args.reportDir),
+        ablation: cliReport,
+        formats: args.formats,
+      });
+    }
+
+    printReadableSummary(cliReport);
+    console.log(JSON.stringify(cliReport, null, 2));
+  } finally {
+    if (mongoConnected) {
+      await mongoose.disconnect();
+    }
+  }
 }
 
 function selectCases(args: BenchmarkArgs): BenchmarkCase[] {
@@ -262,9 +292,21 @@ async function runBenchmarkForMode(input: {
   rewriteModel?: string;
   rewriteTimeoutMs: number;
   allowDeterministicShortCircuit: boolean;
-}): Promise<BenchmarkCliReport | ProductRetrievalComparisonReport> {
+}): Promise<
+  BenchmarkCliReport | ProductRetrievalComparisonReport | ProductRetrievalAblationReport
+> {
   if (input.mode === 'compare') {
     return runProductRetrievalComparison(input.retriever, input.selectedCases, {
+      topK: input.topK,
+      relevanceCorpus: input.relevanceCorpus,
+      rewriteModel: input.rewriteModel,
+      rewriteTimeoutMs: input.rewriteTimeoutMs,
+      allowDeterministicShortCircuit: input.allowDeterministicShortCircuit,
+    });
+  }
+
+  if (input.mode === 'ablation') {
+    return runProductRetrievalAblation(input.retriever, input.selectedCases, {
       topK: input.topK,
       relevanceCorpus: input.relevanceCorpus,
       rewriteModel: input.rewriteModel,
@@ -293,6 +335,16 @@ async function runBenchmarkForMode(input: {
     secretKeysLogged: false,
     ...benchmark,
   };
+}
+
+async function maybeCreateLexicalSearchService(
+  mode: BenchmarkMode,
+): Promise<ProductLexicalSearchService | undefined> {
+  if (mode !== 'ablation' || !process.env.MONGO_URI) return undefined;
+
+  await mongoose.connect(process.env.MONGO_URI);
+  const productModel = mongoose.model(Product.name, ProductSchema);
+  return new ProductLexicalSearchService(productModel as any);
 }
 
 async function safeLoadRelevanceCorpus(
@@ -336,6 +388,20 @@ function printReadableSummary(report: CliReport): void {
     return;
   }
 
+  if ('ablationReport' in report) {
+    console.log(`Ablation variants: ${report.variantOrder.join(', ')}`);
+    console.log(
+      `Dense Recall@10: ${report.variants.dense_vector_only.summary['Recall@10']}`,
+    );
+    console.log(
+      `Full Recall@10: ${report.variants.phase_10_full.summary['Recall@10']}`,
+    );
+    console.log(
+      `Full Delta Recall@10: ${report.deltasFromDense.phase_10_full['Recall@10']}`,
+    );
+    return;
+  }
+
   console.log(`Recall@10: ${report.summary['Recall@10']}`);
   console.log(`Precision@5: ${report.summary['Precision@5']}`);
   console.log(`MRR: ${report.summary.MRR}`);
@@ -347,15 +413,23 @@ function requiredEnvForMode(mode: BenchmarkMode): string[] {
   if (mode === 'baseline') {
     return REQUIRED_ENV.filter((name) => name !== 'DEEPSEEK_API_KEY');
   }
+  if (mode === 'ablation') return ABLATION_REQUIRED_ENV;
   return REQUIRED_ENV;
 }
 
-function pipelineForMode(mode: Exclude<BenchmarkMode, 'compare'>): ProductRetrievalPipelineMode {
+function pipelineForMode(
+  mode: Exclude<BenchmarkMode, 'compare' | 'ablation'>,
+): ProductRetrievalPipelineMode {
   return mode === 'baseline' ? 'phase-09.2-baseline' : 'phase-10-improved';
 }
 
 function isBenchmarkMode(value: string): value is BenchmarkMode {
-  return value === 'baseline' || value === 'improved' || value === 'compare';
+  return (
+    value === 'baseline' ||
+    value === 'improved' ||
+    value === 'compare' ||
+    value === 'ablation'
+  );
 }
 
 if (require.main === module) {

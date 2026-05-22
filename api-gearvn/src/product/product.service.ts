@@ -26,6 +26,42 @@ export interface ProductModerationDto {
 
 type ProductMutationActor = { role?: string } | undefined;
 type CleanupWarning = { cleanupWarning?: true; cleanupFailedAssets?: string[] };
+type ProductSortDirection = 1 | -1;
+
+const ALLOWED_PRODUCT_SORT_FIELDS = new Set([
+  'createdAt',
+  'updatedAt',
+  'price',
+  'discountPrice',
+  'soldQuantity',
+  'stock',
+  'name',
+]);
+const DEFAULT_PRODUCT_SORT: Record<string, ProductSortDirection> = {
+  createdAt: -1,
+  _id: -1,
+};
+
+const parseProductSort = (
+  sortBy?: string,
+): Record<string, ProductSortDirection> => {
+  const sort = (sortBy ?? '')
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean)
+    .reduce<Record<string, ProductSortDirection>>((acc, field) => {
+      const direction: ProductSortDirection = field.startsWith('-') ? -1 : 1;
+      const fieldName = field.startsWith('-') ? field.slice(1) : field;
+
+      if (ALLOWED_PRODUCT_SORT_FIELDS.has(fieldName)) {
+        acc[fieldName] = direction;
+      }
+
+      return acc;
+    }, {});
+
+  return Object.keys(sort).length > 0 ? sort : DEFAULT_PRODUCT_SORT;
+};
 
 const CATALOG_CREATE_FIELDS = [
   'name',
@@ -441,16 +477,10 @@ export class ProductService {
       filter[`attributes.${key}`] = { $in: values };
     });
 
-    let mongooseQuery = this.productModel.find(filter).lean<Product>();
-
-    if (sortBy) {
-      const sortFields = sortBy
-        .split(',')
-        .map((field) =>
-          field.startsWith('-') ? [field.slice(1), -1] : [field, 1],
-        );
-      mongooseQuery = mongooseQuery.sort(Object.fromEntries(sortFields));
-    }
+    let mongooseQuery = this.productModel
+      .find(filter)
+      .lean<Product>()
+      .sort(parseProductSort(sortBy));
 
     if (fields) {
       mongooseQuery = mongooseQuery.select(fields.split(',').join(' '));

@@ -20,7 +20,6 @@ import { ChatInput } from "./chat-input";
 import { ChatHeader } from "./chat-header";
 import { ChatMessages } from "./chat-messages";
 import { SupportTicketPanel } from "./support-ticket-panel";
-import { StaffAiSummaryPanel } from "./staff-ai-summary-panel";
 
 const getMessageUser = (message: Message): Message["userId"] | null => {
   const user = message.userId as unknown;
@@ -449,15 +448,15 @@ export const ChatPage = () => {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="w-full min-w-0 max-w-full space-y-3 overflow-x-hidden">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-normal">Chat khách hàng</h1>
       </div>
       <SupportTicketPanel />
-      <div className="h-[calc(100vh-300px)] min-h-[520px] flex flex-col sm:flex-row p-2 sm:p-4 space-y-2 sm:space-y-0 border bg-white shadow-sm rounded-md overflow-hidden">
+      <div className="h-[calc(100vh-300px)] min-h-[520px] w-full min-w-0 max-w-full flex flex-col sm:flex-row p-2 sm:p-4 space-y-2 sm:space-y-0 border bg-white shadow-sm rounded-md overflow-hidden">
       <div
         className={cn(
-          "flex-shrink-0 w-full sm:w-1/3 overflow-y-auto overflow-x-hidden transition-transform duration-200",
+          "flex-shrink-0 w-full min-w-0 max-w-full sm:w-1/3 overflow-y-auto overflow-x-hidden transition-transform duration-200",
           selectedUser ? "hidden sm:block" : "block"
         )}
       >
@@ -473,7 +472,7 @@ export const ChatPage = () => {
 
       <div
         className={cn(
-          "flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden transition-transform duration-200",
+          "flex-1 flex flex-col h-full min-h-0 min-w-0 max-w-full overflow-hidden transition-transform duration-200",
           selectedUser ? "flex" : "hidden sm:flex"
         )}
       >
@@ -495,14 +494,10 @@ export const ChatPage = () => {
               onResolve={() => resolveChatTicket(selectedRoomId)}
             />
 
-            <StaffAiSummaryPanel
-              summary={selectedTicket?.metadata?.assistantHandoffSummary}
-            />
-
             <div
               id={`admin-chat-transcript-${selectedRoomId}`}
               tabIndex={-1}
-              className="flex flex-1 min-h-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex flex-1 min-h-0 min-w-0 max-w-full overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ChatMessages
                 setUsers={setUsers}

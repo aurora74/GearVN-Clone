@@ -9,6 +9,14 @@ import {
 } from "@/types/category";
 import { PaginatedResponse } from "@/types/global";
 
+export const adminProductCategorySelectParams = {
+  page: 1,
+  limit: 1000,
+  sortBy: "label",
+  fields: "name,label,fields,sourceMetadata",
+  visibility: "active",
+} satisfies UseCategoriesParams;
+
 const parseResult = async <T>(response: Response): Promise<T> => {
   const data = await response.json();
   if (!response.ok) throw data;

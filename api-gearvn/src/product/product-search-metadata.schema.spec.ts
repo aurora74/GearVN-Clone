@@ -22,6 +22,20 @@ describe('product search metadata schema', () => {
     expect(indexes).toContainEqual({ 'searchMetadata.sourceSku': 1 });
     expect(indexes).toContainEqual({ 'searchMetadata.sourceUrlKey': 1 });
     expect(indexes).toContainEqual({ 'searchMetadata.normalizedName': 1 });
+    expect(indexes).toContainEqual({ createdAt: -1, _id: -1 });
+    expect(indexes).toContainEqual({
+      isArchived: 1,
+      isPublished: 1,
+      createdAt: -1,
+      _id: -1,
+    });
+    expect(indexes).toContainEqual({
+      isArchived: 1,
+      isPublished: 1,
+      category: 1,
+      createdAt: -1,
+      _id: -1,
+    });
     expect(indexes).toContainEqual({
       isArchived: 1,
       isPublished: 1,

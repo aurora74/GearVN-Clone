@@ -17,15 +17,60 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 type StaffAiSummaryPanelProps = {
-  summary?: StaffAiSummary;
+  summary?: Partial<Record<keyof StaffAiSummary, unknown>>;
 };
 
-const formatList = (items: string[]) =>
-  items.length > 0 ? items.join(", ") : "Chưa ghi nhận";
+const EMPTY_VALUE_LABEL = "Chưa ghi nhận";
 
-const formatValue = (value: string | null) => value?.trim() || "Chưa ghi nhận";
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.prototype.toString.call(value) === "[object Object]";
 
-const formatConfidence = (value: StaffAiSummary["confidence"]) => {
+const formatScalarValue = (value: unknown): string | null => {
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : null;
+  if (typeof value === "boolean") return value ? "Có" : "Không";
+
+  return null;
+};
+
+const formatList = (items: unknown) => {
+  if (!Array.isArray(items)) return formatValue(items);
+
+  const values = items
+    .map((item) => formatScalarValue(item))
+    .filter((item): item is string => Boolean(item));
+
+  return values.length > 0 ? values.join(", ") : EMPTY_VALUE_LABEL;
+};
+
+const formatValue = (value: unknown): string => {
+  const scalarValue = formatScalarValue(value);
+  if (scalarValue) return scalarValue;
+
+  if (Array.isArray(value)) return formatList(value);
+
+  if (isPlainObject(value)) {
+    const values = Object.entries(value)
+      .map(([key, item]) => {
+        const itemValue = Array.isArray(item)
+          ? formatList(item)
+          : formatScalarValue(item);
+
+        if (!itemValue || itemValue === EMPTY_VALUE_LABEL) return null;
+        return `${key}: ${itemValue}`;
+      })
+      .filter((item): item is string => Boolean(item));
+
+    return values.length > 0 ? values.join("; ") : EMPTY_VALUE_LABEL;
+  }
+
+  return EMPTY_VALUE_LABEL;
+};
+
+const formatConfidence = (value: unknown) => {
   if (typeof value === "number") {
     const percent = value <= 1 ? value * 100 : value;
     return `${Math.round(percent)}%`;
@@ -34,9 +79,12 @@ const formatConfidence = (value: StaffAiSummary["confidence"]) => {
   return formatValue(value);
 };
 
-const formatHandoffTime = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+const formatHandoffTime = (value: unknown) => {
+  const handoffValue = formatScalarValue(value);
+  if (!handoffValue) return EMPTY_VALUE_LABEL;
+
+  const date = new Date(handoffValue);
+  if (Number.isNaN(date.getTime())) return handoffValue;
 
   return date.toLocaleString("vi-VN", {
     hour: "2-digit",
@@ -59,15 +107,21 @@ export const StaffAiSummaryPanel = ({ summary }: StaffAiSummaryPanelProps) => {
 
   if (!summary || summary.staffOnly !== true) return null;
 
-  const transcriptTargetId = `admin-chat-transcript-${summary.transcriptRoomId}`;
+  const transcriptRoomId = formatScalarValue(summary.transcriptRoomId) ?? "unknown";
+  const transcriptTargetId = `admin-chat-transcript-${transcriptRoomId}`;
+  const unresolvedQuestionCount = Array.isArray(summary.unresolvedQuestions)
+    ? summary.unresolvedQuestions.filter((item) => formatScalarValue(item)).length
+    : 0;
   const summaryLine = [
-    summary.need,
-    summary.budget ? `Ngân sách: ${summary.budget}` : null,
-    summary.unresolvedQuestions.length > 0
-      ? `${summary.unresolvedQuestions.length} câu hỏi chưa rõ`
+    formatValue(summary.need),
+    formatScalarValue(summary.budget)
+      ? `Ngân sách: ${formatScalarValue(summary.budget)}`
+      : null,
+    unresolvedQuestionCount > 0
+      ? `${unresolvedQuestionCount} câu hỏi chưa rõ`
       : null,
   ]
-    .filter(Boolean)
+    .filter((item) => Boolean(item) && item !== EMPTY_VALUE_LABEL)
     .join(" • ");
 
   const handleOpenTranscript = () => {
@@ -122,7 +176,10 @@ export const StaffAiSummaryPanel = ({ summary }: StaffAiSummaryPanelProps) => {
       >
         <div className="overflow-hidden">
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <SummaryField label="Nhu cầu khách hàng" value={summary.need} />
+            <SummaryField
+              label="Nhu cầu khách hàng"
+              value={formatValue(summary.need)}
+            />
             <SummaryField label="Ngân sách" value={formatValue(summary.budget)} />
             <SummaryField
               label="Ràng buộc / cấu hình"

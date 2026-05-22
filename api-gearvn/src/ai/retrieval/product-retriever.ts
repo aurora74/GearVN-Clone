@@ -13,6 +13,7 @@ import {
   ProductComboGroupResult,
   ProductCragRetryMetadata,
   ProductGroupCoverage,
+  ProductRetrievalAblationVariant,
   ProductRetrievalConstraints,
   ProductRetrievalFilter,
   ProductRetrievalPipelineMode,
@@ -38,7 +39,9 @@ export type ProductRetrieverSearchOptions = {
   constraints?: ProductRetrievalConstraints;
   hardConstraints?: ProductRetrievalConstraints;
   pipeline?: ProductRetrievalPipelineMode;
+  ablationVariant?: ProductRetrievalAblationVariant;
   rewriteContext?: ProductQueryRewriteContext;
+  disableComboFanOut?: boolean;
 };
 
 type HybridSearchPass = {
@@ -77,11 +80,83 @@ export class ProductRetriever {
     );
     const pipeline = options.pipeline ?? 'phase-09.2-baseline';
 
+    if (options.ablationVariant) {
+      return this.searchAblation(
+        query,
+        callerConstraints,
+        topK,
+        options.ablationVariant,
+        options,
+      );
+    }
+
     if (pipeline === 'phase-10-improved' && this.queryRewriteService) {
       return this.searchImproved(query, callerConstraints, topK, options);
     }
 
     return this.searchBaseline(query, callerConstraints, topK);
+  }
+
+  private async searchAblation(
+    query: string,
+    callerConstraints: ProductRetrievalConstraints,
+    topK: number,
+    variant: ProductRetrievalAblationVariant,
+    options: ProductRetrieverSearchOptions,
+  ): Promise<ProductRetrievalResult> {
+    if (variant === 'dense_vector_only') {
+      const pass = await this.runHybridSearch(query, callerConstraints, topK, {
+        disableExpansion: true,
+        disableLexical: true,
+        disableRerank: true,
+      });
+      return buildRetrievalResult(
+        pass,
+        buildCragRetryMetadata(query, undefined, { triggered: false }),
+      );
+    }
+
+    if (variant === 'hybrid_no_rerank') {
+      const pass = await this.runHybridSearch(query, callerConstraints, topK, {
+        disableExpansion: true,
+        disableRerank: true,
+      });
+      return buildRetrievalResult(
+        pass,
+        buildCragRetryMetadata(query, undefined, { triggered: false }),
+      );
+    }
+
+    if (variant === 'hybrid_rerank_no_expansion') {
+      const pass = await this.runHybridSearch(query, callerConstraints, topK, {
+        disableExpansion: true,
+      });
+      return buildRetrievalResult(
+        pass,
+        buildCragRetryMetadata(query, undefined, { triggered: false }),
+      );
+    }
+
+    if (variant === 'hybrid_rerank_expansion') {
+      const pass = await this.runHybridSearch(query, callerConstraints, topK);
+      return buildRetrievalResult(
+        pass,
+        buildCragRetryMetadata(query, undefined, { triggered: false }),
+      );
+    }
+
+    if (variant === 'hybrid_rerank_rewrite') {
+      return this.searchImproved(query, callerConstraints, topK, {
+        ...options,
+        pipeline: 'phase-10-improved',
+        disableComboFanOut: true,
+      });
+    }
+
+    return this.searchImproved(query, callerConstraints, topK, {
+      ...options,
+      pipeline: 'phase-10-improved',
+    });
   }
 
   private async searchBaseline(
@@ -137,9 +212,10 @@ export class ProductRetriever {
     const comboGroups = isExplicitComboRetrievalRequest(rewriteContext)
       ? rewrite.comboGroups
       : [];
+    const effectiveComboGroups = options.disableComboFanOut ? [] : comboGroups;
     const rewriteMetadata = toRetrievalRewriteMetadata({
       ...rewrite,
-      comboGroups,
+      comboGroups: effectiveComboGroups,
     });
     const mergedConstraints = mergeAuthoritativeSearchConstraints(
       rewrite.hardConstraints,
@@ -156,10 +232,10 @@ export class ProductRetriever {
       });
     }
 
-    if (comboGroups.length > 0 && this.comboRetrievalService) {
+    if (effectiveComboGroups.length > 0 && this.comboRetrievalService) {
       const combo = await this.comboRetrievalService.searchCombo({
         query: rewrite.rewrittenQuery,
-        groups: comboGroups as ProductIntentComboGroup[],
+        groups: effectiveComboGroups as ProductIntentComboGroup[],
         constraints: mergedConstraints,
         retriever: this,
         perGroupTopK: Math.min(3, topK),
@@ -236,12 +312,16 @@ export class ProductRetriever {
     options: {
       enforceRequiredSpecs?: boolean;
       additionalExpanded?: string[];
+      disableExpansion?: boolean;
+      disableLexical?: boolean;
+      disableRerank?: boolean;
     } = {},
   ): Promise<HybridSearchPass> {
     const retrievalQuery = buildRetrievalQuery(
       query,
       callerConstraints,
-      options.additionalExpanded,
+      options.disableExpansion ? [] : options.additionalExpanded,
+      options.disableExpansion,
     );
     const embedding = await this.embedder.embedQuery(
       retrievalQuery.expandedText,
@@ -254,10 +334,12 @@ export class ProductRetriever {
         limit: Math.max(topK, 30),
         filters: vectorFilters(retrievalQuery.constraints),
       }),
-      this.lexical?.search(query, {
-        limit: Math.max(topK, 30),
-        constraints: retrievalQuery.constraints,
-      }) ?? Promise.resolve([]),
+      options.disableLexical
+        ? Promise.resolve([])
+        : this.lexical?.search(query, {
+            limit: Math.max(topK, 30),
+            constraints: retrievalQuery.constraints,
+          }) ?? Promise.resolve([]),
     ]);
     const normalizedVectorCandidates = normalizeCandidates(
       vectorCandidates,
@@ -278,11 +360,13 @@ export class ProductRetriever {
       candidates: normalizedCandidates,
       vectorCandidates: normalizedVectorCandidates,
       lexicalCandidates: normalizedLexicalCandidates,
-      results: rerankProducts(query, normalizedCandidates, {
-        topK,
-        constraints: retrievalQuery.constraints,
-        enforceRequiredSpecs: options.enforceRequiredSpecs !== false,
-      }),
+      results: options.disableRerank
+        ? rawRankProducts(normalizedCandidates, topK)
+        : rerankProducts(query, normalizedCandidates, {
+            topK,
+            constraints: retrievalQuery.constraints,
+            enforceRequiredSpecs: options.enforceRequiredSpecs !== false,
+          }),
     };
   }
 }
@@ -291,11 +375,11 @@ function buildRetrievalQuery(
   query: string,
   providedConstraints?: ProductRetrievalConstraints,
   additionalExpanded: string[] = [],
+  disableExpansion = false,
 ): ProductRetrievalQuery {
-  const expanded = uniqueStrings([
-    ...expandProductQuery(query),
-    ...additionalExpanded,
-  ]);
+  const expanded = disableExpansion
+    ? []
+    : uniqueStrings([...expandProductQuery(query), ...additionalExpanded]);
   const constraints = mergeAuthoritativeSearchConstraints(
     extractHardConstraints(query),
     providedConstraints,
@@ -307,6 +391,23 @@ function buildRetrievalQuery(
     expandedText: [query, ...expanded].join(' | '),
     constraints,
   };
+}
+
+function rawRankProducts(
+  candidates: ProductCandidate[],
+  topK: number,
+): RerankedProductCandidate[] {
+  return candidates.slice(0, topK).map((candidate) => ({
+    ...candidate,
+    rerankScore: candidate.score,
+    reasons: [
+      {
+        code: candidate.source === 'lexical' ? 'bm25_score' : 'vector_score',
+        message: `${candidate.source ?? 'vector'} score`,
+        weight: candidate.score,
+      },
+    ],
+  }));
 }
 
 function toRetrievalRewriteMetadata(

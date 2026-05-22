@@ -102,6 +102,7 @@ export class BlogCommentService {
     });
 
     await comment.save();
+    await comment.populate({ path: 'authorId', select: 'fullName email avatarUrl' });
     return this.toPublicComment(comment);
   }
 

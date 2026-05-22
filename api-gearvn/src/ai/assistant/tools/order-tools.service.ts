@@ -530,10 +530,14 @@ function toAssistantProductSnapshot(
     id: snapshot.productId,
     slug: snapshot.slug,
     name: snapshot.name,
-    price: snapshot.discountPrice ?? snapshot.price,
+    price: snapshot.price,
+    discountPrice: snapshot.discountPrice,
+    image: snapshot.image,
+    images: snapshot.images,
     stock: snapshot.stock,
     isPublished: snapshot.isPublished,
     isArchived: snapshot.isArchived,
+    event: snapshot.event,
   };
 }
 

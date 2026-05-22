@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, Clock, ExternalLink, MessageSquareText } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, ExternalLink, MessageSquareText, RefreshCw } from "lucide-react";
 
 import { SUPPORT_TICKET_SOURCE, SUPPORT_TICKET_STATUS } from "@/config.global";
 import {
@@ -153,7 +153,11 @@ export const SupportTicketPanel = () => {
 };
 
 const SupportTicketTab = ({ status }: { status: SupportTicketStatus }) => {
-  const { data, isPending } = useSupportTickets({ status, page: 1, limit: 5 });
+  const { data, isPending, isError, refetch, isFetching } = useSupportTickets({
+    status,
+    page: 1,
+    limit: 5,
+  });
   const tickets = data?.data ?? [];
 
   if (isPending) {
@@ -162,6 +166,26 @@ const SupportTicketTab = ({ status }: { status: SupportTicketStatus }) => {
         {[1, 2].map((item) => (
           <div key={item} className="h-14 animate-pulse rounded-sm bg-muted" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-destructive/30 bg-destructive/5 p-3 text-sm">
+        <div className="flex min-w-0 items-center gap-2 text-destructive">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>Không tải được hàng chờ hỗ trợ</span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isFetching}
+          onClick={() => refetch()}
+        >
+          <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
+          Thử lại
+        </Button>
       </div>
     );
   }

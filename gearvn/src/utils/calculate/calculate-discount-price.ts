@@ -3,6 +3,6 @@ export const calculateDiscountedPrice = (
   discountPercent?: number
 ) => {
   const discount = discountPercent ?? 0;
-  const finalPrice = price - discount;
+  const finalPrice = discount > 0 ? price - (price * discount) / 100 : price;
   return { finalPrice, hasDiscount: discount > 0 };
 };

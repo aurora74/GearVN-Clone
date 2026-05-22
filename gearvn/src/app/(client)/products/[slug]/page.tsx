@@ -1,8 +1,6 @@
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import DOMPurify from "isomorphic-dompurify";
-
 import { fetchBlogs } from "@/utils/api/blogs";
 import { fetchEvents } from "@/utils/api/events";
 import { fetchCategoryFieldsByName } from "@/utils/api/categories";
@@ -18,6 +16,7 @@ import { ProductConfiguration } from "./_components/product-configuration";
 
 import { Breadcrumbs } from "@/components/global/breadcrumbs";
 import { SectionHeader } from "@/components/global/section-header";
+import { ProductDescriptionRenderer } from "@/components/product/product-description-renderer";
 
 const baseCrumbs = [
   { label: "Trang chủ", href: "/" },
@@ -93,22 +92,10 @@ const ProductDetailsPage = async ({ params }: ProductDetailsPageProps) => {
 
               <div className="p-4 sm:p-6 bg-white shadow-sm rounded-sm">
                 <h2 className="text-xl font-bold">Thông tin sản phẩm</h2>
-                {product.description ? (
-                  <div
-                    className="description"
-                    dangerouslySetInnerHTML={{
-                      __html: DOMPurify.sanitize(product.description, {
-                        USE_PROFILES: { html: true },
-                        ADD_TAGS: [],
-                        ADD_ATTR: [],
-                      }),
-                    }}
-                  />
-                ) : (
-                  <p className="text-gray-500 italic">
-                    Chưa có mô tả cho sản phẩm này.
-                  </p>
-                )}
+                <ProductDescriptionRenderer
+                  description={product.description}
+                  fallback="Chưa có mô tả cho sản phẩm này."
+                />
               </div>
 
               <ProductQa productId={product._id} />

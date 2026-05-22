@@ -11,7 +11,7 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
       <Suspense fallback={null}>
         <AppSidebar variant="floating" />
       </Suspense>
-      <div className="w-full sm:flex-1 flex flex-col gap-3 p-2.5 sm:p-0 sm:m-2.5">
+      <div className="w-full min-w-0 overflow-x-hidden sm:flex-1 flex flex-col gap-3 p-2.5 sm:p-0 sm:m-2.5">
         <Navbar />
         {children}
       </div>

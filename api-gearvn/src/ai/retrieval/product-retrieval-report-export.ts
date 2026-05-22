@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
+  ProductRetrievalAblationReport,
   ProductBenchmarkQueryResult,
   ProductRetrievalComparisonReport,
 } from './product-retrieval.benchmark';
@@ -61,6 +62,42 @@ export async function writeProductRetrievalReports(input: {
     `${buildRetrievalGateMarkdown(input.comparison)}\n`,
     'utf8',
   );
+
+  return files;
+}
+
+export async function writeProductRetrievalAblationReports(input: {
+  reportDir: string;
+  ablation: ProductRetrievalAblationReport;
+  formats?: ProductRetrievalReportFormat[];
+}): Promise<ProductRetrievalReportFiles> {
+  const formats = input.formats ?? ['json', 'csv', 'md'];
+  const files: ProductRetrievalReportFiles = {};
+
+  await mkdir(input.reportDir, { recursive: true });
+
+  if (formats.includes('json')) {
+    files.json = join(input.reportDir, 'ablation-report.json');
+    await writeFile(
+      files.json,
+      `${JSON.stringify(input.ablation, null, 2)}\n`,
+      'utf8',
+    );
+  }
+
+  if (formats.includes('csv')) {
+    files.csv = join(input.reportDir, 'ablation-results.csv');
+    await writeFile(files.csv, `${buildAblationCsv(input.ablation)}\n`, 'utf8');
+  }
+
+  if (formats.includes('md')) {
+    files.markdown = join(input.reportDir, 'ablation-report.md');
+    await writeFile(
+      files.markdown,
+      `${buildAblationMarkdown(input.ablation)}\n`,
+      'utf8',
+    );
+  }
 
   return files;
 }
@@ -174,6 +211,88 @@ export function buildComparisonMarkdown(
     '- Live benchmark execution requires configured retrieval service credentials.',
   ].join('\n');
 }
+
+export function buildAblationCsv(
+  ablation: ProductRetrievalAblationReport,
+): string {
+  const header = [
+    'variant',
+    'caseId',
+    'query',
+    'group',
+    'labelSource',
+    'relevantSetSize',
+    'recallAt10',
+    'precisionAt5',
+    'mrr',
+    'ndcgAt10',
+    'relevantFound',
+    'clarified',
+    'groupCoverage',
+    'rewriteStatus',
+    'rewriteLatencyMs',
+    'failureNotes',
+  ];
+  const rows = ablation.variantOrder.flatMap((variant) =>
+    ablation.variants[variant].results.map((result) =>
+      [
+        variant,
+        result.caseId,
+        result.query,
+        result.group,
+        result.labelSource,
+        result.relevantSetSize,
+        result.metrics['Recall@10'],
+        result.metrics['Precision@5'],
+        result.metrics.MRR,
+        result.metrics['nDCG@10'],
+        String(result.relevantFound),
+        String(result.clarified),
+        result.groupCoverage,
+        result.rewrite?.rewriteStatus ?? '',
+        result.rewrite?.rewriteLatencyMs ?? '',
+        result.failureReason ?? '',
+      ]
+        .map(csvCell)
+        .join(','),
+    ),
+  );
+
+  return [header.join(','), ...rows].join('\n');
+}
+
+export function buildAblationMarkdown(
+  ablation: ProductRetrievalAblationReport,
+): string {
+  return [
+    '# Phase 12 Product Retrieval Ablation',
+    '',
+    '## Experiment Design',
+    '',
+    `- Secret keys logged: ${ablation.secretKeysLogged}`,
+    `- Variants: ${ablation.variantOrder.join(', ')}`,
+    '- Each variant is evaluated with the same benchmark cases, relevance labels, topK, and metric formulas.',
+    '- Metrics include Recall@10, Precision@5, MRR, nDCG@10, Failure Rate, Clarification Rate, and Group Coverage.',
+    '',
+    '### Label Coverage',
+    '',
+    qrelsCoverageTable(ablation),
+    '',
+    '## Variant Results',
+    '',
+    ablationVariantTable(ablation),
+    '',
+    '## Component Impact',
+    '',
+    componentImpactTable(ablation),
+    '',
+    '## Limitations',
+    '',
+    '- Ablation values are benchmark evidence for thesis reporting and do not change production assistant behavior.',
+    '- Report quality depends on the current MongoDB catalog, Qdrant payload freshness, and configured retrieval credentials.',
+    '- Missing or timed-out external services should be recorded as blocked-run evidence rather than fabricated metric values.',
+  ].join('\n');
+}
 export function buildRetrievalGateMarkdown(
   comparison: ProductRetrievalComparisonReport,
 ): string {
@@ -265,8 +384,10 @@ function metricTable(comparison: ProductRetrievalComparisonReport): string {
   ].join('\n');
 }
 
-function qrelsCoverageTable(comparison: ProductRetrievalComparisonReport): string {
-  const coverage = comparison.qrelsCoverage;
+function qrelsCoverageTable(
+  report: Pick<ProductRetrievalComparisonReport, 'qrelsCoverage'>,
+): string {
+  const coverage = report.qrelsCoverage;
   return [
     '| Label source | Cases |',
     '|--------------|-------|',
@@ -277,6 +398,43 @@ function qrelsCoverageTable(comparison: ProductRetrievalComparisonReport): strin
     `| nonAmbiguousUnlabeled | ${coverage.nonAmbiguousUnlabeled} |`,
     `| totalCases | ${coverage.totalCases} |`,
   ].join('\n');
+}
+
+function ablationVariantTable(
+  ablation: ProductRetrievalAblationReport,
+): string {
+  const metrics = metricKeys(ablation);
+  return [
+    '| Variant | ' + metrics.join(' | ') + ' |',
+    '|---------|' + metrics.map(() => '--------').join('|') + '|',
+    ...ablation.variantOrder.map((variant) => {
+      const summary = ablation.variants[variant].summary;
+      return `| ${variant} | ${metrics.map((metric) => summary[metric]).join(' | ')} |`;
+    }),
+  ].join('\n');
+}
+
+function componentImpactTable(
+  ablation: ProductRetrievalAblationReport,
+): string {
+  const metrics = metricKeys(ablation);
+  return [
+    '| Component | ' + metrics.join(' | ') + ' |',
+    '|-----------|' + metrics.map(() => '--------').join('|') + '|',
+    ...Object.entries(ablation.componentImpact).map(([component, summary]) => {
+      return `| ${component} | ${metrics.map((metric) => summary[metric]).join(' | ')} |`;
+    }),
+  ].join('\n');
+}
+
+function metricKeys(
+  ablation: ProductRetrievalAblationReport,
+): Array<keyof ProductRetrievalAblationReport['variants']['dense_vector_only']['summary']> {
+  return Object.keys(
+    ablation.variants.dense_vector_only.summary,
+  ) as Array<
+    keyof ProductRetrievalAblationReport['variants']['dense_vector_only']['summary']
+  >;
 }
 
 function resultByCaseId(

@@ -3,6 +3,7 @@
 import Image from "next/image";
 
 import { ColumnDef } from "@tanstack/react-table";
+import { ImageIcon } from "lucide-react";
 
 import { CategoryType } from "@/types/category";
 
@@ -39,16 +40,21 @@ export const columns: ColumnDef<CategoryType>[] = [
   {
     accessorKey: "image",
     header: () => <SortableHeader label="Ảnh" sortKey="image" />,
-    cell: ({ row }) => (
-      <div className="relative size-14 p-1">
-        <Image
-          fill
-          src={row.original.image}
-          alt={row.original.label}
-          className="object-contain"
-        />
-      </div>
-    ),
+    cell: ({ row }) =>
+      row.original.image ? (
+        <div className="relative size-14 p-1">
+          <Image
+            fill
+            src={row.original.image}
+            alt={row.original.label}
+            className="object-contain"
+          />
+        </div>
+      ) : (
+        <div className="flex size-14 items-center justify-center rounded bg-gray-100 text-gray-400">
+          <ImageIcon className="size-5" aria-hidden="true" />
+        </div>
+      ),
     meta: { label: "Ảnh" },
   },
 

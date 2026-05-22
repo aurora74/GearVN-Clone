@@ -11,6 +11,7 @@ import {
   ndcgAtK,
   precisionAtK,
   recallAtK,
+  runProductRetrievalAblation,
   runProductRetrievalBenchmark,
   runProductRetrievalComparison,
 } from './product-retrieval.benchmark';
@@ -1153,6 +1154,112 @@ describe('retrieval benchmark cases and metrics', () => {
         'Group Coverage': 1,
       }),
     );
+  });
+
+  it('runs ablation variants in exact order with identical case IDs and qrels coverage', async () => {
+    const calls: Array<{ query: string; ablationVariant: string }> = [];
+    const retriever = {
+      search: jest.fn().mockImplementation(async (query: string, options) => {
+        calls.push({ query, ablationVariant: options.ablationVariant });
+        if (query === 'máy mạnh giá tốt') {
+          return {
+            clarification: { needed: true, reason: 'missing_budget' },
+            results: [],
+          };
+        }
+        return {
+          results: [
+            candidate('ai-laptop', {
+              name: 'RTX Laptop AI',
+              category: 'laptop',
+              categoryPath: ['Laptop'],
+            }),
+          ].map((item) => ({ ...item, rerankScore: 7, reasons: [] })),
+        };
+      }),
+    };
+    const cases = [
+      {
+        id: 'case-ranked',
+        query: 'laptop học AI',
+        group: 'need_based' as const,
+        expectedCategories: ['laptop'],
+        expectedProductIds: ['ai-laptop'],
+      },
+      {
+        id: 'case-clarify',
+        query: 'máy mạnh giá tốt',
+        group: 'ambiguous' as const,
+        expectedCategories: ['laptop'],
+        expectedClarification: true,
+      },
+    ];
+
+    const report = await runProductRetrievalAblation(
+      retriever as unknown as ProductRetriever,
+      cases,
+      { rewriteTimeoutMs: 2500 },
+    );
+
+    expect(report).toEqual(
+      expect.objectContaining({
+        benchmarkReport: true,
+        ablationReport: true,
+        secretKeysLogged: false,
+        variantOrder: [
+          'dense_vector_only',
+          'hybrid_no_rerank',
+          'hybrid_rerank_no_expansion',
+          'hybrid_rerank_expansion',
+          'hybrid_rerank_rewrite',
+          'phase_10_full',
+        ],
+        qrelsCoverage: {
+          totalCases: 2,
+          manual_binary_qrels: 0,
+          expected_product_ids: 1,
+          expected_clarification: 1,
+          category_corpus: 0,
+          nonAmbiguousUnlabeled: 0,
+        },
+      }),
+    );
+    expect(calls.map((call) => call.ablationVariant)).toEqual([
+      'dense_vector_only',
+      'dense_vector_only',
+      'hybrid_no_rerank',
+      'hybrid_no_rerank',
+      'hybrid_rerank_no_expansion',
+      'hybrid_rerank_no_expansion',
+      'hybrid_rerank_expansion',
+      'hybrid_rerank_expansion',
+      'hybrid_rerank_rewrite',
+      'hybrid_rerank_rewrite',
+      'phase_10_full',
+      'phase_10_full',
+    ]);
+    for (const variant of report.variantOrder) {
+      expect(report.variants[variant].results.map((result) => result.caseId)).toEqual([
+        'case-ranked',
+        'case-clarify',
+      ]);
+      expect(Object.keys(report.variants[variant].summary)).toEqual([
+        'Recall@10',
+        'Precision@5',
+        'MRR',
+        'nDCG@10',
+        'Failure Rate',
+        'Clarification Rate',
+        'Group Coverage',
+      ]);
+    }
+    expect(Object.keys(report.componentImpact)).toEqual([
+      'hybrid',
+      'reranking',
+      'query_expansion',
+      'query_rewrite',
+      'full_pipeline',
+    ]);
   });
 });
 

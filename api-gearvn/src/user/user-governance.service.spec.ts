@@ -31,6 +31,7 @@ describe('UserService account governance', () => {
     userModel.findById = jest.fn();
     userModel.findByIdAndUpdate = jest.fn();
     userModel.findByIdAndDelete = jest.fn();
+    userModel.deleteOne = jest.fn();
     userModel.find = jest.fn();
     userModel.findOne = jest.fn();
     userModel.countDocuments = jest.fn();
@@ -127,6 +128,22 @@ describe('UserService account governance', () => {
       { fullName: 'Updated Customer' },
       { new: true, runValidators: true },
     );
+  });
+
+  it('deletes only a matching just-created unverified customer during registration rollback', async () => {
+    userModel.deleteOne.mockResolvedValue({ deletedCount: 1 });
+
+    await service.deleteJustCreatedUnverifiedCustomer(
+      'customer-id',
+      'customer@example.com',
+    );
+
+    expect(userModel.deleteOne).toHaveBeenCalledWith({
+      _id: 'customer-id',
+      email: 'customer@example.com',
+      role: UserRole.CUSTOMER,
+      status: AccountStatus.UNVERIFIED,
+    });
   });
 
   it('lists customers, managers, and business staff for Admin account governance', async () => {

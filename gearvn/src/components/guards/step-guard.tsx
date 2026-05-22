@@ -23,7 +23,10 @@ export const StepGuard = ({ children }: Props) => {
     } else if (step === "cart" || step === "order-info" || step === "payment") {
       setStep(step);
     }
-    if (status === "success") clearCart();
+
+    if (status === "success" && !searchParams.has("vnpResponseCode")) {
+      clearCart();
+    }
   }, [searchParams, setStep, clearCart]);
 
   return <>{children}</>;

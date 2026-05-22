@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as Handlebars from 'handlebars';
 
 import { Resend } from 'resend';
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 
 import { User } from 'src/user/user.schema';
 
@@ -16,11 +16,22 @@ export class MailService {
   }
 
   private compileTemplate(templateName: string, context: any): string {
-    const templatePath = path.join(
-      __dirname,
-      'templates',
-      `${templateName}.hbs`,
+    const templateFile = `${templateName}.hbs`;
+    const candidates = [
+      path.join(__dirname, 'templates', templateFile),
+      path.join(process.cwd(), 'src', 'mail', 'templates', templateFile),
+      path.join(process.cwd(), 'dist', 'mail', 'templates', templateFile),
+    ];
+    const templatePath = candidates.find((candidate) =>
+      fs.existsSync(candidate),
     );
+
+    if (!templatePath) {
+      throw new InternalServerErrorException(
+        `Mail template "${templateName}" was not found in expected runtime paths`,
+      );
+    }
+
     const templateSource = fs.readFileSync(templatePath, 'utf8');
     const template = Handlebars.compile(templateSource);
     return template(context);

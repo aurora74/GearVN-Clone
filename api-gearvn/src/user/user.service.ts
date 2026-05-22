@@ -335,6 +335,15 @@ export class UserService {
     return this.userModel.findByIdAndDelete(userId);
   }
 
+  deleteJustCreatedUnverifiedCustomer(userId: string, email: string) {
+    return this.userModel.deleteOne({
+      _id: userId,
+      email,
+      role: UserRole.CUSTOMER,
+      status: AccountStatus.UNVERIFIED,
+    });
+  }
+
   async governAccountDeletion(
     actor: AccountGovernanceActor,
     userId: string,

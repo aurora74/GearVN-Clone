@@ -2,6 +2,7 @@ import { ProductRetriever } from './product-retriever';
 import {
   BenchmarkCase,
   ProductBenchmarkLabelSource,
+  ProductRetrievalAblationVariant,
   ProductRetrievalConstraints,
   ProductRetrievalPipelineMode,
   ProductRetrievalResult,
@@ -99,6 +100,38 @@ export type ProductRetrievalComparisonReport = {
   secretKeysLogged: false;
 };
 
+export const PRODUCT_RETRIEVAL_ABLATION_VARIANT_ORDER = [
+  'dense_vector_only',
+  'hybrid_no_rerank',
+  'hybrid_rerank_no_expansion',
+  'hybrid_rerank_expansion',
+  'hybrid_rerank_rewrite',
+  'phase_10_full',
+] as const satisfies readonly ProductRetrievalAblationVariant[];
+
+export type ProductRetrievalComponentImpact = Record<
+  | 'hybrid'
+  | 'reranking'
+  | 'query_expansion'
+  | 'query_rewrite'
+  | 'full_pipeline',
+  ProductRetrievalBenchmarkSummary
+>;
+
+export type ProductRetrievalAblationReport = {
+  benchmarkReport: true;
+  ablationReport: true;
+  variants: Record<ProductRetrievalAblationVariant, ProductRetrievalBenchmarkReport>;
+  variantOrder: ProductRetrievalAblationVariant[];
+  deltasFromDense: Record<
+    ProductRetrievalAblationVariant,
+    ProductRetrievalBenchmarkSummary
+  >;
+  componentImpact: ProductRetrievalComponentImpact;
+  qrelsCoverage: QrelsCoverage;
+  secretKeysLogged: false;
+};
+
 export function recallAtK(
   rankedIds: string[],
   relevantIds: Set<string>,
@@ -183,6 +216,7 @@ type ProductRetrievalBenchmarkOptions = {
   topK?: number;
   relevanceCorpus?: ProductSearchPayload[];
   pipeline?: ProductRetrievalPipelineMode;
+  ablationVariant?: ProductRetrievalAblationVariant;
   rewriteModel?: string;
   rewriteTimeoutMs?: number;
   allowDeterministicShortCircuit?: boolean;
@@ -193,6 +227,7 @@ type BenchmarkSearchOptions = {
   filters?: ProductRetrievalConstraints;
   hardConstraints?: ProductRetrievalConstraints;
   pipeline?: ProductRetrievalPipelineMode;
+  ablationVariant?: ProductRetrievalAblationVariant;
   rewriteContext?: ProductQueryRewriteContext;
 };
 export async function runProductRetrievalBenchmark(
@@ -209,12 +244,17 @@ export async function runProductRetrievalBenchmark(
     const searchOptions: BenchmarkSearchOptions = {
       topK,
       pipeline: options.pipeline,
+      ablationVariant: options.ablationVariant,
     };
     if (benchmarkCase.hardConstraints) {
       searchOptions.filters = benchmarkCase.hardConstraints;
       searchOptions.hardConstraints = benchmarkCase.hardConstraints;
     }
-    if (options.pipeline === 'phase-10-improved') {
+    if (
+      options.pipeline === 'phase-10-improved' ||
+      options.ablationVariant === 'hybrid_rerank_rewrite' ||
+      options.ablationVariant === 'phase_10_full'
+    ) {
       searchOptions.rewriteContext = {
         query: benchmarkCase.query,
         originalQuery: benchmarkCase.query,
@@ -330,6 +370,64 @@ export async function runProductRetrievalBenchmark(
     },
     results,
     qrelsCoverage: buildQrelsCoverage(cases),
+  };
+}
+
+export async function runProductRetrievalAblation(
+  retriever: ProductRetriever,
+  cases: BenchmarkCase[] = productRetrievalBenchmarkCases,
+  options: ProductRetrievalBenchmarkOptions = {},
+): Promise<ProductRetrievalAblationReport> {
+  const variants = {} as Record<
+    ProductRetrievalAblationVariant,
+    ProductRetrievalBenchmarkReport
+  >;
+
+  for (const variant of PRODUCT_RETRIEVAL_ABLATION_VARIANT_ORDER) {
+    variants[variant] = await runProductRetrievalBenchmark(retriever, cases, {
+      ...options,
+      ablationVariant: variant,
+    });
+  }
+
+  const dense = variants.dense_vector_only.summary;
+  const deltasFromDense = Object.fromEntries(
+    PRODUCT_RETRIEVAL_ABLATION_VARIANT_ORDER.map((variant) => [
+      variant,
+      buildSummaryDeltas(dense, variants[variant].summary),
+    ]),
+  ) as Record<ProductRetrievalAblationVariant, ProductRetrievalBenchmarkSummary>;
+
+  return {
+    benchmarkReport: true,
+    ablationReport: true,
+    variants,
+    variantOrder: [...PRODUCT_RETRIEVAL_ABLATION_VARIANT_ORDER],
+    deltasFromDense,
+    componentImpact: {
+      hybrid: buildSummaryDeltas(
+        variants.dense_vector_only.summary,
+        variants.hybrid_no_rerank.summary,
+      ),
+      reranking: buildSummaryDeltas(
+        variants.hybrid_no_rerank.summary,
+        variants.hybrid_rerank_no_expansion.summary,
+      ),
+      query_expansion: buildSummaryDeltas(
+        variants.hybrid_rerank_no_expansion.summary,
+        variants.hybrid_rerank_expansion.summary,
+      ),
+      query_rewrite: buildSummaryDeltas(
+        variants.hybrid_rerank_expansion.summary,
+        variants.hybrid_rerank_rewrite.summary,
+      ),
+      full_pipeline: buildSummaryDeltas(
+        variants.hybrid_rerank_rewrite.summary,
+        variants.phase_10_full.summary,
+      ),
+    },
+    qrelsCoverage: buildQrelsCoverage(cases),
+    secretKeysLogged: false,
   };
 }
 

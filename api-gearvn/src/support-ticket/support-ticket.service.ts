@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 
 import { SUPPORT_TICKET_SOURCE, SUPPORT_TICKET_STATUS } from '../config.global';
 import { Permission, roleHasPermission } from '../auth/policy/permissions';
@@ -77,6 +77,65 @@ export class SupportTicketService {
     }
   }
 
+  private getStorableCustomerId(customerId?: string) {
+    return customerId && Types.ObjectId.isValid(customerId) ? customerId : undefined;
+  }
+
+  private getCustomerMetadata(
+    customerId?: string,
+    metadata: Record<string, any> = {},
+  ) {
+    if (!customerId || Types.ObjectId.isValid(customerId)) return metadata;
+
+    return {
+      ...metadata,
+      rawCustomerId: customerId,
+    };
+  }
+
+  private customerLookupPipeline() {
+    return [
+      {
+        $addFields: {
+          customerIdObj: {
+            $convert: {
+              input: '$customerId',
+              to: 'objectId',
+              onError: null,
+              onNull: null,
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'customerIdObj',
+          foreignField: '_id',
+          as: 'customer',
+        },
+      },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          customerId: {
+            $cond: [
+              { $ifNull: ['$customer._id', false] },
+              {
+                _id: '$customer._id',
+                fullName: '$customer.fullName',
+                email: '$customer.email',
+                avatarUrl: '$customer.avatarUrl',
+              },
+              { $ifNull: ['$customerId', '$metadata.rawCustomerId'] },
+            ],
+          },
+        },
+      },
+      { $project: { customer: 0, customerIdObj: 0 } },
+    ];
+  }
+
   async createForProductQuestion(
     input: CreateProductQuestionTicketInput,
     options: CreateProductQuestionTicketOptions = {},
@@ -99,15 +158,15 @@ export class SupportTicketService {
       ticketCode: this.generateTicketCode(),
       sourceType: SUPPORT_TICKET_SOURCE.PRODUCT_QNA,
       sourceId: input.questionId,
-      customerId: input.customerId,
+      customerId: this.getStorableCustomerId(input.customerId),
       contextLabel: input.contextLabel,
       status: SUPPORT_TICKET_STATUS.NEW,
       latestActivityAt: new Date(),
       resolvedAt: null,
-      metadata: {
+      metadata: this.getCustomerMetadata(input.customerId, {
         productId: input.productId,
         productSlug: input.productSlug,
-      },
+      }),
     });
 
     await ticket.save({ session: options.session });
@@ -125,15 +184,15 @@ export class SupportTicketService {
     if (existing) {
       existing.status = SUPPORT_TICKET_STATUS.NEW;
       existing.sourceId = existing.sourceId || chatSourceId;
-      existing.customerId = input.customerId;
+      existing.customerId = this.getStorableCustomerId(input.customerId);
       existing.contextLabel = input.contextLabel;
       existing.latestActivityAt = new Date();
       existing.resolvedAt = null;
-      existing.metadata = {
+      existing.metadata = this.getCustomerMetadata(input.customerId, {
         ...(existing.metadata ?? {}),
         ...(input.metadata ?? {}),
         latestMessageId: input.latestMessageId,
-      };
+      });
       await existing.save();
       return existing;
     }
@@ -143,15 +202,15 @@ export class SupportTicketService {
       sourceType: SUPPORT_TICKET_SOURCE.CHAT,
       sourceId: chatSourceId,
       roomId: input.roomId,
-      customerId: input.customerId,
+      customerId: this.getStorableCustomerId(input.customerId),
       contextLabel: input.contextLabel,
       status: SUPPORT_TICKET_STATUS.NEW,
       latestActivityAt: new Date(),
       resolvedAt: null,
-      metadata: {
+      metadata: this.getCustomerMetadata(input.customerId, {
         ...(input.metadata ?? {}),
         latestMessageId: input.latestMessageId,
-      },
+      }),
     });
 
     await ticket.save();
@@ -168,13 +227,14 @@ export class SupportTicketService {
       filter.status = status;
     }
 
-    const query = this.supportTicketModel
-      .find(filter)
-      .populate({ path: 'customerId', select: 'fullName email avatarUrl' })
-      .sort({ latestActivityAt: -1 });
-
     const [data, total] = await Promise.all([
-      query.skip((pageNumber - 1) * limitNumber).limit(limitNumber).exec(),
+      this.supportTicketModel.aggregate([
+        { $match: filter },
+        { $sort: { latestActivityAt: -1 } },
+        { $skip: (pageNumber - 1) * limitNumber },
+        { $limit: limitNumber },
+        ...this.customerLookupPipeline(),
+      ]),
       this.supportTicketModel.countDocuments(filter),
     ]);
 
@@ -188,18 +248,32 @@ export class SupportTicketService {
   }
 
   async findOne(ticketId: string) {
-    const ticket = await this.supportTicketModel
-      .findById(ticketId)
-      .populate({ path: 'customerId', select: 'fullName email avatarUrl' });
+    if (!Types.ObjectId.isValid(ticketId)) {
+      throw new NotFoundException('Support ticket not found');
+    }
+
+    const [ticket] = await this.supportTicketModel.aggregate([
+      { $match: { _id: new Types.ObjectId(ticketId) } },
+      ...this.customerLookupPipeline(),
+    ]);
 
     if (!ticket) {
       throw new NotFoundException('Support ticket not found');
     }
 
     if (ticket.status === SUPPORT_TICKET_STATUS.NEW) {
+      const latestActivityAt = new Date();
       ticket.status = SUPPORT_TICKET_STATUS.PROCESSING;
-      ticket.latestActivityAt = new Date();
-      await ticket.save();
+      ticket.latestActivityAt = latestActivityAt;
+      await this.supportTicketModel.updateOne(
+        { _id: new Types.ObjectId(ticketId) },
+        {
+          $set: {
+            status: SUPPORT_TICKET_STATUS.PROCESSING,
+            latestActivityAt,
+          },
+        },
+      );
     }
 
     return ticket;

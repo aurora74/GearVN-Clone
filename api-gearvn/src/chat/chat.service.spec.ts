@@ -123,6 +123,32 @@ describe('ChatService', () => {
     );
   });
 
+  it('uses safe conversion in latest-per-user aggregation and keeps raw synthetic users', async () => {
+    chatModel.aggregate
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([
+        {
+          _id: new Types.ObjectId(),
+          userId: {
+            _id: 'debug-livestream-1778926079006-customer',
+            fullName: 'Ẩn danh',
+            avatarUrl: null,
+          },
+        },
+      ]);
+
+    const result = await service.findLatestPerUser({
+      actor: { id: 'csr-1', role: UserRole.CSR },
+    });
+    const pipeline = JSON.stringify(chatModel.aggregate.mock.calls[0][0]);
+
+    expect(pipeline).toContain('"$convert"');
+    expect(pipeline).not.toContain('"$toObjectId"');
+    expect(result.data[0].userId._id).toBe(
+      'debug-livestream-1778926079006-customer',
+    );
+  });
+
   it('validates image uploads before Cloudinary upload side effects', async () => {
     await expect(
       service.uploadFiles([

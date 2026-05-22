@@ -5,11 +5,24 @@ import { UserRole } from '../auth/enums/user-role.enum';
 import { BlogCommentService } from './blog-comment.service';
 
 const createCommentModel = () => {
-  const model: any = jest.fn().mockImplementation((data) => ({
-    ...data,
-    _id: new Types.ObjectId(),
-    save: jest.fn().mockResolvedValue(undefined),
-  }));
+  const model: any = jest.fn().mockImplementation((data) => {
+    const comment = {
+      ...data,
+      _id: new Types.ObjectId(),
+      save: jest.fn().mockResolvedValue(undefined),
+      populate: jest.fn().mockImplementation(async () => {
+        comment.authorId = {
+          _id: data.authorId,
+          fullName: 'Nguyen Van A',
+          email: 'customer@example.com',
+          avatarUrl: 'https://cdn.test/avatar.png',
+        };
+        return comment;
+      }),
+    };
+
+    return comment;
+  });
 
   model.find = jest.fn();
   model.findById = jest.fn();
@@ -76,10 +89,15 @@ describe('BlogCommentService', () => {
       expect.objectContaining({
         blogId,
         authorId: actor.id,
+        author: expect.objectContaining({ displayName: actor.fullName }),
         content: 'Bai viet huu ich qua.',
         status: 'visible',
       }),
     );
+    expect(commentModel.mock.results[0].value.populate).toHaveBeenCalledWith({
+      path: 'authorId',
+      select: 'fullName email avatarUrl',
+    });
     expect(result).not.toHaveProperty('ticketId');
     expect(supportTicketService.createForProductQuestion).not.toHaveBeenCalled();
   });

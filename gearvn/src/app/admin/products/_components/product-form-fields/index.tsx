@@ -3,7 +3,10 @@ import { UseFormReturn } from "react-hook-form";
 
 import { FormType } from "../product-schema";
 import { CategoryType } from "@/types/category";
-import { useCategories } from "@/react-query/query/category";
+import {
+  useCategories,
+  adminProductCategorySelectParams,
+} from "@/react-query/query/category";
 
 import {
   Form,
@@ -36,7 +39,9 @@ export const ProductFormFields = ({
   canManageStock,
   isEdit = false,
 }: ProductFormFieldsProps) => {
-  const { data: categories, isPending: isPendingCategory } = useCategories();
+  const { data: categories, isPending: isPendingCategory } = useCategories(
+    adminProductCategorySelectParams
+  );
 
   const category = form.watch("category");
 

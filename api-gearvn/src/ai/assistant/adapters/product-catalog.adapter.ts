@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
 import { Product, ProductDocument } from '../../../product/product.schema';
+import { Event, EventDocument } from '../../../event/event.schema';
+import { getFlashSaleStatus } from '../../../event/helper/flash-sale-status';
 import { ProductRetriever } from '../../retrieval/product-retriever';
 import {
   extractHardConstraints,
@@ -29,9 +31,17 @@ export type ProductCatalogSnapshot = {
   searchMetadata?: Record<string, unknown>;
   isPublished?: boolean;
   isArchived?: boolean;
+  event?: string;
 };
 
 type CatalogProductRecord = ProductCatalogSnapshot & { _id: unknown };
+type CatalogEventRecord = {
+  tag?: string;
+  startsAt?: Date | string;
+  endsAt?: Date | string;
+  isEnabled?: boolean;
+  isArchived?: boolean;
+};
 type CatalogProductDetailRecord = CatalogProductRecord & {
   description?: string;
   comments?: Array<Record<string, unknown>>;
@@ -39,14 +49,19 @@ type CatalogProductDetailRecord = CatalogProductRecord & {
   ratingsCount?: number;
 };
 
+const PRODUCT_LIST_PROJECTION =
+  '_id name slug images price discountPrice stock category attributes searchMetadata isPublished isArchived event';
 const PRODUCT_DETAIL_PROJECTION =
-  '_id name slug price discountPrice stock category description attributes searchMetadata comments averageRating ratingsCount';
+  '_id name slug price discountPrice stock category description attributes searchMetadata comments averageRating ratingsCount isPublished isArchived event';
 @Injectable()
 export class ProductCatalogAdapter {
   constructor(
     public readonly productRetriever: ProductRetriever,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    @Optional()
+    @InjectModel(Event.name)
+    private readonly eventModel?: Model<EventDocument>,
   ) {}
 
   async searchProductsFast(
@@ -59,15 +74,19 @@ export class ProductCatalogAdapter {
     const terms = fastCatalogTerms(normalizedQuery);
     const products = await this.productModel
       .find(fastCatalogFilter(query, constraints))
-      .select(
-        '_id name slug images price discountPrice stock category attributes searchMetadata isPublished isArchived',
-      )
+      .select(PRODUCT_LIST_PROJECTION)
       .limit(Math.max(topK * 10, 50))
       .lean()
       .exec();
+    const eventsByTag = await this.getEventsByTag(
+      products.map((product) => (product as { event?: string }).event),
+    );
     const results: RerankedProductCandidate[] = products
       .map((product) => {
-        const record = product as unknown as CatalogProductRecord;
+        const record = normalizePromotionSnapshot(
+          product as unknown as CatalogProductRecord,
+          eventsByTag,
+        );
         return {
           product: record,
           score: scoreFastCatalogProduct(
@@ -117,16 +136,20 @@ export class ProductCatalogAdapter {
 
     const products = await this.productModel
       .find(visibleProductFilter({ _id: { $in: ids } }))
-      .select(
-        '_id name slug images price discountPrice stock category attributes searchMetadata isPublished isArchived',
-      )
+      .select(PRODUCT_LIST_PROJECTION)
       .lean()
       .exec();
+    const eventsByTag = await this.getEventsByTag(
+      products.map((product) => (product as { event?: string }).event),
+    );
 
     const byId = new Map<string, ProductCatalogSnapshot>(
       products.map((product) => {
         const snapshot = toCatalogSnapshot(
-          product as unknown as CatalogProductRecord,
+          normalizePromotionSnapshot(
+            product as unknown as CatalogProductRecord,
+            eventsByTag,
+          ),
         );
         return [snapshot.productId, snapshot] as const;
       }),
@@ -150,8 +173,18 @@ export class ProductCatalogAdapter {
       .lean()
       .exec();
 
+    if (!product) return null;
+    const eventsByTag = await this.getEventsByTag([
+      (product as { event?: string }).event,
+    ]);
+
     return product
-      ? toProductDetail(product as unknown as CatalogProductDetailRecord)
+      ? toProductDetail(
+          normalizePromotionSnapshot(
+            product as unknown as CatalogProductDetailRecord,
+            eventsByTag,
+          ) as CatalogProductDetailRecord,
+        )
       : null;
   }
 
@@ -183,8 +216,40 @@ export class ProductCatalogAdapter {
       .lean()
       .exec();
 
+    const eventsByTag = await this.getEventsByTag(
+      products.map((product) => (product as { event?: string }).event),
+    );
+
     return products.map((product) =>
-      toProductDetail(product as unknown as CatalogProductDetailRecord),
+      toProductDetail(
+        normalizePromotionSnapshot(
+          product as unknown as CatalogProductDetailRecord,
+          eventsByTag,
+        ) as CatalogProductDetailRecord,
+      ),
+    );
+  }
+
+  private async getEventsByTag(
+    tags: Array<string | undefined>,
+  ): Promise<Map<string, CatalogEventRecord>> {
+    if (!this.eventModel) return new Map();
+    const uniqueTags = Array.from(
+      new Set(tags.map((tag) => tag?.trim()).filter(Boolean) as string[]),
+    );
+    if (uniqueTags.length === 0) return new Map();
+
+    const events = await this.eventModel
+      .find({ tag: { $in: uniqueTags }, isArchived: { $ne: true } })
+      .select('tag startsAt endsAt isEnabled isArchived')
+      .lean()
+      .exec();
+
+    return new Map(
+      events
+        .map((event) => event as unknown as CatalogEventRecord)
+        .filter((event) => event.tag)
+        .map((event) => [String(event.tag), event] as const),
     );
   }
 }
@@ -205,7 +270,11 @@ export function orderedProductIds(
 function toCatalogSnapshot(
   product: CatalogProductRecord,
 ): ProductCatalogSnapshot {
-  const images = Array.isArray(product.images) ? product.images : [];
+  const images = Array.isArray(product.images)
+    ? product.images.filter((image): image is string =>
+        typeof image === 'string' && image.trim().length > 0,
+      )
+    : [];
 
   return {
     productId: String(product._id),
@@ -221,6 +290,7 @@ function toCatalogSnapshot(
     searchMetadata: product.searchMetadata,
     isPublished: product.isPublished,
     isArchived: product.isArchived,
+    event: product.event,
   };
 }
 
@@ -243,6 +313,29 @@ function toProductDetail(
     reviewSignals: buildReviewSignals(product.comments),
     specsSummary: asString(product.searchMetadata?.specsSummary),
   };
+}
+
+function normalizePromotionSnapshot<T extends CatalogProductRecord>(
+  product: T,
+  eventsByTag: Map<string, CatalogEventRecord>,
+): T {
+  if (hasActivePromotion(product, eventsByTag)) return product;
+  return { ...product, discountPrice: undefined };
+}
+
+function hasActivePromotion(
+  product: CatalogProductRecord,
+  eventsByTag: Map<string, CatalogEventRecord>,
+): boolean {
+  const eventTag = product.event?.trim();
+  if (!eventTag) return false;
+  const event = eventsByTag.get(eventTag);
+  if (!event || event.isArchived === true) return false;
+  if (getFlashSaleStatus(event) !== 'active') return false;
+  if (product.isPublished === false || product.isArchived === true) return false;
+  if (Number(product.stock ?? 0) <= 0) return false;
+  const discountPrice = Number(product.discountPrice ?? 0);
+  return Number.isFinite(discountPrice) && discountPrice > 0;
 }
 
 function visibleProductFilter(extra: Record<string, unknown>) {

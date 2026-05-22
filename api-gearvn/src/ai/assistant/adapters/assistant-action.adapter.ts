@@ -3,6 +3,8 @@ import { Injectable, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 
+import { Event, EventDocument } from '../../../event/event.schema';
+import { getFlashSaleStatus } from '../../../event/helper/flash-sale-status';
 import { Product, ProductDocument } from '../../../product/product.schema';
 import { ProductService } from '../../../product/product.service';
 import { AssistantSessionService } from '../assistant-session.service';
@@ -21,9 +23,13 @@ export interface AssistantProductSnapshot {
   slug?: string;
   name: string;
   price?: number;
+  discountPrice?: number;
+  image?: string;
+  images?: string[];
   stock?: number;
   isPublished?: boolean;
   isArchived?: boolean;
+  event?: string;
 }
 
 export interface AssistantActionDraftInput {
@@ -64,6 +70,9 @@ export class AssistantActionAdapter {
     @Optional()
     @InjectModel(Product.name)
     private readonly productModel?: Model<ProductDocument>,
+    @Optional()
+    @InjectModel(Event.name)
+    private readonly eventModel?: Model<EventDocument>,
   ) {}
 
   async findProductSnapshot(
@@ -77,7 +86,10 @@ export class AssistantActionAdapter {
       : await this.findProductByModel(productId);
     if (!product) return null;
 
-    return normalizeProductSnapshot(product);
+    return normalizeProductSnapshot(
+      product,
+      await this.findActiveEventByTag(getProductEvent(product)),
+    );
   }
 
   async createDraft(
@@ -135,7 +147,31 @@ export class AssistantActionAdapter {
   private async findProductByModel(productId: string) {
     if (!this.productModel) return null;
     try {
-      return this.productModel.findById(productId).lean().exec();
+      return this.productModel
+        .findById(productId)
+        .select(
+          '_id id slug name images price discountPrice stock isPublished isArchived event',
+        )
+        .lean()
+        .exec();
+    } catch {
+      return null;
+    }
+  }
+
+  private async findActiveEventByTag(
+    tag?: string,
+  ): Promise<Record<string, unknown> | null> {
+    const normalizedTag = tag?.trim();
+    if (!normalizedTag || !this.eventModel) return null;
+    try {
+      const event = await this.eventModel
+        .findOne({ tag: normalizedTag, isArchived: { $ne: true } })
+        .select('tag startsAt endsAt isEnabled isArchived')
+        .lean()
+        .exec();
+      if (!event || getFlashSaleStatus(event) !== 'active') return null;
+      return event as Record<string, unknown>;
     } catch {
       return null;
     }
@@ -175,17 +211,46 @@ function hasCheckoutFields(checkout?: AssistantCheckoutFields): boolean {
   );
 }
 
-function normalizeProductSnapshot(product: any): AssistantProductSnapshot {
+function normalizeProductSnapshot(
+  product: any,
+  activeEvent: Record<string, unknown> | null,
+): AssistantProductSnapshot {
   const base = typeof product?.toObject === 'function' ? product.toObject() : product;
+  const price = asNumber(base?.price);
+  const discountPrice = activeEvent ? asPositiveNumber(base?.discountPrice) : undefined;
+  const images = Array.isArray(base?.images)
+    ? base.images.filter((image: unknown): image is string =>
+        typeof image === 'string' && image.trim().length > 0,
+      )
+    : [];
   return {
     id: String(base?._id ?? base?.id),
     slug: base?.slug,
     name: String(base?.name ?? ''),
-    price: Number(base?.price ?? base?.discountPrice ?? 0),
-    stock: Number(base?.stock ?? 0),
+    price,
+    discountPrice,
+    image: images[0],
+    images,
+    stock: asNumber(base?.stock) ?? 0,
     isPublished: base?.isPublished,
     isArchived: base?.isArchived,
+    event: base?.event,
   };
+}
+
+function getProductEvent(product: any): string | undefined {
+  const base = typeof product?.toObject === 'function' ? product.toObject() : product;
+  return typeof base?.event === 'string' ? base.event : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function asPositiveNumber(value: unknown): number | undefined {
+  const number = asNumber(value);
+  return number !== undefined && number > 0 ? number : undefined;
 }
 
 async function callMaybe(target: any, method: string, ...args: unknown[]) {

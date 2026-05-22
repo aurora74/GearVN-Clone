@@ -1,5 +1,6 @@
 import { ProductRetriever } from './product-retriever';
 import {
+  ProductRetrievalAblationVariant,
   ProductRetrievalPipelineMode,
   ProductRetrievalResult,
 } from './product-retrieval.types';
@@ -28,6 +29,26 @@ describe('ProductRetriever Phase 10 contracts', () => {
     ];
 
     expect(modes).toEqual(['phase-09.2-baseline', 'phase-10-improved']);
+  });
+
+  it('exposes benchmark-only ablation variant literals', () => {
+    const variants: ProductRetrievalAblationVariant[] = [
+      'dense_vector_only',
+      'hybrid_no_rerank',
+      'hybrid_rerank_no_expansion',
+      'hybrid_rerank_expansion',
+      'hybrid_rerank_rewrite',
+      'phase_10_full',
+    ];
+
+    expect(variants).toEqual([
+      'dense_vector_only',
+      'hybrid_no_rerank',
+      'hybrid_rerank_no_expansion',
+      'hybrid_rerank_expansion',
+      'hybrid_rerank_rewrite',
+      'phase_10_full',
+    ]);
   });
 
   it('allows retrieval results to carry rewrite, clarification, combo, and group coverage metadata', () => {
@@ -123,6 +144,147 @@ describe('ProductRetriever Phase 10 contracts', () => {
     await retriever.search('laptop hoc ai', { topK: 1 });
 
     expect(rewriteService.rewrite).not.toHaveBeenCalled();
+  });
+
+  it('runs dense vector-only ablation without lexical search, rerank, or local expansion', async () => {
+    const embedder = { embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]) };
+    const vector = {
+      queryProducts: jest.fn().mockResolvedValue([
+        {
+          productId: 'lower-score-first',
+          score: 0.1,
+          payload: { ...payload, productId: 'lower-score-first' },
+        },
+        {
+          productId: 'higher-score-second',
+          score: 0.9,
+          payload: { ...payload, productId: 'higher-score-second' },
+        },
+      ]),
+    };
+    const lexical = { search: jest.fn() };
+    const retriever = new ProductRetriever(embedder, vector, lexical);
+
+    const result = await retriever.search('laptop học AI', {
+      topK: 1,
+      ablationVariant: 'dense_vector_only',
+    });
+
+    expect(embedder.embedQuery).toHaveBeenCalledWith('laptop học AI');
+    expect(lexical.search).not.toHaveBeenCalled();
+    expect(result.lexicalCandidates).toEqual([]);
+    expect(result.results.map((item) => item.productId)).toEqual([
+      'lower-score-first',
+    ]);
+    expect(result.results[0]?.reasons).toEqual([
+      expect.objectContaining({ code: 'vector_score' }),
+    ]);
+  });
+
+  it('runs hybrid no-rerank ablation in raw vector then lexical source order', async () => {
+    const retriever = new ProductRetriever(
+      { embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]) },
+      {
+        queryProducts: jest.fn().mockResolvedValue([
+          {
+            productId: 'vector-product',
+            score: 0.2,
+            payload: { ...payload, productId: 'vector-product' },
+          },
+        ]),
+      },
+      {
+        search: jest.fn().mockResolvedValue([
+          {
+            productId: 'lexical-product',
+            score: 0.99,
+            lexicalScore: 0.99,
+            payload: { ...payload, productId: 'lexical-product' },
+          },
+        ]),
+      },
+    );
+
+    const result = await retriever.search('laptop học AI', {
+      topK: 2,
+      ablationVariant: 'hybrid_no_rerank',
+    });
+
+    expect(result.results.map((item) => item.productId)).toEqual([
+      'vector-product',
+      'lexical-product',
+    ]);
+    expect(result.results[1]?.reasons).toEqual([
+      expect.objectContaining({ code: 'bm25_score' }),
+    ]);
+  });
+
+  it('disables combo fan-out for hybrid rewrite ablation while preserving full Phase 10 behavior', async () => {
+    const comboService = {
+      searchCombo: jest.fn().mockResolvedValue({
+        groups: [
+          {
+            id: 'monitor',
+            label: 'Monitor',
+            query: 'monitor setup',
+            results: [],
+          },
+        ],
+        groupCoverage: {
+          expectedGroups: ['monitor'],
+          coveredGroups: [],
+          missingGroups: ['monitor'],
+          coverageRate: 0,
+        },
+      }),
+    };
+    const rewriteService = {
+      rewrite: jest.fn().mockResolvedValue(
+        buildRewrite({
+          rewrittenQuery: 'setup gaming monitor keyboard',
+          comboGroups: ['monitor', 'keyboard'],
+        }),
+      ),
+    };
+    const retriever = new ProductRetriever(
+      { embedQuery: jest.fn().mockResolvedValue([0.3, 0.4]) },
+      {
+        queryProducts: jest.fn().mockResolvedValue([
+          {
+            productId: 'p1',
+            score: 0.95,
+            payload: {
+              ...payload,
+              name: 'Setup gaming monitor keyboard',
+              category: 'monitor',
+              categoryPath: ['Monitor'],
+              semanticTags: ['gaming', 'monitor', 'keyboard'],
+            },
+          },
+        ]),
+      },
+      { search: jest.fn().mockResolvedValue([]) },
+      rewriteService,
+      comboService,
+    );
+
+    const rewriteOnly = await retriever.search('setup gaming', {
+      topK: 1,
+      rewriteContext: { query: 'setup gaming', originalQuery: 'setup gaming' },
+      ablationVariant: 'hybrid_rerank_rewrite',
+    });
+
+    expect(comboService.searchCombo).not.toHaveBeenCalled();
+    expect(rewriteOnly.rewrite?.comboGroups).toEqual([]);
+    expect(rewriteOnly.results).toHaveLength(1);
+
+    await retriever.search('setup gaming', {
+      topK: 1,
+      rewriteContext: { query: 'setup gaming', originalQuery: 'setup gaming' },
+      ablationVariant: 'phase_10_full',
+    });
+
+    expect(comboService.searchCombo).toHaveBeenCalled();
   });
 
   it('calls rewrite service before improved hybrid vector and lexical search', async () => {

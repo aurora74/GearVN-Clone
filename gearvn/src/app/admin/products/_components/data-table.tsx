@@ -10,7 +10,11 @@ import { useQueryState } from "nuqs";
 
 import { USER_ROLE } from "@/config.global";
 import { useMe } from "@/react-query/query/user";
-import { useCategories, useCategoryByName } from "@/react-query/query/category";
+import {
+  useCategories,
+  useCategoryByName,
+  adminProductCategorySelectParams,
+} from "@/react-query/query/category";
 
 import {
   Table,
@@ -41,7 +45,7 @@ export const DataTable = <TData, TValue>({
   pageCount,
 }: DataTableProps<TData, TValue>) => {
   const { data: currentUser } = useMe();
-  const { data: categories } = useCategories();
+  const { data: categories } = useCategories(adminProductCategorySelectParams);
   const canManageCatalog =
     currentUser?.role === USER_ROLE.MANAGER ||
     currentUser?.role === USER_ROLE.PRODUCT_MARKETING_STAFF;

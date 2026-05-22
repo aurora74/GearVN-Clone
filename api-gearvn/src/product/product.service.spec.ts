@@ -620,12 +620,14 @@ describe('ProductService managed listing stock filters', () => {
     countDocuments: jest.Mock;
     find: jest.Mock;
   };
+  let listChain: ReturnType<typeof makeListChain>;
   let service: ProductService;
 
   beforeEach(() => {
+    listChain = makeListChain();
     productModel = {
       countDocuments: jest.fn().mockResolvedValue(0),
-      find: jest.fn().mockReturnValue(makeListChain()),
+      find: jest.fn().mockReturnValue(listChain),
     };
 
     service = new ProductService(
@@ -672,6 +674,38 @@ describe('ProductService managed listing stock filters', () => {
     };
     expect(productModel.find).toHaveBeenCalledWith(expectedFilter);
     expect(productModel.countDocuments).toHaveBeenCalledWith(expectedFilter);
+  });
+
+  it('applies the indexed default sort when no sort is provided', async () => {
+    await service.findAll({
+      page: 1,
+      limit: 20,
+      publicOnly: false,
+    });
+
+    expect(listChain.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+  });
+
+  it('keeps only allowlisted product sort fields', async () => {
+    await service.findAll({
+      page: 1,
+      limit: 20,
+      publicOnly: false,
+      sortBy: '-createdAt,__proto__,name,unknown',
+    });
+
+    expect(listChain.sort).toHaveBeenCalledWith({ createdAt: -1, name: 1 });
+  });
+
+  it('falls back to the default sort when all requested sort fields are unknown', async () => {
+    await service.findAll({
+      page: 1,
+      limit: 20,
+      publicOnly: false,
+      sortBy: 'category,-event',
+    });
+
+    expect(listChain.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
   });
 });
 

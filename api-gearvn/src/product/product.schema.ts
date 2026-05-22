@@ -163,6 +163,20 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 
 ProductSchema.index({ isArchived: 1, isPublished: 1, stock: 1 });
 ProductSchema.index({ isArchived: 1, soldQuantity: -1 });
+ProductSchema.index({ createdAt: -1, _id: -1 });
+ProductSchema.index({
+  isArchived: 1,
+  isPublished: 1,
+  createdAt: -1,
+  _id: -1,
+});
+ProductSchema.index({
+  isArchived: 1,
+  isPublished: 1,
+  category: 1,
+  createdAt: -1,
+  _id: -1,
+});
 ProductSchema.index({ 'searchMetadata.sourceSku': 1 }, { sparse: true });
 ProductSchema.index({ 'searchMetadata.sourceUrlKey': 1 }, { sparse: true });
 ProductSchema.index({ 'searchMetadata.normalizedName': 1 }, { sparse: true });
