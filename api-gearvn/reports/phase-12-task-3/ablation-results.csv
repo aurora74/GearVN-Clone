@@ -1,0 +1,481 @@
+variant,caseId,query,group,labelSource,relevantSetSize,recallAt10,precisionAt5,mrr,ndcgAt10,relevantFound,clarified,groupCoverage,rewriteStatus,rewriteLatencyMs,failureNotes
+dense_vector_only,keyword-iphone,iPhone,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai"
+dense_vector_only,keyword-macbook,MacBook,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,keyword-rtx-laptop,RTX laptop,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,keyword-dell-monitor,màn hình Dell,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+dense_vector_only,need-ai-laptop,laptop học AI,need_based,manual_binary_qrels,3,0.3333,0.2,0.25,0.2021,true,false,0,,,
+dense_vector_only,need-graphics,máy làm đồ họa,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, desktop, pc"
+dense_vector_only,need-home-office,setup góc làm việc tại nhà,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam"
+dense_vector_only,need-eye-comfort,màn hình đỡ mỏi mắt,need_based,manual_binary_qrels,3,1,0.4,0.3333,0.5642,true,false,0,,,
+dense_vector_only,gift-gamer-boyfriend,mua quà cho bạn trai thích chơi game,gift,manual_binary_qrels,3,0.3333,0,0.125,0.148,true,false,0,,,
+dense_vector_only,gift-it-student,quà cho sinh viên IT,gift,manual_binary_qrels,3,1,0.4,0.5,0.6189,true,false,0,,,
+dense_vector_only,gift-office-worker,quà cho dân văn phòng,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: keyboard, mouse, monitor, man-hinh, phu-kien"
+dense_vector_only,gift-new-streamer,quà cho người mới livestream,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, lighting, den-led, headset, phu-kien"
+dense_vector_only,technical-ai-laptop-specs,laptop RAM 16GB SSD 512GB GPU NVIDIA,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,technical-monitor-144hz,màn hình 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+dense_vector_only,technical-wireless-keyboard,bàn phím cơ wireless,technical,expected_product_ids,3,0.6667,0,0.125,0.2837,true,false,0,,,
+dense_vector_only,technical-stock-budget-laptop,laptop dưới 25 triệu còn hàng,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,combo-livestream,góc livestream,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, lighting, den-led, monitor, man-hinh, phu-kien"
+dense_vector_only,combo-home-work-kit,bộ làm việc tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam, phu-kien"
+dense_vector_only,combo-teacher-home-office,combo dạy học online tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, monitor, man-hinh, webcam, microphone, micro, keyboard, mouse"
+dense_vector_only,combo-online-learning,setup học online cho sinh viên,combo,manual_binary_qrels,3,0.3333,0,0.1667,0.1672,true,false,0,,,
+dense_vector_only,ambiguous-strong-value,máy mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+dense_vector_only,ambiguous-study-machine,máy để học,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+dense_vector_only,ambiguous-good-laptop,laptop tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+dense_vector_only,ambiguous-essential-accessories,phụ kiện cần thiết,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+dense_vector_only,keyword-iphone-16,iPhone 16,keyword,expected_product_ids,3,1,0.4,1,0.8278,true,false,0,,,
+dense_vector_only,keyword-samsung,Samsung,keyword,expected_product_ids,3,0.6667,0.4,0.5,0.5307,true,false,0,,,
+dense_vector_only,keyword-ipad,iPad,keyword,expected_product_ids,3,1,0.4,1,0.8385,true,false,0,,,
+dense_vector_only,keyword-apple-watch,Apple Watch,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+dense_vector_only,keyword-lenovo-laptop,Lenovo laptop,keyword,expected_product_ids,3,0.6667,0.2,0.25,0.3501,true,false,0,,,
+dense_vector_only,keyword-asus-tuf,ASUS TUF,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,keyword-ssd-nvme,SSD NVMe,keyword,expected_product_ids,3,0.6667,0.2,0.5,0.4373,true,false,0,,,
+dense_vector_only,keyword-ram-ddr5,RAM DDR5,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ram, memory, linh-kien-may-tinh"
+dense_vector_only,keyword-mainboard-b760,mainboard B760,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+dense_vector_only,keyword-psu,nguồn PSU,keyword,expected_product_ids,3,0.6667,0.2,1,0.6105,true,false,0,,,
+dense_vector_only,keyword-logitech-mouse,chuột Logitech,keyword,expected_product_ids,3,1,0.2,0.3333,0.5267,true,false,0,,,
+dense_vector_only,keyword-logitech-keyboard,bàn phím Logitech,keyword,expected_product_ids,3,0.6667,0.2,0.3333,0.4018,true,false,0,,,
+dense_vector_only,need-gaming-laptop-rtx4060-25m,laptop gaming RTX 4060 tầm 25 triệu,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,need-office-light-laptop-under-18m,laptop văn phòng nhẹ dưới 18 triệu,need_based,manual_binary_qrels,3,0.3333,0,0.1429,0.1564,true,false,0,,,
+dense_vector_only,need-student-laptop-under-15m,laptop sinh viên dưới 15 triệu,need_based,manual_binary_qrels,3,0.6667,0.4,0.5,0.4776,true,false,0,,,
+dense_vector_only,need-ai-programming-laptop-five-models,laptop học lập trình AI 5 mẫu,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,need-design-monitor-2k-color,màn hình thiết kế 2K màu tốt,need_based,manual_binary_qrels,3,1,0.4,0.5,0.6133,true,false,0,,,
+dense_vector_only,need-camera-phone,điện thoại chụp ảnh đẹp,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai"
+dense_vector_only,need-online-learning-tablet,máy tính bảng học online,need_based,manual_binary_qrels,3,0.6667,0,0.1667,0.3084,true,false,0,,,
+dense_vector_only,need-thin-light-usbc-laptop,laptop mỏng nhẹ có USB-C,need_based,manual_binary_qrels,3,0.3333,0.2,0.5,0.2961,true,false,0,,,
+dense_vector_only,need-iphone-fast-power-bank,pin dự phòng sạc nhanh cho iPhone,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: power-bank, pin-du-phong, phu-kien"
+dense_vector_only,need-laptop-nvme-1tb-upgrade,SSD NVMe 1000GB nâng cấp laptop,need_based,manual_binary_qrels,3,1,0.4,1,0.852,true,false,0,,,
+dense_vector_only,need-ergonomic-gaming-chair,ghế công thái học/gaming,need_based,manual_binary_qrels,3,1,0.4,1,0.7989,true,false,0,,,
+dense_vector_only,need-health-smartwatch,đồng hồ thông minh theo dõi sức khỏe,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+dense_vector_only,gift-girlfriend-iphone-user,quà cho bạn gái dùng iPhone,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai, watch, smartwatch, power-bank, phu-kien"
+dense_vector_only,gift-tech-student-under-2m,quà công nghệ cho sinh viên dưới 2 triệu,gift,manual_binary_qrels,3,0.3333,0,0.1,0.1357,true,false,0,,,
+dense_vector_only,gift-office-colleague,quà cho đồng nghiệp văn phòng,gift,manual_binary_qrels,3,0.6667,0,0.1429,0.2977,true,false,0,,,
+dense_vector_only,gift-mobile-photography,quà cho người thích chụp ảnh điện thoại,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai, tripod, lighting, den-led, phu-kien"
+dense_vector_only,gift-macbook-user,quà cho người dùng MacBook,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: hub, adapter, mouse, keyboard, phu-kien"
+dense_vector_only,gift-gamer-keyboard-mouse,chuột/bàn phím làm quà cho game thủ,gift,manual_binary_qrels,3,1,0.6,1,0.906,true,false,0,,,
+dense_vector_only,gift-parents-smartwatch,quà cho bố mẹ là đồng hồ thông minh,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+dense_vector_only,gift-online-learning-student,quà học online cho học sinh,gift,manual_binary_qrels,3,0.3333,0,0.1667,0.1672,true,false,0,,,
+dense_vector_only,technical-rtx4060-16gb-under-30m,laptop RTX 4060 RAM 16GB dưới 30 triệu,technical,expected_product_ids,1,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,technical-laptop-32gb-1tb,laptop RAM 32GB SSD 1TB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+dense_vector_only,technical-monitor-27-2k-144hz,màn hình 27 inch 2K 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+dense_vector_only,technical-monitor-usbc,màn hình USB-C,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+dense_vector_only,technical-ssd-nvme-1tb-pcie,SSD NVMe 1000GB PCIe,technical,expected_product_ids,3,1,0.4,0.3333,0.5932,true,false,0,,,
+dense_vector_only,technical-ram-ddr5-16gb,RAM DDR5 16GB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ram, memory, linh-kien-may-tinh"
+dense_vector_only,technical-psu-750w,nguồn máy tính 750W,technical,expected_product_ids,3,0.6667,0.2,0.5,0.4632,true,false,0,,,
+dense_vector_only,technical-mainboard-b760,mainboard Intel B760,technical,expected_product_ids,3,1,0.6,1,0.8855,true,false,0,,,
+dense_vector_only,technical-atx-case,case máy tính ATX,technical,expected_product_ids,3,0.6667,0.4,0.3333,0.4162,true,false,0,,,
+dense_vector_only,technical-logitech-wireless-mouse,chuột wireless Logitech,technical,expected_product_ids,2,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: mouse, chuot, phu-kien"
+dense_vector_only,technical-usbc-hdmi-hub,hub USB-C HDMI,technical,expected_product_ids,3,0.6667,0.2,0.3333,0.4018,true,false,0,,,
+dense_vector_only,technical-iphone-typec-fast-charger,sạc nhanh Type-C cho iPhone,technical,expected_product_ids,3,0.6667,0.4,0.5,0.5307,true,false,0,,,
+dense_vector_only,combo-gaming-setup-peripherals,setup gaming gồm màn hình bàn phím chuột tai nghe,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+dense_vector_only,combo-work-laptop-monitor-usbc-hub,combo laptop làm việc + màn hình + hub USB-C,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+dense_vector_only,combo-basic-gaming-pc-build,build PC gaming cơ bản,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: desktop, pc, cpu, mainboard, ram, ssd, psu, case, linh-kien-may-tinh"
+dense_vector_only,combo-graphics-laptop-monitor-ssd,setup làm đồ họa gồm laptop màn hình SSD,combo,manual_binary_qrels,3,0.6667,0.4,0.3333,0.4162,true,false,0,,,
+dense_vector_only,combo-online-teaching-kit,bộ dạy học online webcam micro tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, headset, headphone, phu-kien"
+dense_vector_only,combo-beginner-streamer-kit,combo streamer mới bắt đầu webcam micro đèn,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+dense_vector_only,combo-dorm-laptop-mouse-headset,setup ký túc xá laptop chuột tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, mouse, chuot, headset, headphone, phu-kien"
+dense_vector_only,combo-phone-travel-accessories,bộ phụ kiện du lịch cho điện thoại,combo,manual_binary_qrels,3,0.6667,0,0.1667,0.3236,true,false,0,,,
+dense_vector_only,ambiguous-strong-config-value,máy cấu hình mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+dense_vector_only,ambiguous-learning-machine,máy học tập,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+dense_vector_only,ambiguous-worth-buying-laptop,laptop đáng mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+dense_vector_only,ambiguous-accessories-to-buy,phụ kiện nên mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,keyword-iphone,iPhone,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai"
+hybrid_no_rerank,keyword-macbook,MacBook,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,keyword-rtx-laptop,RTX laptop,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,keyword-dell-monitor,màn hình Dell,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_no_rerank,need-ai-laptop,laptop học AI,need_based,manual_binary_qrels,3,0.3333,0.2,0.25,0.2021,true,false,0,,,
+hybrid_no_rerank,need-graphics,máy làm đồ họa,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, desktop, pc"
+hybrid_no_rerank,need-home-office,setup góc làm việc tại nhà,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam"
+hybrid_no_rerank,need-eye-comfort,màn hình đỡ mỏi mắt,need_based,manual_binary_qrels,3,1,0.4,0.3333,0.5642,true,false,0,,,
+hybrid_no_rerank,gift-gamer-boyfriend,mua quà cho bạn trai thích chơi game,gift,manual_binary_qrels,3,0.3333,0,0.125,0.148,true,false,0,,,
+hybrid_no_rerank,gift-it-student,quà cho sinh viên IT,gift,manual_binary_qrels,3,1,0.4,0.5,0.6189,true,false,0,,,
+hybrid_no_rerank,gift-office-worker,quà cho dân văn phòng,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: keyboard, mouse, monitor, man-hinh, phu-kien"
+hybrid_no_rerank,gift-new-streamer,quà cho người mới livestream,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, lighting, den-led, headset, phu-kien"
+hybrid_no_rerank,technical-ai-laptop-specs,laptop RAM 16GB SSD 512GB GPU NVIDIA,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,technical-monitor-144hz,màn hình 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_no_rerank,technical-wireless-keyboard,bàn phím cơ wireless,technical,expected_product_ids,3,0.6667,0,0.125,0.2837,true,false,0,,,
+hybrid_no_rerank,technical-stock-budget-laptop,laptop dưới 25 triệu còn hàng,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,combo-livestream,góc livestream,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, lighting, den-led, monitor, man-hinh, phu-kien"
+hybrid_no_rerank,combo-home-work-kit,bộ làm việc tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam, phu-kien"
+hybrid_no_rerank,combo-teacher-home-office,combo dạy học online tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, monitor, man-hinh, webcam, microphone, micro, keyboard, mouse"
+hybrid_no_rerank,combo-online-learning,setup học online cho sinh viên,combo,manual_binary_qrels,3,0.3333,0,0.1667,0.1672,true,false,0,,,
+hybrid_no_rerank,ambiguous-strong-value,máy mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,ambiguous-study-machine,máy để học,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,ambiguous-good-laptop,laptop tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,ambiguous-essential-accessories,phụ kiện cần thiết,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,keyword-iphone-16,iPhone 16,keyword,expected_product_ids,3,1,0.4,1,0.8278,true,false,0,,,
+hybrid_no_rerank,keyword-samsung,Samsung,keyword,expected_product_ids,3,0.6667,0.4,0.5,0.5307,true,false,0,,,
+hybrid_no_rerank,keyword-ipad,iPad,keyword,expected_product_ids,3,1,0.4,1,0.8385,true,false,0,,,
+hybrid_no_rerank,keyword-apple-watch,Apple Watch,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_no_rerank,keyword-lenovo-laptop,Lenovo laptop,keyword,expected_product_ids,3,0.6667,0.2,0.25,0.3501,true,false,0,,,
+hybrid_no_rerank,keyword-asus-tuf,ASUS TUF,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,keyword-ssd-nvme,SSD NVMe,keyword,expected_product_ids,3,0.6667,0.2,0.5,0.4373,true,false,0,,,
+hybrid_no_rerank,keyword-ram-ddr5,RAM DDR5,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ram, memory, linh-kien-may-tinh"
+hybrid_no_rerank,keyword-mainboard-b760,mainboard B760,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_no_rerank,keyword-psu,nguồn PSU,keyword,expected_product_ids,3,0.6667,0.2,1,0.6105,true,false,0,,,
+hybrid_no_rerank,keyword-logitech-mouse,chuột Logitech,keyword,expected_product_ids,3,1,0.2,0.3333,0.5267,true,false,0,,,
+hybrid_no_rerank,keyword-logitech-keyboard,bàn phím Logitech,keyword,expected_product_ids,3,0.6667,0.2,0.3333,0.4018,true,false,0,,,
+hybrid_no_rerank,need-gaming-laptop-rtx4060-25m,laptop gaming RTX 4060 tầm 25 triệu,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,need-office-light-laptop-under-18m,laptop văn phòng nhẹ dưới 18 triệu,need_based,manual_binary_qrels,3,0.3333,0,0.1429,0.1564,true,false,0,,,
+hybrid_no_rerank,need-student-laptop-under-15m,laptop sinh viên dưới 15 triệu,need_based,manual_binary_qrels,3,0.6667,0.4,0.5,0.4776,true,false,0,,,
+hybrid_no_rerank,need-ai-programming-laptop-five-models,laptop học lập trình AI 5 mẫu,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,need-design-monitor-2k-color,màn hình thiết kế 2K màu tốt,need_based,manual_binary_qrels,3,1,0.4,0.5,0.6133,true,false,0,,,
+hybrid_no_rerank,need-camera-phone,điện thoại chụp ảnh đẹp,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai"
+hybrid_no_rerank,need-online-learning-tablet,máy tính bảng học online,need_based,manual_binary_qrels,3,0.6667,0,0.1667,0.3084,true,false,0,,,
+hybrid_no_rerank,need-thin-light-usbc-laptop,laptop mỏng nhẹ có USB-C,need_based,manual_binary_qrels,3,0.3333,0.2,0.5,0.2961,true,false,0,,,
+hybrid_no_rerank,need-iphone-fast-power-bank,pin dự phòng sạc nhanh cho iPhone,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: power-bank, pin-du-phong, phu-kien"
+hybrid_no_rerank,need-laptop-nvme-1tb-upgrade,SSD NVMe 1000GB nâng cấp laptop,need_based,manual_binary_qrels,3,1,0.4,1,0.852,true,false,0,,,
+hybrid_no_rerank,need-ergonomic-gaming-chair,ghế công thái học/gaming,need_based,manual_binary_qrels,3,1,0.4,1,0.7989,true,false,0,,,
+hybrid_no_rerank,need-health-smartwatch,đồng hồ thông minh theo dõi sức khỏe,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_no_rerank,gift-girlfriend-iphone-user,quà cho bạn gái dùng iPhone,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai, watch, smartwatch, power-bank, phu-kien"
+hybrid_no_rerank,gift-tech-student-under-2m,quà công nghệ cho sinh viên dưới 2 triệu,gift,manual_binary_qrels,3,0.3333,0,0.1,0.1357,true,false,0,,,
+hybrid_no_rerank,gift-office-colleague,quà cho đồng nghiệp văn phòng,gift,manual_binary_qrels,3,0.6667,0,0.1429,0.2977,true,false,0,,,
+hybrid_no_rerank,gift-mobile-photography,quà cho người thích chụp ảnh điện thoại,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai, tripod, lighting, den-led, phu-kien"
+hybrid_no_rerank,gift-macbook-user,quà cho người dùng MacBook,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: hub, adapter, mouse, keyboard, phu-kien"
+hybrid_no_rerank,gift-gamer-keyboard-mouse,chuột/bàn phím làm quà cho game thủ,gift,manual_binary_qrels,3,1,0.6,1,0.906,true,false,0,,,
+hybrid_no_rerank,gift-parents-smartwatch,quà cho bố mẹ là đồng hồ thông minh,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_no_rerank,gift-online-learning-student,quà học online cho học sinh,gift,manual_binary_qrels,3,0.3333,0,0.1667,0.1672,true,false,0,,,
+hybrid_no_rerank,technical-rtx4060-16gb-under-30m,laptop RTX 4060 RAM 16GB dưới 30 triệu,technical,expected_product_ids,1,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,technical-laptop-32gb-1tb,laptop RAM 32GB SSD 1TB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_no_rerank,technical-monitor-27-2k-144hz,màn hình 27 inch 2K 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_no_rerank,technical-monitor-usbc,màn hình USB-C,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_no_rerank,technical-ssd-nvme-1tb-pcie,SSD NVMe 1000GB PCIe,technical,expected_product_ids,3,1,0.4,0.3333,0.5932,true,false,0,,,
+hybrid_no_rerank,technical-ram-ddr5-16gb,RAM DDR5 16GB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ram, memory, linh-kien-may-tinh"
+hybrid_no_rerank,technical-psu-750w,nguồn máy tính 750W,technical,expected_product_ids,3,0.6667,0.2,0.5,0.4632,true,false,0,,,
+hybrid_no_rerank,technical-mainboard-b760,mainboard Intel B760,technical,expected_product_ids,3,1,0.6,1,0.8855,true,false,0,,,
+hybrid_no_rerank,technical-atx-case,case máy tính ATX,technical,expected_product_ids,3,0.6667,0.4,0.3333,0.4162,true,false,0,,,
+hybrid_no_rerank,technical-logitech-wireless-mouse,chuột wireless Logitech,technical,expected_product_ids,2,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: mouse, chuot, phu-kien"
+hybrid_no_rerank,technical-usbc-hdmi-hub,hub USB-C HDMI,technical,expected_product_ids,3,0.6667,0.2,0.3333,0.4018,true,false,0,,,
+hybrid_no_rerank,technical-iphone-typec-fast-charger,sạc nhanh Type-C cho iPhone,technical,expected_product_ids,3,0.6667,0.4,0.5,0.5307,true,false,0,,,
+hybrid_no_rerank,combo-gaming-setup-peripherals,setup gaming gồm màn hình bàn phím chuột tai nghe,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_no_rerank,combo-work-laptop-monitor-usbc-hub,combo laptop làm việc + màn hình + hub USB-C,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_no_rerank,combo-basic-gaming-pc-build,build PC gaming cơ bản,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: desktop, pc, cpu, mainboard, ram, ssd, psu, case, linh-kien-may-tinh"
+hybrid_no_rerank,combo-graphics-laptop-monitor-ssd,setup làm đồ họa gồm laptop màn hình SSD,combo,manual_binary_qrels,3,0.6667,0.2,0.3333,0.4018,true,false,0,,,
+hybrid_no_rerank,combo-online-teaching-kit,bộ dạy học online webcam micro tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, headset, headphone, phu-kien"
+hybrid_no_rerank,combo-beginner-streamer-kit,combo streamer mới bắt đầu webcam micro đèn,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_no_rerank,combo-dorm-laptop-mouse-headset,setup ký túc xá laptop chuột tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, mouse, chuot, headset, headphone, phu-kien"
+hybrid_no_rerank,combo-phone-travel-accessories,bộ phụ kiện du lịch cho điện thoại,combo,manual_binary_qrels,3,0.6667,0,0.1667,0.3236,true,false,0,,,
+hybrid_no_rerank,ambiguous-strong-config-value,máy cấu hình mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,ambiguous-learning-machine,máy học tập,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,ambiguous-worth-buying-laptop,laptop đáng mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_no_rerank,ambiguous-accessories-to-buy,phụ kiện nên mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,keyword-iphone,iPhone,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai"
+hybrid_rerank_no_expansion,keyword-macbook,MacBook,keyword,expected_product_ids,3,0.3333,0.2,0.5,0.2961,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-rtx-laptop,RTX laptop,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,keyword-dell-monitor,màn hình Dell,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_no_expansion,need-ai-laptop,laptop học AI,need_based,manual_binary_qrels,3,0.3333,0.2,0.3333,0.2346,true,false,0,,,
+hybrid_rerank_no_expansion,need-graphics,máy làm đồ họa,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, desktop, pc"
+hybrid_rerank_no_expansion,need-home-office,setup góc làm việc tại nhà,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam"
+hybrid_rerank_no_expansion,need-eye-comfort,màn hình đỡ mỏi mắt,need_based,manual_binary_qrels,3,1,0.4,0.3333,0.5642,true,false,0,,,
+hybrid_rerank_no_expansion,gift-gamer-boyfriend,mua quà cho bạn trai thích chơi game,gift,manual_binary_qrels,3,0.3333,0.2,0.25,0.2021,true,false,0,,,
+hybrid_rerank_no_expansion,gift-it-student,quà cho sinh viên IT,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, keyboard, mouse, phu-kien"
+hybrid_rerank_no_expansion,gift-office-worker,quà cho dân văn phòng,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: keyboard, mouse, monitor, man-hinh, phu-kien"
+hybrid_rerank_no_expansion,gift-new-streamer,quà cho người mới livestream,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, lighting, den-led, headset, phu-kien"
+hybrid_rerank_no_expansion,technical-ai-laptop-specs,laptop RAM 16GB SSD 512GB GPU NVIDIA,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,technical-monitor-144hz,màn hình 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_no_expansion,technical-wireless-keyboard,bàn phím cơ wireless,technical,expected_product_ids,3,1,0.4,0.5,0.6448,true,false,0,,,
+hybrid_rerank_no_expansion,technical-stock-budget-laptop,laptop dưới 25 triệu còn hàng,technical,expected_product_ids,3,0.6667,0.2,0.3333,0.4018,true,false,0,,,
+hybrid_rerank_no_expansion,combo-livestream,góc livestream,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: webcam, microphone, micro, lighting, den-led, monitor, man-hinh, phu-kien"
+hybrid_rerank_no_expansion,combo-home-work-kit,bộ làm việc tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam, phu-kien"
+hybrid_rerank_no_expansion,combo-teacher-home-office,combo dạy học online tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, monitor, man-hinh, webcam, microphone, micro, keyboard, mouse"
+hybrid_rerank_no_expansion,combo-online-learning,setup học online cho sinh viên,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, webcam, headset, headphone, keyboard, mouse, phu-kien"
+hybrid_rerank_no_expansion,ambiguous-strong-value,máy mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,ambiguous-study-machine,máy để học,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,ambiguous-good-laptop,laptop tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,ambiguous-essential-accessories,phụ kiện cần thiết,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,keyword-iphone-16,iPhone 16,keyword,expected_product_ids,3,1,0.4,0.5,0.6257,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-samsung,Samsung,keyword,expected_product_ids,3,0.6667,0,0.1667,0.3236,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-ipad,iPad,keyword,expected_product_ids,3,1,0.4,1,0.8385,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-apple-watch,Apple Watch,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_rerank_no_expansion,keyword-lenovo-laptop,Lenovo laptop,keyword,expected_product_ids,3,1,0.6,1,0.8855,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-asus-tuf,ASUS TUF,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,keyword-ssd-nvme,SSD NVMe,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-ram-ddr5,RAM DDR5,keyword,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ram, memory, linh-kien-may-tinh"
+hybrid_rerank_no_expansion,keyword-mainboard-b760,mainboard B760,keyword,expected_product_ids,3,0.6667,0.2,1,0.6049,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-psu,nguồn PSU,keyword,expected_product_ids,3,0.6667,0.2,1,0.6105,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-logitech-mouse,chuột Logitech,keyword,expected_product_ids,3,1,0.6,0.5,0.6797,true,false,0,,,
+hybrid_rerank_no_expansion,keyword-logitech-keyboard,bàn phím Logitech,keyword,expected_product_ids,3,1,0.2,0.2,0.5051,true,false,0,,,
+hybrid_rerank_no_expansion,need-gaming-laptop-rtx4060-25m,laptop gaming RTX 4060 tầm 25 triệu,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,need-office-light-laptop-under-18m,laptop văn phòng nhẹ dưới 18 triệu,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,need-student-laptop-under-15m,laptop sinh viên dưới 15 triệu,need_based,manual_binary_qrels,3,0.6667,0,0.1429,0.2921,true,false,0,,,
+hybrid_rerank_no_expansion,need-ai-programming-laptop-five-models,laptop học lập trình AI 5 mẫu,need_based,manual_binary_qrels,3,0.6667,0.2,1,0.6173,true,false,0,,,
+hybrid_rerank_no_expansion,need-design-monitor-2k-color,màn hình thiết kế 2K màu tốt,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_no_expansion,need-camera-phone,điện thoại chụp ảnh đẹp,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai"
+hybrid_rerank_no_expansion,need-online-learning-tablet,máy tính bảng học online,need_based,manual_binary_qrels,3,0.6667,0,0.1667,0.3084,true,false,0,,,
+hybrid_rerank_no_expansion,need-thin-light-usbc-laptop,laptop mỏng nhẹ có USB-C,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,need-iphone-fast-power-bank,pin dự phòng sạc nhanh cho iPhone,need_based,manual_binary_qrels,3,0.3333,0,0.1,0.1357,true,false,0,,,
+hybrid_rerank_no_expansion,need-laptop-nvme-1tb-upgrade,SSD NVMe 1000GB nâng cấp laptop,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ssd, o-cung, linh-kien-may-tinh"
+hybrid_rerank_no_expansion,need-ergonomic-gaming-chair,ghế công thái học/gaming,need_based,manual_binary_qrels,3,1,0.2,1,0.7929,true,false,0,,,
+hybrid_rerank_no_expansion,need-health-smartwatch,đồng hồ thông minh theo dõi sức khỏe,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_rerank_no_expansion,gift-girlfriend-iphone-user,quà cho bạn gái dùng iPhone,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai, watch, smartwatch, power-bank, phu-kien"
+hybrid_rerank_no_expansion,gift-tech-student-under-2m,quà công nghệ cho sinh viên dưới 2 triệu,gift,manual_binary_qrels,3,0.3333,0.2,0.2,0.1815,true,false,0,,,
+hybrid_rerank_no_expansion,gift-office-colleague,quà cho đồng nghiệp văn phòng,gift,manual_binary_qrels,3,0.6667,0,0.1429,0.2977,true,false,0,,,
+hybrid_rerank_no_expansion,gift-mobile-photography,quà cho người thích chụp ảnh điện thoại,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai, tripod, lighting, den-led, phu-kien"
+hybrid_rerank_no_expansion,gift-macbook-user,quà cho người dùng MacBook,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: hub, adapter, mouse, keyboard, phu-kien"
+hybrid_rerank_no_expansion,gift-gamer-keyboard-mouse,chuột/bàn phím làm quà cho game thủ,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_no_expansion,gift-parents-smartwatch,quà cho bố mẹ là đồng hồ thông minh,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_rerank_no_expansion,gift-online-learning-student,quà học online cho học sinh,gift,manual_binary_qrels,3,0.3333,0,0.1429,0.1564,true,false,0,,,
+hybrid_rerank_no_expansion,technical-rtx4060-16gb-under-30m,laptop RTX 4060 RAM 16GB dưới 30 triệu,technical,expected_product_ids,1,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,technical-laptop-32gb-1tb,laptop RAM 32GB SSD 1TB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_no_expansion,technical-monitor-27-2k-144hz,màn hình 27 inch 2K 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_no_expansion,technical-monitor-usbc,màn hình USB-C,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_no_expansion,technical-ssd-nvme-1tb-pcie,SSD NVMe 1000GB PCIe,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ssd, o-cung, linh-kien-may-tinh"
+hybrid_rerank_no_expansion,technical-ram-ddr5-16gb,RAM DDR5 16GB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ram, memory, linh-kien-may-tinh"
+hybrid_rerank_no_expansion,technical-psu-750w,nguồn máy tính 750W,technical,expected_product_ids,3,0.6667,0.2,0.5,0.4632,true,false,0,,,
+hybrid_rerank_no_expansion,technical-mainboard-b760,mainboard Intel B760,technical,expected_product_ids,3,0.6667,0,0.125,0.2893,true,false,0,,,
+hybrid_rerank_no_expansion,technical-atx-case,case máy tính ATX,technical,expected_product_ids,3,1,0.4,0.3333,0.5518,true,false,0,,,
+hybrid_rerank_no_expansion,technical-logitech-wireless-mouse,chuột wireless Logitech,technical,expected_product_ids,2,0.5,0.2,0.5,0.3869,true,false,0,,,
+hybrid_rerank_no_expansion,technical-usbc-hdmi-hub,hub USB-C HDMI,technical,expected_product_ids,3,1,0.4,0.25,0.5508,true,false,0,,,
+hybrid_rerank_no_expansion,technical-iphone-typec-fast-charger,sạc nhanh Type-C cho iPhone,technical,expected_product_ids,3,0.6667,0.4,0.5,0.5307,true,false,0,,,
+hybrid_rerank_no_expansion,combo-gaming-setup-peripherals,setup gaming gồm màn hình bàn phím chuột tai nghe,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_rerank_no_expansion,combo-work-laptop-monitor-usbc-hub,combo laptop làm việc + màn hình + hub USB-C,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_rerank_no_expansion,combo-basic-gaming-pc-build,build PC gaming cơ bản,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: desktop, pc, cpu, mainboard, ram, ssd, psu, case, linh-kien-may-tinh"
+hybrid_rerank_no_expansion,combo-graphics-laptop-monitor-ssd,setup làm đồ họa gồm laptop màn hình SSD,combo,manual_binary_qrels,3,0.6667,0.4,1,0.7654,true,false,0,,,
+hybrid_rerank_no_expansion,combo-online-teaching-kit,bộ dạy học online webcam micro tai nghe,combo,manual_binary_qrels,3,0.3333,0,0.1111,0.1413,true,false,0,,,
+hybrid_rerank_no_expansion,combo-beginner-streamer-kit,combo streamer mới bắt đầu webcam micro đèn,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_rerank_no_expansion,combo-dorm-laptop-mouse-headset,setup ký túc xá laptop chuột tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, mouse, chuot, headset, headphone, phu-kien"
+hybrid_rerank_no_expansion,combo-phone-travel-accessories,bộ phụ kiện du lịch cho điện thoại,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: power-bank, pin-du-phong, charger, sac, cap-sac, phu-kien"
+hybrid_rerank_no_expansion,ambiguous-strong-config-value,máy cấu hình mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,ambiguous-learning-machine,máy học tập,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,ambiguous-worth-buying-laptop,laptop đáng mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_no_expansion,ambiguous-accessories-to-buy,phụ kiện nên mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,keyword-iphone,iPhone,keyword,expected_product_ids,3,1,0,0.125,0.425,true,false,0,,,
+hybrid_rerank_expansion,keyword-macbook,MacBook,keyword,expected_product_ids,3,1,0.6,1,0.906,true,false,0,,,
+hybrid_rerank_expansion,keyword-rtx-laptop,RTX laptop,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,,,
+hybrid_rerank_expansion,keyword-dell-monitor,màn hình Dell,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,need-ai-laptop,laptop học AI,need_based,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_rerank_expansion,need-graphics,máy làm đồ họa,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,need-home-office,setup góc làm việc tại nhà,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam"
+hybrid_rerank_expansion,need-eye-comfort,màn hình đỡ mỏi mắt,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,gift-gamer-boyfriend,mua quà cho bạn trai thích chơi game,gift,manual_binary_qrels,3,1,0.4,1,0.8385,true,false,0,,,
+hybrid_rerank_expansion,gift-it-student,quà cho sinh viên IT,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, keyboard, mouse, phu-kien"
+hybrid_rerank_expansion,gift-office-worker,quà cho dân văn phòng,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: keyboard, mouse, monitor, man-hinh, phu-kien"
+hybrid_rerank_expansion,gift-new-streamer,quà cho người mới livestream,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,technical-ai-laptop-specs,laptop RAM 16GB SSD 512GB GPU NVIDIA,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_expansion,technical-monitor-144hz,màn hình 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_expansion,technical-wireless-keyboard,bàn phím cơ wireless,technical,expected_product_ids,3,1,0.4,1,0.818,true,false,0,,,
+hybrid_rerank_expansion,technical-stock-budget-laptop,laptop dưới 25 triệu còn hàng,technical,expected_product_ids,3,1,0.4,1,0.9134,true,false,0,,,
+hybrid_rerank_expansion,combo-livestream,góc livestream,combo,manual_binary_qrels,3,1,0.4,1,0.8711,true,false,0,,,
+hybrid_rerank_expansion,combo-home-work-kit,bộ làm việc tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam, phu-kien"
+hybrid_rerank_expansion,combo-teacher-home-office,combo dạy học online tại nhà,combo,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,,,
+hybrid_rerank_expansion,combo-online-learning,setup học online cho sinh viên,combo,manual_binary_qrels,3,0.3333,0.2,0.25,0.2021,true,false,0,,,
+hybrid_rerank_expansion,ambiguous-strong-value,máy mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,ambiguous-study-machine,máy để học,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,ambiguous-good-laptop,laptop tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,ambiguous-essential-accessories,phụ kiện cần thiết,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,keyword-iphone-16,iPhone 16,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,,,
+hybrid_rerank_expansion,keyword-samsung,Samsung,keyword,expected_product_ids,3,1,0.2,0.2,0.5051,true,false,0,,,
+hybrid_rerank_expansion,keyword-ipad,iPad,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,keyword-apple-watch,Apple Watch,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,keyword-lenovo-laptop,Lenovo laptop,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,keyword-asus-tuf,ASUS TUF,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,keyword-ssd-nvme,SSD NVMe,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,keyword-ram-ddr5,RAM DDR5,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,keyword-mainboard-b760,mainboard B760,keyword,expected_product_ids,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_rerank_expansion,keyword-psu,nguồn PSU,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,keyword-logitech-mouse,chuột Logitech,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,,,
+hybrid_rerank_expansion,keyword-logitech-keyboard,bàn phím Logitech,keyword,expected_product_ids,3,1,0.2,0.2,0.5051,true,false,0,,,
+hybrid_rerank_expansion,need-gaming-laptop-rtx4060-25m,laptop gaming RTX 4060 tầm 25 triệu,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,need-office-light-laptop-under-18m,laptop văn phòng nhẹ dưới 18 triệu,need_based,manual_binary_qrels,3,1,0.2,0.2,0.5051,true,false,0,,,
+hybrid_rerank_expansion,need-student-laptop-under-15m,laptop sinh viên dưới 15 triệu,need_based,manual_binary_qrels,3,1,0,0.125,0.425,true,false,0,,,
+hybrid_rerank_expansion,need-ai-programming-laptop-five-models,laptop học lập trình AI 5 mẫu,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,need-design-monitor-2k-color,màn hình thiết kế 2K màu tốt,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_expansion,need-camera-phone,điện thoại chụp ảnh đẹp,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: phone, dien-thoai"
+hybrid_rerank_expansion,need-online-learning-tablet,máy tính bảng học online,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,need-thin-light-usbc-laptop,laptop mỏng nhẹ có USB-C,need_based,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,,,
+hybrid_rerank_expansion,need-iphone-fast-power-bank,pin dự phòng sạc nhanh cho iPhone,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,need-laptop-nvme-1tb-upgrade,SSD NVMe 1000GB nâng cấp laptop,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ssd, o-cung, linh-kien-may-tinh"
+hybrid_rerank_expansion,need-ergonomic-gaming-chair,ghế công thái học/gaming,need_based,manual_binary_qrels,3,1,0.6,1,0.906,true,false,0,,,
+hybrid_rerank_expansion,need-health-smartwatch,đồng hồ thông minh theo dõi sức khỏe,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,gift-girlfriend-iphone-user,quà cho bạn gái dùng iPhone,gift,manual_binary_qrels,3,1,0.2,1,0.7586,true,false,0,,,
+hybrid_rerank_expansion,gift-tech-student-under-2m,quà công nghệ cho sinh viên dưới 2 triệu,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,gift-office-colleague,quà cho đồng nghiệp văn phòng,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,gift-mobile-photography,quà cho người thích chụp ảnh điện thoại,gift,manual_binary_qrels,3,0.3333,0,0.1429,0.1564,true,false,0,,,
+hybrid_rerank_expansion,gift-macbook-user,quà cho người dùng MacBook,gift,manual_binary_qrels,3,0.3333,0,0.1,0.1357,true,false,0,,,
+hybrid_rerank_expansion,gift-gamer-keyboard-mouse,chuột/bàn phím làm quà cho game thủ,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,gift-parents-smartwatch,quà cho bố mẹ là đồng hồ thông minh,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_rerank_expansion,gift-online-learning-student,quà học online cho học sinh,gift,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,,,
+hybrid_rerank_expansion,technical-rtx4060-16gb-under-30m,laptop RTX 4060 RAM 16GB dưới 30 triệu,technical,expected_product_ids,1,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_expansion,technical-laptop-32gb-1tb,laptop RAM 32GB SSD 1TB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,No relevant product matched expected categories: laptop
+hybrid_rerank_expansion,technical-monitor-27-2k-144hz,màn hình 27 inch 2K 144Hz,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: monitor, man-hinh"
+hybrid_rerank_expansion,technical-monitor-usbc,màn hình USB-C,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,technical-ssd-nvme-1tb-pcie,SSD NVMe 1000GB PCIe,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ssd, o-cung, linh-kien-may-tinh"
+hybrid_rerank_expansion,technical-ram-ddr5-16gb,RAM DDR5 16GB,technical,expected_product_ids,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: ram, memory, linh-kien-may-tinh"
+hybrid_rerank_expansion,technical-psu-750w,nguồn máy tính 750W,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,technical-mainboard-b760,mainboard Intel B760,technical,expected_product_ids,3,0.6667,0,0.1111,0.2769,true,false,0,,,
+hybrid_rerank_expansion,technical-atx-case,case máy tính ATX,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,technical-logitech-wireless-mouse,chuột wireless Logitech,technical,expected_product_ids,2,1,0.4,1,1,true,false,0,,,
+hybrid_rerank_expansion,technical-usbc-hdmi-hub,hub USB-C HDMI,technical,expected_product_ids,3,1,0.4,0.25,0.5508,true,false,0,,,
+hybrid_rerank_expansion,technical-iphone-typec-fast-charger,sạc nhanh Type-C cho iPhone,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,combo-gaming-setup-peripherals,setup gaming gồm màn hình bàn phím chuột tai nghe,combo,manual_binary_qrels,3,1,0.6,1,0.9675,true,false,0,,,
+hybrid_rerank_expansion,combo-work-laptop-monitor-usbc-hub,combo laptop làm việc + màn hình + hub USB-C,combo,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,combo-basic-gaming-pc-build,build PC gaming cơ bản,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: desktop, pc, cpu, mainboard, ram, ssd, psu, case, linh-kien-may-tinh"
+hybrid_rerank_expansion,combo-graphics-laptop-monitor-ssd,setup làm đồ họa gồm laptop màn hình SSD,combo,manual_binary_qrels,3,1,0.6,1,1,true,false,0,,,
+hybrid_rerank_expansion,combo-online-teaching-kit,bộ dạy học online webcam micro tai nghe,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_rerank_expansion,combo-beginner-streamer-kit,combo streamer mới bắt đầu webcam micro đèn,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,,,
+hybrid_rerank_expansion,combo-dorm-laptop-mouse-headset,setup ký túc xá laptop chuột tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: laptop, mouse, chuot, headset, headphone, phu-kien"
+hybrid_rerank_expansion,combo-phone-travel-accessories,bộ phụ kiện du lịch cho điện thoại,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,,,"No relevant product matched expected categories: power-bank, pin-du-phong, charger, sac, cap-sac, phu-kien"
+hybrid_rerank_expansion,ambiguous-strong-config-value,máy cấu hình mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,ambiguous-learning-machine,máy học tập,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,ambiguous-worth-buying-laptop,laptop đáng mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_expansion,ambiguous-accessories-to-buy,phụ kiện nên mua,ambiguous,expected_clarification,0,0,0,0,0,false,false,0,,,Expected clarification was not produced
+hybrid_rerank_rewrite,keyword-iphone,iPhone,keyword,expected_product_ids,3,1,0,0.125,0.425,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,keyword-macbook,MacBook,keyword,expected_product_ids,3,1,0.6,1,0.906,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,keyword-rtx-laptop,RTX laptop,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,keyword-dell-monitor,màn hình Dell,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,need-ai-laptop,laptop học AI,need_based,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,skipped_deterministic,2,
+hybrid_rerank_rewrite,need-graphics,máy làm đồ họa,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,need-home-office,setup góc làm việc tại nhà,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10002,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam"
+hybrid_rerank_rewrite,need-eye-comfort,màn hình đỡ mỏi mắt,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,gift-gamer-boyfriend,mua quà cho bạn trai thích chơi game,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,gift-it-student,quà cho sinh viên IT,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10002,"No relevant product matched expected categories: laptop, keyboard, mouse, phu-kien"
+hybrid_rerank_rewrite,gift-office-worker,quà cho dân văn phòng,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10001,"No relevant product matched expected categories: keyboard, mouse, monitor, man-hinh, phu-kien"
+hybrid_rerank_rewrite,gift-new-streamer,quà cho người mới livestream,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,technical-ai-laptop-specs,laptop RAM 16GB SSD 512GB GPU NVIDIA,technical,expected_product_ids,3,0,0,0,0,false,false,0,fallback_timeout,10002,No relevant product matched expected categories: laptop
+hybrid_rerank_rewrite,technical-monitor-144hz,màn hình 144Hz,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,technical-wireless-keyboard,bàn phím cơ wireless,technical,expected_product_ids,3,1,0.4,1,0.818,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,technical-stock-budget-laptop,laptop dưới 25 triệu còn hàng,technical,expected_product_ids,3,1,0.4,1,0.9134,true,false,0,skipped_deterministic,1,
+hybrid_rerank_rewrite,combo-livestream,góc livestream,combo,manual_binary_qrels,3,1,0.4,1,0.8711,true,false,0,fallback_timeout,10000,
+hybrid_rerank_rewrite,combo-home-work-kit,bộ làm việc tại nhà,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10001,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam, phu-kien"
+hybrid_rerank_rewrite,combo-teacher-home-office,combo dạy học online tại nhà,combo,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,combo-online-learning,setup học online cho sinh viên,combo,manual_binary_qrels,3,0.6667,0.2,0.25,0.3585,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,ambiguous-strong-value,máy mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,ambiguous-study-machine,máy để học,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,ambiguous-good-laptop,laptop tốt,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,ambiguous-essential-accessories,phụ kiện cần thiết,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10004,
+hybrid_rerank_rewrite,keyword-iphone-16,iPhone 16,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,keyword-samsung,Samsung,keyword,expected_product_ids,3,1,0.2,0.2,0.5051,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,keyword-ipad,iPad,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,keyword-apple-watch,Apple Watch,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,keyword-lenovo-laptop,Lenovo laptop,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,keyword-asus-tuf,ASUS TUF,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,keyword-ssd-nvme,SSD NVMe,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,keyword-ram-ddr5,RAM DDR5,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,keyword-mainboard-b760,mainboard B760,keyword,expected_product_ids,3,0.3333,0.2,1,0.4693,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,keyword-psu,nguồn PSU,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,keyword-logitech-mouse,chuột Logitech,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,keyword-logitech-keyboard,bàn phím Logitech,keyword,expected_product_ids,3,1,0.2,0.2,0.5051,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,need-gaming-laptop-rtx4060-25m,laptop gaming RTX 4060 tầm 25 triệu,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,skipped_deterministic,1,
+hybrid_rerank_rewrite,need-office-light-laptop-under-18m,laptop văn phòng nhẹ dưới 18 triệu,need_based,manual_binary_qrels,3,1,0.2,0.2,0.5051,true,false,0,skipped_deterministic,1,
+hybrid_rerank_rewrite,need-student-laptop-under-15m,laptop sinh viên dưới 15 triệu,need_based,manual_binary_qrels,3,1,0,0.125,0.425,true,false,0,skipped_deterministic,1,
+hybrid_rerank_rewrite,need-ai-programming-laptop-five-models,laptop học lập trình AI 5 mẫu,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,skipped_deterministic,2,
+hybrid_rerank_rewrite,need-design-monitor-2k-color,màn hình thiết kế 2K màu tốt,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,need-camera-phone,điện thoại chụp ảnh đẹp,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10003,"No relevant product matched expected categories: phone, dien-thoai"
+hybrid_rerank_rewrite,need-online-learning-tablet,máy tính bảng học online,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,need-thin-light-usbc-laptop,laptop mỏng nhẹ có USB-C,need_based,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,skipped_deterministic,2,
+hybrid_rerank_rewrite,need-iphone-fast-power-bank,pin dự phòng sạc nhanh cho iPhone,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,need-laptop-nvme-1tb-upgrade,SSD NVMe 1000GB nâng cấp laptop,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,need-ergonomic-gaming-chair,ghế công thái học/gaming,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,skipped_deterministic,2,
+hybrid_rerank_rewrite,need-health-smartwatch,đồng hồ thông minh theo dõi sức khỏe,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,gift-girlfriend-iphone-user,quà cho bạn gái dùng iPhone,gift,manual_binary_qrels,3,1,0.2,1,0.7586,true,false,0,skipped_deterministic,1,
+hybrid_rerank_rewrite,gift-tech-student-under-2m,quà công nghệ cho sinh viên dưới 2 triệu,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,gift-office-colleague,quà cho đồng nghiệp văn phòng,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,gift-mobile-photography,quà cho người thích chụp ảnh điện thoại,gift,manual_binary_qrels,3,0.3333,0,0.1429,0.1564,true,false,0,skipped_deterministic,2,
+hybrid_rerank_rewrite,gift-macbook-user,quà cho người dùng MacBook,gift,manual_binary_qrels,3,0.3333,0,0.1,0.1357,true,false,0,skipped_deterministic,2,
+hybrid_rerank_rewrite,gift-gamer-keyboard-mouse,chuột/bàn phím làm quà cho game thủ,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,gift-parents-smartwatch,quà cho bố mẹ là đồng hồ thông minh,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10001,"No relevant product matched expected categories: watch, smartwatch, dong-ho-thong-minh"
+hybrid_rerank_rewrite,gift-online-learning-student,quà học online cho học sinh,gift,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,technical-rtx4060-16gb-under-30m,laptop RTX 4060 RAM 16GB dưới 30 triệu,technical,expected_product_ids,1,0,0,0,0,false,false,0,fallback_timeout,10003,No relevant product matched expected categories: laptop
+hybrid_rerank_rewrite,technical-laptop-32gb-1tb,laptop RAM 32GB SSD 1TB,technical,expected_product_ids,3,0.3333,0.2,1,0.4693,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,technical-monitor-27-2k-144hz,màn hình 27 inch 2K 144Hz,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,technical-monitor-usbc,màn hình USB-C,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,technical-ssd-nvme-1tb-pcie,SSD NVMe 1000GB PCIe,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,skipped_deterministic,2,
+hybrid_rerank_rewrite,technical-ram-ddr5-16gb,RAM DDR5 16GB,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,skipped_deterministic,1,
+hybrid_rerank_rewrite,technical-psu-750w,nguồn máy tính 750W,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,technical-mainboard-b760,mainboard Intel B760,technical,expected_product_ids,3,0.6667,0,0.1111,0.2769,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,technical-atx-case,case máy tính ATX,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,technical-logitech-wireless-mouse,chuột wireless Logitech,technical,expected_product_ids,2,1,0.4,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,technical-usbc-hdmi-hub,hub USB-C HDMI,technical,expected_product_ids,3,1,0.4,0.25,0.5508,true,false,0,fallback_timeout,10003,
+hybrid_rerank_rewrite,technical-iphone-typec-fast-charger,sạc nhanh Type-C cho iPhone,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,combo-gaming-setup-peripherals,setup gaming gồm màn hình bàn phím chuột tai nghe,combo,manual_binary_qrels,3,1,0.6,1,0.9675,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,combo-work-laptop-monitor-usbc-hub,combo laptop làm việc + màn hình + hub USB-C,combo,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,combo-basic-gaming-pc-build,build PC gaming cơ bản,combo,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,combo-graphics-laptop-monitor-ssd,setup làm đồ họa gồm laptop màn hình SSD,combo,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,combo-online-teaching-kit,bộ dạy học online webcam micro tai nghe,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,combo-beginner-streamer-kit,combo streamer mới bắt đầu webcam micro đèn,combo,manual_binary_qrels,3,0.6667,0.2,0.3333,0.3911,true,false,0,fallback_timeout,10001,
+hybrid_rerank_rewrite,combo-dorm-laptop-mouse-headset,setup ký túc xá laptop chuột tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10000,"No relevant product matched expected categories: laptop, mouse, chuot, headset, headphone, phu-kien"
+hybrid_rerank_rewrite,combo-phone-travel-accessories,bộ phụ kiện du lịch cho điện thoại,combo,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10001,"No relevant product matched expected categories: power-bank, pin-du-phong, charger, sac, cap-sac, phu-kien"
+hybrid_rerank_rewrite,ambiguous-strong-config-value,máy cấu hình mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,ambiguous-learning-machine,máy học tập,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+hybrid_rerank_rewrite,ambiguous-worth-buying-laptop,laptop đáng mua,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10004,
+hybrid_rerank_rewrite,ambiguous-accessories-to-buy,phụ kiện nên mua,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+phase_10_full,keyword-iphone,iPhone,keyword,expected_product_ids,3,1,0,0.125,0.425,true,false,0,fallback_timeout,10002,
+phase_10_full,keyword-macbook,MacBook,keyword,expected_product_ids,3,1,0.6,1,0.906,true,false,0,fallback_timeout,10001,
+phase_10_full,keyword-rtx-laptop,RTX laptop,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10003,
+phase_10_full,keyword-dell-monitor,màn hình Dell,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+phase_10_full,need-ai-laptop,laptop học AI,need_based,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0,skipped_deterministic,1,
+phase_10_full,need-graphics,máy làm đồ họa,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,need-home-office,setup góc làm việc tại nhà,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0.6,fallback_timeout,10002,"No relevant product matched expected categories: monitor, man-hinh, keyboard, mouse, webcam"
+phase_10_full,need-eye-comfort,màn hình đỡ mỏi mắt,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,gift-gamer-boyfriend,mua quà cho bạn trai thích chơi game,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+phase_10_full,gift-it-student,quà cho sinh viên IT,gift,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10002,"No relevant product matched expected categories: laptop, keyboard, mouse, phu-kien"
+phase_10_full,gift-office-worker,quà cho dân văn phòng,gift,manual_binary_qrels,3,0.6667,0.4,0.5,0.5307,true,false,0.8333333333333334,fallback_timeout,10001,
+phase_10_full,gift-new-streamer,quà cho người mới livestream,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-ai-laptop-specs,laptop RAM 16GB SSD 512GB GPU NVIDIA,technical,expected_product_ids,3,0,0,0,0,false,false,0.5,fallback_timeout,10002,No relevant product matched expected categories: laptop
+phase_10_full,technical-monitor-144hz,màn hình 144Hz,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-wireless-keyboard,bàn phím cơ wireless,technical,expected_product_ids,3,1,0.4,1,0.818,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-stock-budget-laptop,laptop dưới 25 triệu còn hàng,technical,expected_product_ids,3,1,0.4,1,0.9134,true,false,0,skipped_deterministic,2,
+phase_10_full,combo-livestream,góc livestream,combo,manual_binary_qrels,3,1,0.6,1,1,true,false,0.5714285714285714,fallback_timeout,10002,
+phase_10_full,combo-home-work-kit,bộ làm việc tại nhà,combo,manual_binary_qrels,3,0.3333,0.2,0.25,0.2021,true,false,0.6,fallback_timeout,10001,
+phase_10_full,combo-teacher-home-office,combo dạy học online tại nhà,combo,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10002,
+phase_10_full,combo-online-learning,setup học online cho sinh viên,combo,manual_binary_qrels,3,0.6667,0.4,0.5,0.5307,true,false,1,fallback_timeout,10001,
+phase_10_full,ambiguous-strong-value,máy mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10001,
+phase_10_full,ambiguous-study-machine,máy để học,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+phase_10_full,ambiguous-good-laptop,laptop tốt,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10003,
+phase_10_full,ambiguous-essential-accessories,phụ kiện cần thiết,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+phase_10_full,keyword-iphone-16,iPhone 16,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10002,
+phase_10_full,keyword-samsung,Samsung,keyword,expected_product_ids,3,1,0.2,0.2,0.5051,true,false,0,fallback_timeout,10002,
+phase_10_full,keyword-ipad,iPad,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,keyword-apple-watch,Apple Watch,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,keyword-lenovo-laptop,Lenovo laptop,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,keyword-asus-tuf,ASUS TUF,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+phase_10_full,keyword-ssd-nvme,SSD NVMe,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+phase_10_full,keyword-ram-ddr5,RAM DDR5,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,keyword-mainboard-b760,mainboard B760,keyword,expected_product_ids,3,0.3333,0.2,1,0.4693,true,false,0,fallback_timeout,10001,
+phase_10_full,keyword-psu,nguồn PSU,keyword,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+phase_10_full,keyword-logitech-mouse,chuột Logitech,keyword,expected_product_ids,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10003,
+phase_10_full,keyword-logitech-keyboard,bàn phím Logitech,keyword,expected_product_ids,3,1,0.2,0.2,0.5051,true,false,0,fallback_timeout,10004,
+phase_10_full,need-gaming-laptop-rtx4060-25m,laptop gaming RTX 4060 tầm 25 triệu,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,skipped_deterministic,1,
+phase_10_full,need-office-light-laptop-under-18m,laptop văn phòng nhẹ dưới 18 triệu,need_based,manual_binary_qrels,3,1,0.2,0.2,0.5051,true,false,0,skipped_deterministic,1,
+phase_10_full,need-student-laptop-under-15m,laptop sinh viên dưới 15 triệu,need_based,manual_binary_qrels,3,1,0,0.125,0.425,true,false,0,skipped_deterministic,1,
+phase_10_full,need-ai-programming-laptop-five-models,laptop học lập trình AI 5 mẫu,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,skipped_deterministic,2,
+phase_10_full,need-design-monitor-2k-color,màn hình thiết kế 2K màu tốt,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,need-camera-phone,điện thoại chụp ảnh đẹp,need_based,manual_binary_qrels,3,0,0,0,0,false,false,0,fallback_timeout,10002,"No relevant product matched expected categories: phone, dien-thoai"
+phase_10_full,need-online-learning-tablet,máy tính bảng học online,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+phase_10_full,need-thin-light-usbc-laptop,laptop mỏng nhẹ có USB-C,need_based,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,skipped_deterministic,1,
+phase_10_full,need-iphone-fast-power-bank,pin dự phòng sạc nhanh cho iPhone,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+phase_10_full,need-laptop-nvme-1tb-upgrade,SSD NVMe 1000GB nâng cấp laptop,need_based,manual_binary_qrels,3,1,0.4,0.25,0.5508,true,false,1,fallback_timeout,10001,
+phase_10_full,need-ergonomic-gaming-chair,ghế công thái học/gaming,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,skipped_deterministic,1,
+phase_10_full,need-health-smartwatch,đồng hồ thông minh theo dõi sức khỏe,need_based,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,gift-girlfriend-iphone-user,quà cho bạn gái dùng iPhone,gift,manual_binary_qrels,3,1,0.2,1,0.7586,true,false,0,skipped_deterministic,1,
+phase_10_full,gift-tech-student-under-2m,quà công nghệ cho sinh viên dưới 2 triệu,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,gift-office-colleague,quà cho đồng nghiệp văn phòng,gift,manual_binary_qrels,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,gift-mobile-photography,quà cho người thích chụp ảnh điện thoại,gift,manual_binary_qrels,3,0.3333,0,0.1429,0.1564,true,false,0,skipped_deterministic,2,
+phase_10_full,gift-macbook-user,quà cho người dùng MacBook,gift,manual_binary_qrels,3,0.3333,0,0.1,0.1357,true,false,0,skipped_deterministic,1,
+phase_10_full,gift-gamer-keyboard-mouse,chuột/bàn phím làm quà cho game thủ,gift,manual_binary_qrels,3,1,0.4,0.25,0.5508,true,false,0.7142857142857143,fallback_timeout,10002,
+phase_10_full,gift-parents-smartwatch,quà cho bố mẹ là đồng hồ thông minh,gift,manual_binary_qrels,3,0.6667,0.4,1,0.7654,true,false,1,fallback_timeout,10001,
+phase_10_full,gift-online-learning-student,quà học online cho học sinh,gift,manual_binary_qrels,3,1,0.6,0.5,0.7328,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-rtx4060-16gb-under-30m,laptop RTX 4060 RAM 16GB dưới 30 triệu,technical,expected_product_ids,1,0,0,0,0,false,false,0,fallback_timeout,10000,No relevant product matched expected categories: laptop
+phase_10_full,technical-laptop-32gb-1tb,laptop RAM 32GB SSD 1TB,technical,expected_product_ids,3,0.3333,0.2,1,0.4693,true,false,0.5,fallback_timeout,10000,
+phase_10_full,technical-monitor-27-2k-144hz,màn hình 27 inch 2K 144Hz,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10001,
+phase_10_full,technical-monitor-usbc,màn hình USB-C,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+phase_10_full,technical-ssd-nvme-1tb-pcie,SSD NVMe 1000GB PCIe,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,skipped_deterministic,1,
+phase_10_full,technical-ram-ddr5-16gb,RAM DDR5 16GB,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,skipped_deterministic,1,
+phase_10_full,technical-psu-750w,nguồn máy tính 750W,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-mainboard-b760,mainboard Intel B760,technical,expected_product_ids,3,0.6667,0,0.1111,0.2769,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-atx-case,case máy tính ATX,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-logitech-wireless-mouse,chuột wireless Logitech,technical,expected_product_ids,2,1,0.4,1,1,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-usbc-hdmi-hub,hub USB-C HDMI,technical,expected_product_ids,3,1,0.4,0.25,0.5508,true,false,0,fallback_timeout,10002,
+phase_10_full,technical-iphone-typec-fast-charger,sạc nhanh Type-C cho iPhone,technical,expected_product_ids,3,1,0.6,1,1,true,false,0,fallback_timeout,10003,
+phase_10_full,combo-gaming-setup-peripherals,setup gaming gồm màn hình bàn phím chuột tai nghe,combo,manual_binary_qrels,3,1,0.4,0.25,0.5508,true,false,0.8333333333333334,fallback_timeout,10001,
+phase_10_full,combo-work-laptop-monitor-usbc-hub,combo laptop làm việc + màn hình + hub USB-C,combo,manual_binary_qrels,3,1,0.6,1,1,true,false,0.6666666666666666,fallback_timeout,10001,
+phase_10_full,combo-basic-gaming-pc-build,build PC gaming cơ bản,combo,manual_binary_qrels,3,0,0,0,0,false,false,0.8333333333333334,fallback_timeout,10002,"No relevant product matched expected categories: desktop, pc, cpu, mainboard, ram, ssd, psu, case, linh-kien-may-tinh"
+phase_10_full,combo-graphics-laptop-monitor-ssd,setup làm đồ họa gồm laptop màn hình SSD,combo,manual_binary_qrels,3,0,0,0,0,false,false,0.3333333333333333,fallback_timeout,10002,"No relevant product matched expected categories: laptop, monitor, man-hinh, ssd, o-cung, linh-kien-may-tinh"
+phase_10_full,combo-online-teaching-kit,bộ dạy học online webcam micro tai nghe,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0.3333333333333333,fallback_timeout,10002,
+phase_10_full,combo-beginner-streamer-kit,combo streamer mới bắt đầu webcam micro đèn,combo,manual_binary_qrels,3,0.3333,0.2,1,0.4693,true,false,0.42857142857142855,fallback_timeout,10001,
+phase_10_full,combo-dorm-laptop-mouse-headset,setup ký túc xá laptop chuột tai nghe,combo,manual_binary_qrels,3,0,0,0,0,false,false,1,fallback_timeout,10001,"No relevant product matched expected categories: laptop, mouse, chuot, headset, headphone, phu-kien"
+phase_10_full,combo-phone-travel-accessories,bộ phụ kiện du lịch cho điện thoại,combo,manual_binary_qrels,3,0,0,0,0,false,false,1,fallback_timeout,10001,"No relevant product matched expected categories: power-bank, pin-du-phong, charger, sac, cap-sac, phu-kien"
+phase_10_full,ambiguous-strong-config-value,máy cấu hình mạnh giá tốt,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+phase_10_full,ambiguous-learning-machine,máy học tập,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+phase_10_full,ambiguous-worth-buying-laptop,laptop đáng mua,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,
+phase_10_full,ambiguous-accessories-to-buy,phụ kiện nên mua,ambiguous,expected_clarification,0,0,0,0,0,true,true,0,fallback_timeout,10002,

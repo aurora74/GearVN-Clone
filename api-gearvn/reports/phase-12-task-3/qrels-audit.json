@@ -1,0 +1,19 @@
+{
+  "qrelsAuditReport": true,
+  "totalCases": 80,
+  "nonAmbiguousCases": 72,
+  "expectedClarificationCases": 8,
+  "manualBinaryQrelsCases": 40,
+  "expectedProductIdCases": 32,
+  "categoryCorpusFallbackCases": 0,
+  "missingMongoProductIds": [],
+  "missingQdrantProductIds": [],
+  "duplicateProductIdsByCase": {},
+  "unpublishedProductIds": [],
+  "archivedProductIds": [],
+  "unavailableProductIds": [],
+  "zeroLabelRequiredCases": [],
+  "expectedClarificationCasesWithProductLabels": [],
+  "valid": true,
+  "secretKeysLogged": false
+}
